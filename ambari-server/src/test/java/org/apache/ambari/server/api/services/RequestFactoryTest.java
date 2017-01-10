@@ -18,10 +18,6 @@
 
 package org.apache.ambari.server.api.services;
 
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.UriInfo;
-
 import static org.easymock.EasyMock.createMock;
 import static org.easymock.EasyMock.createNiceMock;
 import static org.easymock.EasyMock.createStrictMock;
@@ -30,14 +26,18 @@ import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.verify;
 import static org.junit.Assert.assertEquals;
 
-import org.apache.ambari.server.api.resources.ResourceDefinition;
-import org.apache.ambari.server.api.resources.ResourceInstance;
-import org.junit.Test;
-
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.UriInfo;
+
+import org.apache.ambari.server.api.resources.ResourceDefinition;
+import org.apache.ambari.server.api.resources.ResourceInstance;
+import org.junit.Test;
 
 /**
  * RequestFactory unit tests.
@@ -182,6 +182,81 @@ public class RequestFactoryTest {
   }
 
   @Test
+  // delete with delete directive in URI
+  public void testCreate_Delete__WithUriDirective() {
+    HttpHeaders headers = createNiceMock(HttpHeaders.class);
+    UriInfo uriInfo = createNiceMock(UriInfo.class);
+    RequestBody body = createNiceMock(RequestBody.class);
+    ResourceInstance resource = createNiceMock(ResourceInstance.class);
+    ResourceDefinition resourceDefinition = createNiceMock(ResourceDefinition.class);
+
+    @SuppressWarnings("unchecked")
+    MultivaluedMap<String, String> mapQueryParams = createMock(MultivaluedMap.class);
+    Map<String, List<String>> mapProps = new HashMap<>();
+    mapProps.put("foo", Collections.singletonList("bar"));
+
+    Map<String, String> requestInfoMap = new HashMap<>();
+
+    //expectations
+    expect(uriInfo.getQueryParameters()).andReturn(mapQueryParams).anyTimes();
+    expect(mapQueryParams.entrySet()).andReturn(mapProps.entrySet()).anyTimes();
+    expect(resource.getResourceDefinition()).andReturn(resourceDefinition).anyTimes();
+    expect(resourceDefinition.getDeleteDirectives()).andReturn(Collections.singleton("foo"));
+    expect(body.getQueryString()).andReturn(null);
+    expect(body.getRequestInfoProperties()).andReturn(requestInfoMap).anyTimes();
+
+    replay(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);
+
+    //test
+    RequestFactory factory = new RequestFactory();
+    Request request = factory.createRequest(headers, body, uriInfo, Request.Type.DELETE, resource);
+
+    assertEquals(resource, request.getResource());
+    assertEquals(body, request.getBody());
+    assertEquals(Request.Type.DELETE, request.getRequestType());
+    assertEquals("bar", requestInfoMap.get("foo"));
+
+    verify(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);
+  }
+
+  @Test
+  // delete w/o delete directive in URI
+  public void testCreate_Delete__WithoutUriDirective() {
+    HttpHeaders headers = createNiceMock(HttpHeaders.class);
+    UriInfo uriInfo = createNiceMock(UriInfo.class);
+    RequestBody body = createNiceMock(RequestBody.class);
+    ResourceInstance resource = createNiceMock(ResourceInstance.class);
+    ResourceDefinition resourceDefinition = createNiceMock(ResourceDefinition.class);
+
+    @SuppressWarnings("unchecked")
+    MultivaluedMap<String, String> mapQueryParams = createMock(MultivaluedMap.class);
+    Map<String, List<String>> mapProps = new HashMap<>();
+    mapProps.put("foo", Collections.singletonList("bar"));
+
+    Map<String, String> requestInfoMap = new HashMap<>();
+
+    //expectations
+    expect(uriInfo.getQueryParameters()).andReturn(mapQueryParams).anyTimes();
+    expect(mapQueryParams.entrySet()).andReturn(mapProps.entrySet()).anyTimes();
+    expect(resource.getResourceDefinition()).andReturn(resourceDefinition).anyTimes();
+    expect(resourceDefinition.getDeleteDirectives()).andReturn(Collections.<String>emptySet());
+    expect(body.getQueryString()).andReturn(null);
+    expect(body.getRequestInfoProperties()).andReturn(requestInfoMap).anyTimes();
+
+    replay(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);
+
+    //test
+    RequestFactory factory = new RequestFactory();
+    Request request = factory.createRequest(headers, body, uriInfo, Request.Type.DELETE, resource);
+
+    assertEquals(resource, request.getResource());
+    assertEquals(body, request.getBody());
+    assertEquals(Request.Type.DELETE, request.getRequestType());
+    assertEquals(null, requestInfoMap.get("foo"));
+    verify(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);
+  }
+
+  @Test
   // query post : body contains query string
   public void testCreate_Post__BodyQueryParams() {
     HttpHeaders headers = createNiceMock(HttpHeaders.class);
@@ -245,6 +320,44 @@ public class RequestFactoryTest {
     assertEquals(resource, request.getResource());
     assertEquals(body, request.getBody());
     assertEquals(Request.Type.POST, request.getRequestType());
+    assertEquals("bar", requestInfoMap.get("foo"));
+
+    verify(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);
+  }
+
+  @Test
+  // get with create directive in URI
+  public void testCreate_Get__WithUriDirective() {
+    HttpHeaders headers = createMock(HttpHeaders.class);
+    UriInfo uriInfo = createMock(UriInfo.class);
+    RequestBody body = createMock(RequestBody.class);
+    ResourceInstance resource = createMock(ResourceInstance.class);
+    ResourceDefinition resourceDefinition = createMock(ResourceDefinition.class);
+
+    @SuppressWarnings("unchecked")
+    MultivaluedMap<String, String> mapQueryParams = createMock(MultivaluedMap.class);
+    Map<String, List<String>> mapProps = new HashMap<String, List<String>>();
+    mapProps.put("foo", Collections.singletonList("bar"));
+
+    Map<String, String> requestInfoMap = new HashMap<String, String>();
+
+    //expectations
+    expect(uriInfo.getQueryParameters()).andReturn(mapQueryParams).anyTimes();
+    expect(mapQueryParams.entrySet()).andReturn(mapProps.entrySet()).anyTimes();
+    expect(resource.getResourceDefinition()).andReturn(resourceDefinition).anyTimes();
+    expect(resourceDefinition.getReadDirectives()).andReturn(Collections.singleton("foo"));
+    expect(body.getQueryString()).andReturn(null);
+    expect(body.getRequestInfoProperties()).andReturn(requestInfoMap).anyTimes();
+
+    replay(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);
+
+    //test
+    RequestFactory factory = new RequestFactory();
+    Request request = factory.createRequest(headers, body, uriInfo, Request.Type.GET, resource);
+
+    assertEquals(resource, request.getResource());
+    assertEquals(body, request.getBody());
+    assertEquals(Request.Type.GET, request.getRequestType());
     assertEquals("bar", requestInfoMap.get("foo"));
 
     verify(headers, uriInfo, body, resource, mapQueryParams, resourceDefinition);

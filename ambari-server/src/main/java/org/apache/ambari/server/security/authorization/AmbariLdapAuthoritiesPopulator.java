@@ -19,20 +19,15 @@ package org.apache.ambari.server.security.authorization;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
 
 import org.apache.ambari.server.orm.dao.MemberDAO;
 import org.apache.ambari.server.orm.dao.PrivilegeDAO;
 import org.apache.ambari.server.orm.dao.UserDAO;
-import org.apache.ambari.server.orm.entities.MemberEntity;
-import org.apache.ambari.server.orm.entities.PrincipalEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
 import org.apache.ambari.server.orm.entities.UserEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ldap.core.DirContextOperations;
-import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.ldap.userdetails.LdapAuthoritiesPopulator;
 
@@ -48,18 +43,23 @@ public class AmbariLdapAuthoritiesPopulator implements LdapAuthoritiesPopulator 
   UserDAO userDAO;
   MemberDAO memberDAO;
   PrivilegeDAO privilegeDAO;
+  Users users;
 
   @Inject
   public AmbariLdapAuthoritiesPopulator(AuthorizationHelper authorizationHelper,
-                                        UserDAO userDAO, MemberDAO memberDAO, PrivilegeDAO privilegeDAO) {
+                                        UserDAO userDAO, MemberDAO memberDAO, PrivilegeDAO privilegeDAO,
+                                        Users users) {
     this.authorizationHelper = authorizationHelper;
     this.userDAO = userDAO;
     this.memberDAO = memberDAO;
     this.privilegeDAO = privilegeDAO;
+    this.users = users;
   }
 
   @Override
   public Collection<? extends GrantedAuthority> getGrantedAuthorities(DirContextOperations userData, String username) {
+    username = AuthorizationHelper.resolveLoginAliasToUserName(username);
+
     log.info("Get authorities for user " + username + " from local DB");
 
     UserEntity user;
@@ -71,20 +71,10 @@ public class AmbariLdapAuthoritiesPopulator implements LdapAuthoritiesPopulator 
       return Collections.emptyList();
     }
     if(!user.getActive()){
-      throw new DisabledException("User is disabled");
-    }
-    // get all of the privileges for the user
-    List<PrincipalEntity> principalEntities = new LinkedList<PrincipalEntity>();
-
-    principalEntities.add(user.getPrincipal());
-
-    List<MemberEntity> memberEntities = memberDAO.findAllMembersByUser(user);
-
-    for (MemberEntity memberEntity : memberEntities) {
-      principalEntities.add(memberEntity.getGroup().getPrincipal());
+      throw new InvalidUsernamePasswordCombinationException();
     }
 
-    List<PrivilegeEntity> privilegeEntities = privilegeDAO.findAllByPrincipal(principalEntities);
+    Collection<PrivilegeEntity> privilegeEntities = users.getUserPrivileges(user);
 
     return authorizationHelper.convertPrivilegesToAuthorities(privilegeEntities);
   }

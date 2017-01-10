@@ -23,6 +23,8 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 
+import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
+
 import com.google.inject.ScopeAnnotation;
 import com.google.inject.Singleton;
 
@@ -55,4 +57,16 @@ public @interface UpgradeCheck {
    * @return the order, or {@code 1.0f} if not specified.
    */
   float order() default 1.0f;
+
+  /**
+   * Gets the upgrade types for which an upgrade check is required. By default,
+   * a pre-upgrade check needs to be declared in the upgrade pack. This flag
+   * will override that setting.
+   * <p/>
+   * Leaving this blank assumes that the check is not required.
+   *
+   * @return the upgrade types which do not need the check to be explicitely
+   *         defined in the upgrade pack or an empty array for none.
+   */
+  UpgradeType[] required() default {};
 }

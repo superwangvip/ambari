@@ -20,9 +20,8 @@ var App = require('app');
 require('messages');
 require('views/wizard/step3_view');
 var v;
-describe('App.WizardStep3View', function () {
-
-  var view = App.WizardStep3View.create({
+function getView() {
+  return App.WizardStep3View.create({
     monitorStatuses: function () {
     },
     content: [
@@ -46,6 +45,11 @@ describe('App.WizardStep3View', function () {
       return this.get('content');
     }.property('content')
   });
+}
+
+describe('App.WizardStep3View', function () {
+
+  var view = getView();
 
   describe('#watchSelection', function () {
     it('2 of 3 hosts selected', function () {
@@ -240,13 +244,22 @@ describe('App.WizardStep3View', function () {
   ]);
 
   describe('#countCategoryHosts', function () {
+    var _view;
     testCases.forEach(function (test) {
-      it(test.title, function () {
-        view.set('content', test.content);
-        view.countCategoryHosts();
-        view.get('categories').forEach(function (category) {
-          expect(category.get('hostsCount')).to.equal(test.result[category.get('hostsBootStatus')])
-        })
+      describe(test.title, function () {
+
+        beforeEach(function () {
+          _view = getView();
+          _view.set('content', test.content);
+          _view.countCategoryHosts();
+        });
+
+        Object.keys(test.result).forEach(function (categoryName) {
+          it('`' + categoryName + '`', function () {
+            expect(_view.get('categories').findProperty('hostsBootStatus', categoryName).get('hostsCount')).to.be.equal(test.result[categoryName])
+          });
+        });
+
       });
     }, this);
   });
@@ -273,7 +286,7 @@ describe('App.WizardStep3View', function () {
       {
         controller: Em.Object.create({bootHosts: Em.A([])}),
         m: 'Empty hosts list',
-        e: {status: 'alert-warn', linkText: ''}
+        e: {status: 'alert-warning', linkText: ''}
       },
       {
         controller: Em.Object.create({bootHosts: Em.A([{}]), isWarningsLoaded: false}),
@@ -283,17 +296,17 @@ describe('App.WizardStep3View', function () {
       {
         controller: Em.Object.create({bootHosts: Em.A([{}]), isWarningsLoaded: true, isHostHaveWarnings: true}),
         m: 'isWarningsLoaded true, isHostHaveWarnings true',
-        e: {status: 'alert-warn', linkText: Em.I18n.t('installer.step3.warnings.linkText')}
+        e: {status: 'alert-warning', linkText: Em.I18n.t('installer.step3.warnings.linkText')}
       },
       {
         controller: Em.Object.create({bootHosts: Em.A([{}]), isWarningsLoaded: true, repoCategoryWarnings: ['']}),
         m: 'isWarningsLoaded true, repoCategoryWarnings not empty',
-        e: {status: 'alert-warn', linkText: Em.I18n.t('installer.step3.warnings.linkText')}
+        e: {status: 'alert-warning', linkText: Em.I18n.t('installer.step3.warnings.linkText')}
       },
       {
         controller: Em.Object.create({bootHosts: Em.A([{}]), isWarningsLoaded: true, diskCategoryWarnings: ['']}),
         m: 'isWarningsLoaded true, diskCategoryWarnings not empty',
-        e: {status: 'alert-warn', linkText: Em.I18n.t('installer.step3.warnings.linkText')}
+        e: {status: 'alert-warning', linkText: Em.I18n.t('installer.step3.warnings.linkText')}
       },
       {
         controller: Em.Object.create({bootHosts: Em.A([{}]), isWarningsLoaded: true, diskCategoryWarnings: [], repoCategoryWarnings: []}),
@@ -303,7 +316,7 @@ describe('App.WizardStep3View', function () {
       {
         controller: Em.Object.create({bootHosts: Em.A([{bootStatus: 'FAILED'}]), isWarningsLoaded: true, diskCategoryWarnings: [], repoCategoryWarnings: []}),
         m: 'isWarningsLoaded true, diskCategoryWarnings is empty, repoCategoryWarnings is empty, all failed',
-        e: {status: 'alert-warn', linkText: ''}
+        e: {status: 'alert-warning', linkText: ''}
       }
     ]);
 
@@ -352,14 +365,20 @@ describe('App.WizardStep3View', function () {
   });
 
   describe('#hostBootStatusObserver', function() {
-    it('should call "Em.run.once" three times', function() {
+
+    beforeEach(function () {
       sinon.spy(Em.run, 'once');
       view.hostBootStatusObserver();
-      expect(Em.run.once.calledThrice).to.equal(true);
+    });
+
+    afterEach(function () {
+      Em.run.once.restore();
+    });
+
+    it('should call "Em.run.once" three times', function() {
       expect(Em.run.once.firstCall.args[1]).to.equal('countCategoryHosts');
       expect(Em.run.once.secondCall.args[1]).to.equal('filter');
       expect(Em.run.once.thirdCall.args[1]).to.equal('monitorStatuses');
-      Em.run.once.restore();
     });
   });
 
@@ -397,12 +416,19 @@ describe('App.WizardStep3View', function () {
   });
 
   describe('#watchSelectionOnce', function() {
-    it('should call "Em.run.once" one time', function() {
+
+    beforeEach(function () {
       sinon.spy(Em.run, 'once');
       view.watchSelectionOnce();
+    });
+
+    afterEach(function () {
+      Em.run.once.restore();
+    });
+
+    it('should call "Em.run.once" one time', function() {
       expect(Em.run.once.calledOnce).to.equal(true);
       expect(Em.run.once.firstCall.args[1]).to.equal('watchSelection');
-      Em.run.once.restore();
     });
   });
 
@@ -451,9 +477,13 @@ describe('App.WizardStep3View', function () {
         })
       });
       sinon.spy(v.get('controller'), 'loadStep');
+      sinon.stub(v, '$').returns({
+        on: Em.K
+      });
     });
     afterEach(function() {
       v.get('controller').loadStep.restore();
+      v.$.restore();
     });
     it('should call loadStep', function() {
       v.didInsertElement();

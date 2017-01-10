@@ -46,15 +46,26 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
 import org.apache.ambari.server.state.StackId;
 import org.easymock.Capture;
+import org.easymock.EasyMock;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Tests for the configuration resource provider.
  */
 public class ConfigurationResourceProviderTest {
+
+  @BeforeClass
+  public static void setupAuthentication() {
+    // Set authenticated user so that authorization checks will pass
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
+  }
+
   @Test
   public void testCreateResources() throws Exception {
 
@@ -160,8 +171,8 @@ public class ConfigurationResourceProviderTest {
     orResponse.add(new ConfigurationResponse("Cluster100", stackId, "type",
         "tag2", 2L, null, null));
 
-    Capture<Set<ConfigurationRequest>> configRequestCapture1 = new Capture<Set<ConfigurationRequest>>();
-    Capture<Set<ConfigurationRequest>> configRequestCapture2 = new Capture<Set<ConfigurationRequest>>();
+    Capture<Set<ConfigurationRequest>> configRequestCapture1 = EasyMock.newCapture();
+    Capture<Set<ConfigurationRequest>> configRequestCapture2 = EasyMock.newCapture();
 
     // set expectations
     //equals predicate
@@ -328,7 +339,7 @@ public class ConfigurationResourceProviderTest {
     Predicate predicate = new PredicateBuilder().property(
         ConfigurationResourceProvider.CONFIGURATION_CONFIG_TAG_PROPERTY_ID).equals("Configuration100").toPredicate();
     try {
-      provider.deleteResources(predicate);
+      provider.deleteResources(new RequestImpl(null, null, null, null), predicate);
       Assert.fail("Expected an UnsupportedOperationException");
     } catch (UnsupportedOperationException e) {
       // expected

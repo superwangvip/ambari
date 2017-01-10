@@ -23,12 +23,13 @@ module.exports = App.WizardRoute.extend({
   route: '/alerts/add',
 
   enter: function (router) {
-    if (App.isAccessible('ADMIN')) {
+    if (App.isAuthorized('SERVICE.TOGGLE_ALERTS')) {
       Em.run.next(function () {
         var addAlertDefinitionController = router.get('addAlertDefinitionController');
         App.router.get('updateController').set('isWorking', false);
         var popup = App.ModalPopup.show({
-          classNames: ['full-width-modal'],
+          classNames: ['wizard-modal-wrapper'],
+          modalDialogClasses: ['modal-xlg'],
           header: Em.I18n.t('alerts.add.header'),
           bodyClass: App.AddAlertDefinitionView.extend({
             controllerBinding: 'App.router.addAlertDefinitionController'
@@ -48,6 +49,7 @@ module.exports = App.WizardRoute.extend({
             this.hide();
           },
           didInsertElement: function () {
+            this._super();
             this.fitHeight();
           }
         });
@@ -135,7 +137,9 @@ module.exports = App.WizardRoute.extend({
             alwaysCallback: function () {
               controller.get('popup').hide();
               router.transitionTo('main.alerts');
-              location.reload();
+              Em.run.next(function() {
+                location.reload();
+              });
             }
           });
       });

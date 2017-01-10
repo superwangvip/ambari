@@ -18,6 +18,7 @@
 
 var App = require('app');
 var uiEffects = require('utils/ui_effects');
+var numberUtils = require('utils/number_utils');
 
 App.MainDashboardServiceHealthView = Em.View.extend({
   classNameBindings: ["healthStatus", "healthStatusClass"],
@@ -38,7 +39,7 @@ App.MainDashboardServiceHealthView = Em.View.extend({
 
   doBlink: function () {
     var self = this;
-    if (this.get('blink') && (this.get("state") == "inDOM")) {
+    if (this.get('blink') && this.get("state") === "inDOM") {
       uiEffects.pulsate(self.$(), 1000, function(){
         self.doBlink();
       });
@@ -52,9 +53,9 @@ App.MainDashboardServiceHealthView = Em.View.extend({
   healthStatus: function () {
     var isClientOnlyService = App.get('services.clientOnly').contains(this.get('service.serviceName'));
     if (isClientOnlyService) {
-      return 'icon-laptop';
+      return 'glyphicon glyphicon-blackboard';
     }
-    if (this.get('service.passiveState') != 'OFF') {
+    if (this.get('service.passiveState') !== 'OFF') {
       return 'icon-medkit';
     }
     var status = this.get('service.healthStatus');
@@ -84,8 +85,9 @@ App.MainDashboardServiceHealthView = Em.View.extend({
   }.property('service.healthStatus','service.passiveState','service.serviceName'),
 
   healthStatusClass: function () {
-    if (this.get('service.passiveState') != 'OFF' || App.get('services.clientOnly').contains(this.get('service.serviceName')))
+    if (this.get('service.passiveState') !== 'OFF' || App.get('services.clientOnly').contains(this.get('service.serviceName'))) {
       return '';
+    }
     switch (this.get('service.healthStatus')) {
       case 'green':
       case 'green-blinking':
@@ -104,12 +106,12 @@ App.MainDashboardServiceHealthView = Em.View.extend({
 
   didInsertElement: function () {
     this.updateToolTip();
-    App.tooltip($("[rel='HealthTooltip']"));
+    App.tooltip($("[rel='HealthTooltip']"), {html: true});
     this.doBlink(); // check for blink availability
   }
 });
 
-App.ComponentLiveTextView =  Em.View.extend({
+App.ComponentLiveTextView = Em.View.extend({
   classNameBindings: ['color:service-summary-component-red-dead:service-summary-component-green-live'],
   liveComponents: null,
   totalComponents: null,
@@ -119,8 +121,7 @@ App.ComponentLiveTextView =  Em.View.extend({
 });
 
 App.MainDashboardServiceViewWrapper = Em.Mixin.create({
-  layoutName: require('templates/main/service/service'),
-  isFullWidth: false
+  layoutName: require('templates/main/service/service')
 });
 
 App.MainDashboardServiceView = Em.View.extend(App.MainDashboardServiceViewWrapper, {
@@ -135,25 +136,15 @@ App.MainDashboardServiceView = Em.View.extend(App.MainDashboardServiceViewWrappe
       App.tooltip($('[rel=SummaryComponentHealthTooltip]'));
     },
     templateName: require('templates/main/service/info/summary/master_components'),
-    mastersComp: function () {
-      return this.get('parentView.parentView.mastersObj');
-    }.property("parentView.parentView.mastersObj"),
+    mastersComp: Em.computed.alias('parentView.parentView.mastersObj'),
     willDestroyElement: function() {
       $('[rel=SummaryComponentHealthTooltip]').tooltip('destroy');
     }
   }),
 
-  formatUnavailable: function(value){
-    return (value || value == 0) ? value : this.t('services.service.summary.notAvailable');
-  },
+  alertsCount: Em.computed.alias('service.alertsCount'),
 
-  alertsCount: function () {
-    return this.get('service.alertsCount');
-  }.property('service.alertsCount'),
-
-  hasCriticalAlerts: function () {
-    return this.get('service.hasCriticalAlerts');
-  }.property('service.hasCriticalAlerts'),
+  hasCriticalAlerts: Em.computed.alias('service.hasCriticalAlerts'),
 
   isCollapsed: false,
 
@@ -162,9 +153,7 @@ App.MainDashboardServiceView = Em.View.extend(App.MainDashboardServiceViewWrappe
     this.set('isCollapsed', !this.isCollapsed);
   },
 
-  masters: function(){
-    return this.get('service.hostComponents').filterProperty('isMaster', true);
-  }.property('service'),
+  masters: Em.computed.filterBy('service.hostComponents', 'isMaster', true),
 
   clients: function(){
     var clients = this.get('service.hostComponents').filterProperty('isClient', true);
@@ -178,6 +167,32 @@ App.MainDashboardServiceView = Em.View.extend(App.MainDashboardServiceViewWrappe
       title: this.t(template).format(len),
       component: clients.objectAt(0)
     };
-  }.property('service')
+  }.property('service'),
 
+  /**
+   * Check if service component is created
+   * @param componentName
+   * @returns {Boolean}
+   */
+  isServiceComponentCreated: function (componentName) {
+    return App.MasterComponent.find().mapProperty('componentName').concat(
+        App.ClientComponent.find().mapProperty('componentName'),
+        App.SlaveComponent.find().mapProperty('componentName')
+    ).contains(componentName);
+  }
+
+});
+
+App.MainDashboardServiceView.reopenClass({
+  formattedHeap: function (i18nKey, heapUsedKey, heapMaxKey) {
+    return Em.computed(heapUsedKey, heapMaxKey, function () {
+      var memUsed = Em.get(this, heapUsedKey);
+      var memMax = Em.get(this, heapMaxKey);
+      var percent = memMax > 0 ? 100 * memUsed / memMax : 0;
+      return Em.I18n.t(i18nKey).format(
+        numberUtils.bytesToSize(memUsed, 1, 'parseFloat'),
+        numberUtils.bytesToSize(memMax, 1, 'parseFloat'),
+        percent.toFixed(1));
+    });
+  }
 });

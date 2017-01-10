@@ -28,7 +28,8 @@ import java.util.Set;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.EagerSingleton;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
-import org.apache.ambari.server.events.HostAddedEvent;
+import org.apache.ambari.server.events.HostsAddedEvent;
+import org.apache.ambari.server.events.HostsRemovedEvent;
 import org.apache.ambari.server.events.ServiceComponentInstalledEvent;
 import org.apache.ambari.server.events.ServiceInstalledEvent;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
@@ -60,7 +61,7 @@ import com.google.inject.persist.Transactional;
  * {@link org.apache.ambari.server.events.ServiceComponentInstalledEvent}
  * to update {@link org.apache.ambari.server.state.RepositoryVersionState}
  *
- * @see org.apache.ambari.server.state.Cluster#recalculateClusterVersionState(StackId, String)
+ * @see org.apache.ambari.server.state.Cluster#recalculateClusterVersionState(RepositoryVersionEntity)
  */
 @Singleton
 @EagerSingleton
@@ -186,7 +187,7 @@ public class HostVersionOutOfSyncListener {
 
   @Subscribe
   @Transactional
-  public void onHostEvent(HostAddedEvent event) {
+  public void onHostEvent(HostsAddedEvent event) {
     if (LOG.isDebugEnabled()) {
       LOG.debug(event.toString());
     }
@@ -197,17 +198,70 @@ public class HostVersionOutOfSyncListener {
       Collection<ClusterVersionEntity> allClusterVersions = cluster.getAllClusterVersions();
       for (ClusterVersionEntity clusterVersion : allClusterVersions) {
         if (clusterVersion.getState() != RepositoryVersionState.CURRENT) { // Current version is taken care of automatically
-          String hostName = event.getHostName();
-          HostEntity hostEntity = hostDAO.get().findByName(hostName);
           RepositoryVersionEntity repositoryVersion = clusterVersion.getRepositoryVersion();
-          HostVersionEntity missingHostVersion = new HostVersionEntity(hostEntity,
-                  repositoryVersion, RepositoryVersionState.OUT_OF_SYNC);
-          hostVersionDAO.get().create(missingHostVersion);
+          for (String hostName : event.getHostNames()) {
+            HostEntity hostEntity = hostDAO.get().findByName(hostName);
+            HostVersionEntity missingHostVersion = new HostVersionEntity(hostEntity,
+              repositoryVersion, RepositoryVersionState.OUT_OF_SYNC);
+
+            LOG.info("Creating host version for {}, state={}, repo={} (repo_id={})",
+              missingHostVersion.getHostName(), missingHostVersion.getState(),
+              missingHostVersion.getRepositoryVersion().getVersion(), missingHostVersion.getRepositoryVersion().getId());
+            hostVersionDAO.get().create(missingHostVersion);
+          }
           cluster.recalculateClusterVersionState(repositoryVersion);
         }
       }
     } catch (AmbariException e) {
       LOG.error("Can not update hosts about out of sync", e);
+    }
+  }
+
+  /**
+   * Recalculates the cluster repo version state when a host is removed. If
+   * hosts are removed during an upgrade, the remaining hosts will all be in the
+   * {@link RepositoryVersionState#INSTALLED} state, but the cluster will never
+   * transition into this state. This is because when the host is removed, a
+   * recalculation must happen.
+   *
+   * @param event
+   *          the removal event.
+   */
+  @Subscribe
+  @Transactional
+  public void onHostEvent(HostsRemovedEvent event) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(event.toString());
+    }
+
+    try {
+      Set<Cluster> clusters = event.getClusters();
+      for (Cluster cluster : clusters) {
+        Collection<ClusterVersionEntity> allClusterVersions = cluster.getAllClusterVersions();
+
+        for (ClusterVersionEntity clusterVersion : allClusterVersions) {
+          RepositoryVersionState repositoryVersionState = clusterVersion.getState();
+
+          // the CURRENT/INSTALLED states should not be affected by a host
+          // removal - if it's already current then removing a host will never
+          // make it not CURRENT or not INSTALLED
+          switch (repositoryVersionState) {
+            case CURRENT:
+            case INSTALLED:
+              continue;
+            default:
+              break;
+          }
+
+          RepositoryVersionEntity repositoryVersion = clusterVersion.getRepositoryVersion();
+          cluster.recalculateClusterVersionState(repositoryVersion);
+        }
+      }
+
+    } catch (AmbariException ambariException) {
+      LOG.error(
+          "Unable to recalculate the cluster repository version state when a host was removed",
+          ambariException);
     }
   }
 

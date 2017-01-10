@@ -18,7 +18,13 @@
 
 package org.apache.ambari.server.orm.entities;
 
-import javax.persistence.*;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.Table;
+import javax.persistence.TableGenerator;
 
 /**
  * Represents a resource type.
@@ -31,20 +37,6 @@ import javax.persistence.*;
     , initialValue = 4
 )
 public class ResourceTypeEntity {
-
-  /**
-   * Admin resource type id constants.
-   */
-  public static final int AMBARI_RESOURCE_TYPE  = 1;
-  public static final int CLUSTER_RESOURCE_TYPE = 2;
-  public static final int VIEW_RESOURCE_TYPE    = 3;
-
-  /**
-   * Admin resource type name constants.
-   */
-  public static final String AMBARI_RESOURCE_TYPE_NAME  = "AMBARI";
-  public static final String CLUSTER_RESOURCE_TYPE_NAME = "CLUSTER";
-  public static final String VIEW_RESOURCE_TYPE_NAME    = "VIEW";
 
   /**
    * The type id.

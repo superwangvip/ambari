@@ -21,7 +21,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.ambari.server.ServiceNotFoundException;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
 import org.apache.ambari.server.state.Cluster;
@@ -57,22 +56,24 @@ public class ServicesNamenodeHighAvailabilityCheckTest {
       }
     };
     Configuration config = Mockito.mock(Configuration.class);
-    Mockito.when(config.getRollingUpgradeMinStack()).thenReturn("HDP-2.2");
-    Mockito.when(config.getRollingUpgradeMaxStack()).thenReturn("");
     servicesNamenodeHighAvailabilityCheck.config = config;
   }
 
   @Test
   public void testIsApplicable() throws Exception {
     final Cluster cluster = Mockito.mock(Cluster.class);
+    final Map<String, Service> services = new HashMap<>();
+    final Service service = Mockito.mock(Service.class);
+
+    services.put("HDFS", service);
+
+    Mockito.when(cluster.getServices()).thenReturn(services);
     Mockito.when(cluster.getClusterId()).thenReturn(1L);
     Mockito.when(clusters.getCluster("cluster")).thenReturn(cluster);
 
-    final Service service = Mockito.mock(Service.class);
-    Mockito.when(cluster.getService("HDFS")).thenReturn(service);
     Assert.assertTrue(servicesNamenodeHighAvailabilityCheck.isApplicable(new PrereqCheckRequest("cluster")));
 
-    Mockito.when(cluster.getService("HDFS")).thenThrow(new ServiceNotFoundException("no", "service"));
+    services.remove("HDFS");
     Assert.assertFalse(servicesNamenodeHighAvailabilityCheck.isApplicable(new PrereqCheckRequest("cluster")));
   }
 
@@ -94,7 +95,7 @@ public class ServicesNamenodeHighAvailabilityCheckTest {
     servicesNamenodeHighAvailabilityCheck.perform(check, new PrereqCheckRequest("cluster"));
     Assert.assertEquals(PrereqCheckStatus.FAIL, check.getStatus());
 
-    properties.put("dfs.nameservices", "anything");
+    properties.put("dfs.internal.nameservices", "anything");
     check = new PrerequisiteCheck(null, null);
     servicesNamenodeHighAvailabilityCheck.perform(check, new PrereqCheckRequest("cluster"));
     Assert.assertEquals(PrereqCheckStatus.PASS, check.getStatus());

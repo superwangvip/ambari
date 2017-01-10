@@ -22,7 +22,7 @@ describe('App.ProgressBarView', function () {
   var view = App.ProgressBarView.create();
 
   describe("#progressWidth", function () {
-    it("", function () {
+    it("depends on `progress`", function () {
       view.set('progress', 1);
       view.propertyDidChange('progressWidth');
       expect(view.get('progressWidth')).to.equal('width:1%;');
@@ -33,35 +33,35 @@ describe('App.ProgressBarView', function () {
     var testCases = [
       {
         status: 'FAILED',
-        result: 'progress-danger'
+        result: 'progress-bar-danger'
       },
       {
         status: 'ABORTED',
-        result: 'progress-warning'
+        result: 'progress-bar-warning'
       },
       {
         status: 'TIMED_OUT',
-        result: 'progress-warning'
+        result: 'progress-bar-warning'
       },
       {
         status: 'COMPLETED',
-        result: 'progress-success'
+        result: 'progress-bar-success'
       },
       {
         status: 'QUEUED',
-        result: 'progress-info active progress-striped'
+        result: 'progress-bar-info active progress-bar-striped'
       },
       {
         status: 'PENDING',
-        result: 'progress-info active progress-striped'
+        result: 'progress-bar-info active progress-bar-striped'
       },
       {
         status: 'IN_PROGRESS',
-        result: 'progress-info active progress-striped'
+        result: 'progress-bar-info active progress-bar-striped'
       },
       {
         status: null,
-        result: 'progress-info'
+        result: 'progress-bar-info'
       }
     ];
     testCases.forEach(function (test) {

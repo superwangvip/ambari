@@ -20,12 +20,11 @@ limitations under the License.
 
 from unittest import TestCase
 import unittest
-import socket
-import os
-import time
+import tempfile
 from mock.mock import patch, MagicMock, call
 import StringIO
 import sys
+import multiprocessing
 from ambari_agent.RecoveryManager import RecoveryManager
 
 
@@ -35,7 +34,6 @@ with patch("platform.linux_distribution", return_value = ('Suse','11','Final')):
   from ambari_agent.ActionQueue import ActionQueue
   from ambari_agent.LiveStatus import LiveStatus
   from ambari_agent import AmbariConfig
-  from ambari_agent.StackVersionsFileHandler import StackVersionsFileHandler
   from ambari_agent.HostInfo import HostInfoLinux
 
 from only_for_platform import not_for_platform, PLATFORM_WINDOWS
@@ -60,6 +58,7 @@ class TestHeartbeat(TestCase):
     config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
     config.set('agent', 'tolerate_download_failures', "true")
     dummy_controller = MagicMock()
+    dummy_controller.recovery_manager.recovery_timestamp = -1
     actionQueue = ActionQueue(config, dummy_controller)
     heartbeat = Heartbeat(actionQueue)
     result = heartbeat.build(100)
@@ -69,15 +68,16 @@ class TestHeartbeat(TestCase):
     self.assertEquals(result['componentStatus'] is not None, True, "Heartbeat should contain componentStatus")
     self.assertEquals(result['reports'] is not None, True, "Heartbeat should contain reports")
     self.assertEquals(result['timestamp'] >= 1353679373880L, True)
+    self.assertEquals(result['recoveryTimestamp'], -1)
     self.assertEquals(len(result['nodeStatus']), 2)
     self.assertEquals(result['nodeStatus']['cause'], "NONE")
     self.assertEquals(result['nodeStatus']['status'], "HEALTHY")
     # result may or may NOT have an agentEnv structure in it
-    self.assertEquals((len(result) is 6) or (len(result) is 7), True)
+    self.assertEquals((len(result) is 7) or (len(result) is 8), True)
     self.assertEquals(not heartbeat.reports, True, "Heartbeat should not contain task in progress")
 
   @patch("subprocess.Popen")
-  @patch.object(Hardware, "_chk_mount", new = MagicMock(return_value=True))
+  @patch.object(Hardware, "_chk_writable_mount", new = MagicMock(return_value=True))
   @patch.object(ActionQueue, "result")
   @patch.object(HostInfoLinux, "register")
   def test_no_mapping(self, register_mock, result_mock, Popen_mock):
@@ -101,11 +101,11 @@ class TestHeartbeat(TestCase):
     dummy_controller = MagicMock()
     actionQueue = ActionQueue(config, dummy_controller)
     heartbeat = Heartbeat(actionQueue)
-    hb = heartbeat.build(id = 10, state_interval=1, componentsMapped=True)
+    hb = heartbeat.build(id = 10, add_state=True, componentsMapped=True)
     self.assertEqual(register_mock.call_args_list[0][0][1], True)
     register_mock.reset_mock()
 
-    hb = heartbeat.build(id = 0, state_interval=1, componentsMapped=True)
+    hb = heartbeat.build(id = 0, add_state=True, componentsMapped=True)
     self.assertEqual(register_mock.call_args_list[0][0][1], False)
 
   @patch.object(ActionQueue, "result")
@@ -115,7 +115,7 @@ class TestHeartbeat(TestCase):
     config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
     config.set('agent', 'tolerate_download_failures', "true")
     dummy_controller = MagicMock()
-    dummy_controller.recovery_manager = RecoveryManager()
+    dummy_controller.recovery_manager = RecoveryManager(tempfile.mktemp())
     actionQueue = ActionQueue(config, dummy_controller)
     result_mock.return_value = {
       'reports': [{'status': 'IN_PROGRESS',
@@ -177,6 +177,7 @@ class TestHeartbeat(TestCase):
                   {'status': 'HEALTHY',
                    'cause': 'NONE'},
                 'recoveryReport': {'summary': 'DISABLED'},
+                'recoveryTimestamp': -1,
                 'timestamp': 'timestamp', 'hostname': 'hostname',
                 'responseId': 10, 'reports': [
       {'status': 'IN_PROGRESS', 'roleCommand': u'INSTALL',
@@ -202,15 +203,17 @@ class TestHeartbeat(TestCase):
     self.assertEquals(hb, expected)
 
   @patch("subprocess.Popen")
-  @patch.object(Hardware, "_chk_mount", new = MagicMock(return_value=True))
+  @patch.object(Hardware, "_chk_writable_mount", new = MagicMock(return_value=True))
   @patch.object(HostInfoLinux, 'register')
   def test_heartbeat_no_host_check_cmd_in_queue(self, register_mock, Popen_mock):
     config = AmbariConfig.AmbariConfig()
     config.set('agent', 'prefix', 'tmp')
     config.set('agent', 'cache_dir', "/var/lib/ambari-agent/cache")
     config.set('agent', 'tolerate_download_failures', "true")
+
     dummy_controller = MagicMock()
     actionQueue = ActionQueue(config, dummy_controller)
+    actionQueue.statusCommandQueue = multiprocessing.Queue()
     statusCommand = {
       "serviceName" : 'HDFS',
       "commandType" : "STATUS_COMMAND",
@@ -230,7 +233,7 @@ class TestHeartbeat(TestCase):
 
 
   @patch("subprocess.Popen")
-  @patch.object(Hardware, "_chk_mount", new = MagicMock(return_value=True))
+  @patch.object(Hardware, "_chk_writable_mount", new = MagicMock(return_value=True))
   @patch.object(HostInfoLinux, 'register')
   def test_heartbeat_host_check_no_cmd(self, register_mock, Popen_mock):
     config = AmbariConfig.AmbariConfig()

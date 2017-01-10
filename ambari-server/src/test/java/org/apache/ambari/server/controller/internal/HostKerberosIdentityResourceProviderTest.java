@@ -18,6 +18,18 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import static org.easymock.EasyMock.expect;
+
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.KerberosHelper;
 import org.apache.ambari.server.controller.spi.Predicate;
@@ -37,18 +49,6 @@ import org.apache.ambari.server.state.kerberos.KerberosPrincipalType;
 import org.easymock.EasyMockSupport;
 import org.junit.Assert;
 import org.junit.Test;
-
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
-
-import static org.easymock.EasyMock.expect;
 
 
 /**
@@ -124,7 +124,7 @@ public class HostKerberosIdentityResourceProviderTest extends EasyMockSupport {
         .property(HostKerberosIdentityResourceProvider.KERBEROS_IDENTITY_PRINCIPAL_NAME_PROPERTY_ID)
         .equals("principal@REALM").toPredicate();
 
-    provider.deleteResources(predicate);
+    provider.deleteResources(new RequestImpl(null, null, null, null), predicate);
   }
 
 

@@ -18,25 +18,35 @@
 
 package org.apache.ambari.server.controller.internal;
 
-import org.apache.ambari.server.controller.AmbariManagementController;
-import org.apache.ambari.server.controller.spi.Request;
-import org.apache.ambari.server.controller.spi.Resource;
-import org.apache.ambari.server.controller.utilities.PropertyHelper;
-import org.junit.Assert;
-import org.junit.Test;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
 
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static org.easymock.EasyMock.createMock;
-import static org.easymock.EasyMock.createNiceMock;
+import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.controller.spi.Request;
+import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
+import org.junit.Assert;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * LdapSyncEventResourceProvider tests.
  */
 public class LdapSyncEventResourceProviderTest {
+
+  @BeforeClass
+  public static void setupAuthentication() {
+    // Set authenticated user so that authorization checks will pass
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator());
+  }
+
   @Test
   public void testCreateResources() throws Exception {
     AmbariManagementController amc = createMock(AmbariManagementController.class);
@@ -112,7 +122,7 @@ public class LdapSyncEventResourceProviderTest {
     Set<Resource> resources = provider.getResources(PropertyHelper.getReadRequest(), null);
     Assert.assertEquals(1, resources.size());
 
-    provider.deleteResources(null);
+    provider.deleteResources(new RequestImpl(null, null, null, null), null);
 
     resources = provider.getResources(PropertyHelper.getReadRequest(), null);
     Assert.assertEquals(0, resources.size());

@@ -31,8 +31,8 @@ origin_exists = os.path.exists
   side_effect=lambda *args: origin_exists(args[0])
   if args[0][-2:] == "j2" else True))
 
-@patch.object(Script, "is_hdp_stack_greater_or_equal", new = MagicMock(return_value=False))
-@patch.object(functions, "get_hdp_version", new = MagicMock(return_value="2.0.0.0-1234"))
+@patch.object(Script, "is_stack_greater_or_equal", new = MagicMock(return_value=False))
+@patch.object(functions, "get_stack_version", new = MagicMock(return_value="2.0.0.0-1234"))
 class TestResourceManager(RMFTestCase):
   COMMON_SERVICES_PACKAGE_DIR = "YARN/2.1.0.2.0/package"
   STACK_VERSION = "2.0.6"
@@ -42,7 +42,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="configure",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_default()
@@ -53,24 +53,23 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="start",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assert_configure_default()
-
+    
     self.assertResourceCalled('File', '/var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
-                              action = ['delete'],
-                              not_if = 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1',
-                              )
+        action = ['delete'],
+        not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
+    )
     self.assertResourceCalled('Execute', 'ulimit -c unlimited; export HADOOP_LIBEXEC_DIR=/usr/lib/hadoop/libexec && /usr/lib/hadoop-yarn/sbin/yarn-daemon.sh --config /etc/hadoop/conf start resourcemanager',
-                              not_if = 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1',
-                              user = 'yarn',
-                              )
-    self.assertResourceCalled('Execute', 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1',
-        not_if = 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1',
-        tries = 5,
+        not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
         user = 'yarn',
+    )
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
+        not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
+        tries = 5,
         try_sleep = 1,
     )
     self.assertNoMoreResources()
@@ -80,7 +79,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="stop",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
@@ -94,7 +93,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="configure",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assert_configure_secured()
@@ -104,23 +103,23 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="start",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
     self.assert_configure_secured()
 
-    pid_check_cmd = 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1'
     self.assertResourceCalled('File', '/var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
-                              not_if = pid_check_cmd,
-                              action=['delete'])
+        action = ['delete'],
+        not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
+    )
     self.assertResourceCalled('Execute', 'ulimit -c unlimited; export HADOOP_LIBEXEC_DIR=/usr/lib/hadoop/libexec && /usr/lib/hadoop-yarn/sbin/yarn-daemon.sh --config /etc/hadoop/conf start resourcemanager',
-                              not_if=pid_check_cmd,
-                              user='yarn')
-    self.assertResourceCalled('Execute', 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1',
-        not_if = 'ls /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid >/dev/null 2>&1 && ps -p `cat /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid` >/dev/null 2>&1',
-        tries = 5,
+        not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
         user = 'yarn',
+    )
+    self.assertResourceCalled('Execute', 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
+        not_if = 'ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E test -f /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid && ambari-sudo.sh [RMF_ENV_PLACEHOLDER] -H -E pgrep -F /var/run/hadoop-yarn/yarn/yarn-yarn-resourcemanager.pid',
+        tries = 5,
         try_sleep = 1,
     )
     self.assertNoMoreResources()
@@ -130,7 +129,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="stop",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
@@ -144,7 +143,7 @@ class TestResourceManager(RMFTestCase):
                        classname = "Resourcemanager",
                        command = "decommission",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/yarn.exclude',
@@ -163,7 +162,7 @@ class TestResourceManager(RMFTestCase):
                        classname = "Resourcemanager",
                        command = "decommission",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/yarn.exclude',
@@ -179,52 +178,65 @@ class TestResourceManager(RMFTestCase):
     self.assertNoMoreResources()
 
   def assert_configure_default(self):
-
+    self.assertResourceCalled('Directory', '/etc/hadoop/conf',
+        mode = 0755,
+        create_parents = True,
+        cd_access = 'a',
+    )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/yarn.exclude',
+        owner = 'yarn',
+        group = 'hadoop',
+    )
+    self.assertResourceCalled('File', '/var/log/hadoop-yarn/yarn/hadoop-mapreduce.jobsummary.log',
+      owner = 'yarn',
+      group = 'hadoop',
+    )
     self.assertResourceCalled('Directory', '/var/run/hadoop-yarn',
       owner = 'yarn',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/run/hadoop-yarn/yarn',
       owner = 'yarn',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn/yarn',
       owner = 'yarn',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/run/hadoop-mapreduce',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/run/hadoop-mapreduce/mapred',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-mapreduce',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-mapreduce/mapred',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
       owner = 'yarn',
-      recursive = True,
+      group = 'hadoop',
+      create_parents = True,
       ignore_failures = True,
       cd_access = 'a',
     )
@@ -268,14 +280,6 @@ class TestResourceManager(RMFTestCase):
       configurations = self.getConfig()['configurations']['capacity-scheduler'],
       configuration_attributes = self.getConfig()['configuration_attributes']['capacity-scheduler']
     )
-    self.assertResourceCalled('File', '/var/log/hadoop-yarn/yarn/hadoop-mapreduce.jobsummary.log',
-      owner = 'yarn',
-      group = 'hadoop',
-    )
-    self.assertResourceCalled('File', '/etc/hadoop/conf/yarn.exclude',
-      owner = 'yarn',
-      group = 'hadoop',
-    )
     self.assertResourceCalled('File', '/etc/security/limits.d/yarn.conf',
       content = Template('yarn.conf.j2'),
       mode = 0644,
@@ -301,12 +305,13 @@ class TestResourceManager(RMFTestCase):
                               )
     self.assertResourceCalled('Directory', '/cgroups_test/cpu',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
                               cd_access="a"
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/mapred-env.sh',
                               content = InlineTemplate(self.getConfig()['configurations']['mapred-env']['content']),
+                              mode = 0755,
                               owner = 'hdfs',
                               )
     self.assertResourceCalled('File', '/etc/hadoop/conf/taskcontroller.cfg',
@@ -341,52 +346,65 @@ class TestResourceManager(RMFTestCase):
                               )
 
   def assert_configure_secured(self):
-
+    self.assertResourceCalled('Directory', '/etc/hadoop/conf',
+        mode = 0755,
+        create_parents = True,
+        cd_access = 'a',
+    )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/yarn.exclude',
+        owner = 'yarn',
+        group = 'hadoop',
+    )
+    self.assertResourceCalled('File', '/var/log/hadoop-yarn/yarn/hadoop-mapreduce.jobsummary.log',
+      owner = 'yarn',
+      group = 'hadoop',
+    )
     self.assertResourceCalled('Directory', '/var/run/hadoop-yarn',
       owner = 'yarn',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/run/hadoop-yarn/yarn',
       owner = 'yarn',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn/yarn',
       owner = 'yarn',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/run/hadoop-mapreduce',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/run/hadoop-mapreduce/mapred',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-mapreduce',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-mapreduce/mapred',
       owner = 'mapred',
       group = 'hadoop',
-      recursive = True,
+      create_parents = True,
       cd_access = 'a',
     )
     self.assertResourceCalled('Directory', '/var/log/hadoop-yarn',
       owner = 'yarn',
-      recursive = True,
+      group = 'hadoop',
+      create_parents = True,
       ignore_failures = True,
       cd_access = 'a',
     )
@@ -430,20 +448,6 @@ class TestResourceManager(RMFTestCase):
       configurations = self.getConfig()['configurations']['capacity-scheduler'],
       configuration_attributes = self.getConfig()['configuration_attributes']['capacity-scheduler']
     )
-    self.assertResourceCalled('File', '/var/log/hadoop-yarn/yarn/hadoop-mapreduce.jobsummary.log',
-      owner = 'yarn',
-      group = 'hadoop',
-    )
-    self.assertResourceCalled('Execute', 'yarn resourcemanager -format-state-store',
-                              user = 'yarn',
-    )
-    self.assertResourceCalled('File', '/var/lib/hadoop-yarn/rm_security_enabled',
-                              content = 'Marker file to track first start after enabling/disabling security. During first start ResourceManager state store is formatted',
-    )
-    self.assertResourceCalled('File', '/etc/hadoop/conf/yarn.exclude',
-      owner = 'yarn',
-      group = 'hadoop',
-    )
     self.assertResourceCalled('File', '/etc/security/limits.d/yarn.conf',
       content = Template('yarn.conf.j2'),
       mode = 0644,
@@ -453,7 +457,8 @@ class TestResourceManager(RMFTestCase):
       mode = 0644,
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/yarn-env.sh',
-      content = InlineTemplate(self.getConfig()['configurations']['yarn-env']['content']),
+      content = InlineTemplate(self.getConfig()['configurations']['yarn-env']['content'] +
+                               '\nYARN_OPTS="$YARN_OPTS -Dzookeeper.sasl.client=true -Dzookeeper.sasl.client.username=zookeeper -Djava.security.auth.login.config=/usr/hdp/current/hadoop-client/conf/yarn_jaas.conf -Dzookeeper.sasl.clientconfig=Client"\n'),
       owner = 'yarn',
       group = 'hadoop',
       mode = 0755,
@@ -469,12 +474,13 @@ class TestResourceManager(RMFTestCase):
     )
     self.assertResourceCalled('Directory', '/cgroups_test/cpu',
                               group = 'hadoop',
-                              recursive = True,
+                              create_parents = True,
                               mode = 0755,
                               cd_access="a"
     )
     self.assertResourceCalled('File', '/etc/hadoop/conf/mapred-env.sh',
                               content = InlineTemplate(self.getConfig()['configurations']['mapred-env']['content']),
+                              mode = 0755,
                               owner = 'root',
                               )
     self.assertResourceCalled('File', '/usr/lib/hadoop/sbin/task-controller',
@@ -487,6 +493,11 @@ class TestResourceManager(RMFTestCase):
                               owner = 'root',
                               group = 'hadoop',
                               mode = 0644,
+                              )
+    self.assertResourceCalled('File', '/etc/hadoop/conf/yarn_jaas.conf',
+                              content = Template('yarn_jaas.conf.j2'),
+                              owner = 'yarn',
+                              group = 'hadoop',
                               )
     self.assertResourceCalled('XmlConfig', 'mapred-site.xml',
                               owner = 'mapred',
@@ -549,7 +560,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="security_status",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
 
@@ -572,7 +583,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="security_status",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
           )
     except:
@@ -589,7 +600,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="security_status",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityIssuesFound": "Keytab file or principal are not set property."})
@@ -608,7 +619,7 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="security_status",
                        config_file="secured.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
@@ -618,12 +629,12 @@ class TestResourceManager(RMFTestCase):
                        classname="Resourcemanager",
                        command="security_status",
                        config_file="default.json",
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES
     )
     put_structured_out_mock.assert_called_with({"securityState": "UNSECURED"})
 
-  def test_pre_rolling_restart_23(self):
+  def test_pre_upgrade_restart_23(self):
     config_file = self.get_src_folder()+"/test/python/stacks/2.0.6/configs/default.json"
     with open(config_file, "r") as f:
       json_content = json.load(f)
@@ -633,21 +644,21 @@ class TestResourceManager(RMFTestCase):
     mocks_dict = {}
     self.executeScript(self.COMMON_SERVICES_PACKAGE_DIR + "/scripts/resourcemanager.py",
                        classname = "Resourcemanager",
-                       command = "pre_rolling_restart",
+                       command = "pre_upgrade_restart",
                        config_dict = json_content,
-                       hdp_stack_version = self.STACK_VERSION,
+                       stack_version = self.STACK_VERSION,
                        target = RMFTestCase.TARGET_COMMON_SERVICES,
-                       call_mocks = [(0, None), (0, None)],
+                       call_mocks = [(0, None, ''), (0, None)],
                        mocks_dict = mocks_dict)
 
-    self.assertResourceCalled('Execute', ('hdp-select', 'set', 'hadoop-yarn-resourcemanager', version), sudo=True)
+    self.assertResourceCalledIgnoreEarlier('Execute', ('ambari-python-wrap', '/usr/bin/hdp-select', 'set', 'hadoop-yarn-resourcemanager', version), sudo=True)
     self.assertNoMoreResources()
 
     self.assertEquals(1, mocks_dict['call'].call_count)
     self.assertEquals(1, mocks_dict['checked_call'].call_count)
     self.assertEquals(
-      ('conf-select', 'set-conf-dir', '--package', 'hadoop', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'set-conf-dir', '--package', 'hadoop', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['checked_call'].call_args_list[0][0][0])
     self.assertEquals(
-      ('conf-select', 'create-conf-dir', '--package', 'hadoop', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
+      ('ambari-python-wrap', '/usr/bin/conf-select', 'create-conf-dir', '--package', 'hadoop', '--stack-version', '2.3.0.0-1234', '--conf-version', '0'),
        mocks_dict['call'].call_args_list[0][0][0])

@@ -19,9 +19,9 @@
 package org.apache.ambari.server.api.services;
 
 
-import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.api.util.TreeNode;
 import org.apache.ambari.server.api.util.TreeNodeImpl;
+import org.apache.ambari.server.controller.spi.Resource;
 
 
 /**
@@ -38,6 +38,11 @@ public class ResultImpl implements Result {
    * Result status.
    */
   private ResultStatus m_status;
+
+  /**
+   * Result metadata.
+   */
+  private ResultMetadata m_resultMetadata;
 
   /**
    * Tree structure which holds the results
@@ -82,5 +87,14 @@ public class ResultImpl implements Result {
   public void setResultStatus(ResultStatus status) {
     m_status = status;
   }
+
+  public void setResultMetadata(ResultMetadata resultMetadata) {
+    m_resultMetadata = resultMetadata;
+  }
+
+  public ResultMetadata getResultMetadata() {
+    return m_resultMetadata;
+  }
+
 }
 

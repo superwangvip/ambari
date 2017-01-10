@@ -130,14 +130,19 @@ doConfigUpdate () {
       if [ "`echo $line | grep -E "},?$"`" ]; then
         ## Properties ended
         ## Add property
-        # Remove the last ,
         propLen=${#newProperties}
         lastChar=${newProperties:$propLen-1:1}
-        if [ "$lastChar" == "," ]; then
-          newProperties=${newProperties:0:$propLen-1}
-        fi
-        if [ "$MODE" == "set" ]; then
-          newProperties="$newProperties, \"$CONFIGKEY\" : \"$CONFIGVALUE\" "
+        if [ "$MODE" == "delete" ]; then
+          # Remove the last ,
+          if [ "$lastChar" == "," ]; then
+            newProperties=${newProperties:0:$propLen-1}
+          fi
+        elif [ "$MODE" == "set" ]; then
+          # Add comma if required
+          if [ "$lastChar" != ","  -a "$lastChar" != "{" ]; then
+            newProperties="$newProperties,"
+          fi
+          newProperties="$newProperties \"$CONFIGKEY\" : \"$CONFIGVALUE\""
         fi
         newProperties=$newProperties$line
         propertiesStarted=0
@@ -154,11 +159,15 @@ doConfigUpdate () {
     elif [ "`echo $line | grep -E "},?$"`" ]; then
         currentLevel=$((currentLevel-1))
         if [ "$currentLevel" == 1 ]; then
+          # if no properties in current config
+          if [ "$MODE" == "set" -a -z "$newProperties" ]; then
+            newProperties="\"properties\" : { \"$CONFIGKEY\" : \"$CONFIGVALUE\"}"
+          fi
           newTag=`date "+%s%N"`
           newTag="version${newTag}"
           finalJson="{ \"Clusters\": { \"desired_config\": {\"type\": \"$SITE\", \"tag\":\"$newTag\", $newProperties}}}"
           newFile="doSet_$newTag.json"
-          echo "########## PUTting json into: $newFile"
+          echo "########## Putting json into: $newFile"
           echo $finalJson > $newFile
           curl -k -u $USERID:$PASSWD -X PUT -H "X-Requested-By: ambari" "$AMBARIURL/api/v1/clusters/$CLUSTER" --data @$newFile
           currentSiteTag

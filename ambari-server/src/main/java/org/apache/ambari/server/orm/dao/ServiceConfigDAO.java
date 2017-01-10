@@ -18,7 +18,6 @@
 
 package org.apache.ambari.server.orm.dao;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -32,17 +31,16 @@ import javax.persistence.criteria.CriteriaQuery;
 import javax.persistence.criteria.Root;
 
 import org.apache.ambari.server.orm.RequiresSession;
-import org.apache.ambari.server.orm.cache.ConfigGroupHostMapping;
 import org.apache.ambari.server.orm.entities.ServiceConfigEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.state.StackId;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.Predicate;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
 import com.google.inject.persist.Transactional;
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.Predicate;
 
 @Singleton
 public class ServiceConfigDAO {
@@ -66,6 +64,14 @@ public class ServiceConfigDAO {
         createQuery("SELECT scv FROM ServiceConfigEntity scv " +
             "WHERE scv.serviceName=?1 AND scv.version=?2", ServiceConfigEntity.class);
     return daoUtils.selectOne(query, serviceName, version);
+  }
+  
+  @RequiresSession
+  public List<ServiceConfigEntity> findByService(Long clusterId, String serviceName) {
+    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().
+        createQuery("SELECT scv FROM ServiceConfigEntity scv " +
+            "WHERE scv.clusterId=?1 AND scv.serviceName=?2", ServiceConfigEntity.class);
+    return daoUtils.selectList(query, clusterId, serviceName);
   }
 
   @RequiresSession
@@ -109,14 +115,33 @@ public class ServiceConfigDAO {
 
   @RequiresSession
   public List<ServiceConfigEntity> getLastServiceConfigs(Long clusterId) {
-    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().
-      createQuery("SELECT scv FROM ServiceConfigEntity scv " +
-        "WHERE scv.clusterId = ?1 AND scv.createTimestamp = (" +
-        "SELECT MAX(scv2.createTimestamp) FROM ServiceConfigEntity scv2 " +
-        "WHERE scv2.serviceName = scv.serviceName AND scv2.clusterId = ?1 AND scv2.groupId IS NULL)",
+    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().createNamedQuery(
+      "ServiceConfigEntity.findLatestServiceConfigsByCluster",
+      ServiceConfigEntity.class);
+
+    query.setParameter("clusterId", clusterId);
+
+    return daoUtils.selectList(query);
+  }
+
+  /**
+   *  Gets the latest service config versions of all config groups for a service
+   * @param clusterId
+   *          the cluster (not {@code null}).
+   * @param serviceName
+   *          Name of the service whose latest service config versions needs to be retrieved .
+   * @return all service configurations for the cluster and service.
+   */
+  @RequiresSession
+  public List<ServiceConfigEntity> getLastServiceConfigsForService(Long clusterId, String serviceName) {
+    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().createNamedQuery(
+        "ServiceConfigEntity.findLatestServiceConfigsByService",
         ServiceConfigEntity.class);
 
-    return daoUtils.selectList(query, clusterId);
+    query.setParameter("clusterId", clusterId);
+    query.setParameter("serviceName", serviceName);
+
+    return daoUtils.selectList(query);
   }
 
   /**
@@ -201,12 +226,12 @@ public class ServiceConfigDAO {
    */
   @RequiresSession
   public List<ServiceConfigEntity> getServiceConfigs(Long clusterId) {
-    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get()
-      .createQuery("SELECT scv FROM ServiceConfigEntity scv " +
-        "WHERE scv.clusterId=?1 " +
-        "ORDER BY scv.createTimestamp DESC", ServiceConfigEntity.class);
+    TypedQuery<ServiceConfigEntity> query = entityManagerProvider.get().createNamedQuery(
+        "ServiceConfigEntity.findAll", ServiceConfigEntity.class);
 
-    return daoUtils.selectList(query, clusterId);
+    query.setParameter("clusterId", clusterId);
+
+    return daoUtils.selectList(query);
   }
 
   /**

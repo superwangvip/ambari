@@ -24,9 +24,10 @@ App.MainHostAlertsView = App.TableView.extend({
   templateName: require('templates/main/host/host_alerts'),
 
   content: function () {
-    var criticalAlerts = [];
-    var warningAlerts = [];
-    var otherAlerts = [];
+    var criticalAlerts = [],
+      warningAlerts = [],
+      okAlerts = [],
+      otherAlerts = [];
     var content = this.get('controller.content');
     if (content) {
       content.forEach(function (alert) {
@@ -37,20 +38,34 @@ App.MainHostAlertsView = App.TableView.extend({
           case 'WARNING':
             warningAlerts.push(alert);
             break;
+          case 'OK':
+            okAlerts.push(alert);
+            break;
           default:
             otherAlerts.push(alert);
         }
       });
-      return [].concat(criticalAlerts, warningAlerts, otherAlerts);
-    } else {
-      return [];
+      return [].concat(criticalAlerts, warningAlerts, okAlerts, otherAlerts);
     }
-  }.property('controller.content.@each'),
+    return [];
+  }.property('controller.content.[]'),
 
   willInsertElement: function () {
     var hostName = this.get('parentView.controller.content.hostName');
     App.router.get('mainAlertInstancesController').loadAlertInstancesByHost(hostName);
     App.router.set('mainAlertInstancesController.isUpdating', true);
+
+    // on load alters should be sorted by state
+    var controllerName = this.get('controller.name'),
+      savedSortConditions = App.db.getSortingStatuses(controllerName) || [];
+    if (savedSortConditions.everyProperty('status', 'sorting')) {
+      savedSortConditions.push({
+        name: "state",
+        status: "sorting_asc"
+      });
+      App.db.setSortingStatuses(controllerName, savedSortConditions);
+    }
+
     this._super();
   },
 
@@ -61,9 +76,7 @@ App.MainHostAlertsView = App.TableView.extend({
   /**
    * @type {number}
    */
-  totalCount: function () {
-    return this.get('content.length');
-  }.property('content.length'),
+  totalCount: Em.computed.alias('content.length'),
 
   colPropAssoc: ['', 'serviceName', 'label', 'latestTimestamp', 'state', 'text'],
 
@@ -202,31 +215,23 @@ App.MainHostAlertsView = App.TableView.extend({
    * Filtered number of all content number information displayed on the page footer bar
    * @returns {String}
    */
-  filteredContentInfo: function () {
-    return this.t('alerts.filters.filteredAlertsInfo').format(this.get('filteredCount'), this.get('totalCount'));
-  }.property('filteredCount', 'totalCount'),
+  filteredContentInfo: Em.computed.i18nFormat('alerts.filters.filteredAlertsInfo', 'filteredCount', 'totalCount'),
 
   /**
    * Determines how display "back"-link - as link or text
    * @type {string}
    */
   paginationLeftClass: function () {
-    if (this.get("startIndex") > 1) {
-      return "paginate_previous";
-    }
-    return "paginate_disabled_previous";
-  }.property("startIndex", 'filteredCount'),
+    return this.get('startIndex') > 1 ? 'paginate_previous' : 'paginate_disabled_previous';
+  }.property('startIndex', 'filteredCount'),
 
   /**
    * Determines how display "next"-link - as link or text
    * @type {string}
    */
   paginationRightClass: function () {
-    if ((this.get("endIndex")) < this.get("filteredCount")) {
-      return "paginate_next";
-    }
-    return "paginate_disabled_next";
-  }.property("endIndex", 'filteredCount'),
+    return this.get('endIndex') < this.get('filteredCount') ? 'paginate_next' : 'paginate_disabled_next';
+  }.property('endIndex', 'filteredCount'),
 
   /**
    * Show previous-page if user not in the first page
@@ -254,12 +259,12 @@ App.MainHostAlertsView = App.TableView.extend({
    */
   tooltipsUpdater: function () {
     Em.run.once(this,this.tooltipsUpdaterOnce);
-  }.observes('pageContent.@each'),
+  }.observes('pageContent.[]'),
 
   tooltipsUpdaterOnce: function() {
     var self = this;
     Em.run.next(this, function () {
-      App.tooltip(self.$(".enable-disable-button, .timeago, .alert-text"));
+      App.tooltip(self.$('.timeago, .alert-text'));
     });
   },
 
@@ -269,14 +274,24 @@ App.MainHostAlertsView = App.TableView.extend({
   clearFilters: function() {
     this.set('filterConditions', []);
     this.get('childViews').forEach(function(childView) {
-      if (childView['clearFilter']) {
-        childView.clearFilter();
-      }
+      Em.tryInvoke(childView, 'clearFilter');
     });
   },
 
+  /**
+   * Tooltips should be removed if some filter is applied or cleared
+   *
+   * @method clearTooltips
+   */
+  clearTooltips: function () {
+    var $elements = this.$('.timeago, .alert-text');
+    if ($elements) {
+      $elements.tooltip('destroy');
+    }
+  }.observes('filteredCount'),
+
   willDestroyElement: function() {
-    this.$(".enable-disable-button, .timeago, .alert-text").tooltip('destroy');
+    this.clearTooltips();
   }
 
 });

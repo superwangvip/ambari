@@ -18,6 +18,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
+def fix_encoding_reimport_bug():
+  """
+  Fix https://bugs.python.org/issue14847
+  """
+  b'x'.decode('utf-8')
+  b'x'.decode('ascii')
+
+def fix_subprocess_racecondition():
+  """
+  Subprocess in Python has race condition with enabling/disabling gc. Which may lead to turning off python garbage collector.
+  This leads to a memory leak.
+  This function monkey patches subprocess to fix the issue.
+
+  !!! PLEASE NOTE THIS SHOULD BE CALLED BEFORE ANY OTHER INITIALIZATION was done to avoid already created links to subprocess or subprocess.gc or gc
+  """
+  # monkey patching subprocess
+  import subprocess
+  subprocess.gc.isenabled = lambda: True
+
+  # re-importing gc to have correct isenabled for non-subprocess contexts
+  import sys
+  del sys.modules['gc']
+  import gc
+
+fix_subprocess_racecondition()
+fix_encoding_reimport_bug()
+
 import logging.handlers
 import logging.config
 import signal
@@ -27,9 +54,11 @@ import traceback
 import getpass
 import os
 import time
+import locale
 import platform
 import ConfigParser
 import ProcessHelper
+import resource
 from logging.handlers import SysLogHandler
 from Controller import Controller
 import AmbariConfig
@@ -45,11 +74,18 @@ from ambari_commons import shell
 import HeartbeatHandlers
 from HeartbeatHandlers import bind_signal_handlers
 from ambari_commons.constants import AMBARI_SUDO_BINARY
+from resource_management.core.logger import Logger
 logger = logging.getLogger()
+alerts_logger = logging.getLogger('ambari_alerts')
 
 formatstr = "%(levelname)s %(asctime)s %(filename)s:%(lineno)d - %(message)s"
 agentPid = os.getpid()
+
+# Global variables to be set later.
+home_dir = ""
+
 config = AmbariConfig.AmbariConfig()
+# TODO AMBARI-18733, remove this global variable and calculate it based on home_dir once it is set.
 configFile = config.getConfigFile()
 two_way_ssl_property = config.TWO_WAY_SSL_PROPERTY
 
@@ -57,24 +93,19 @@ IS_LINUX = platform.system() == "Linux"
 SYSLOG_FORMAT_STRING = ' ambari_agent - %(filename)s - [%(process)d] - %(name)s - %(levelname)s - %(message)s'
 SYSLOG_FORMATTER = logging.Formatter(SYSLOG_FORMAT_STRING)
 
-
-def setup_logging(verbose):
+def setup_logging(logger, filename, logging_level):
   formatter = logging.Formatter(formatstr)
-  rotateLog = logging.handlers.RotatingFileHandler(AmbariConfig.AmbariConfig.getLogFile(), "a", 10000000, 25)
+  rotateLog = logging.handlers.RotatingFileHandler(filename, "a", 10000000, 25)
   rotateLog.setFormatter(formatter)
   logger.addHandler(rotateLog)
       
-  if verbose:
-    logging.basicConfig(format=formatstr, level=logging.DEBUG, filename=AmbariConfig.AmbariConfig.getLogFile())
-    logger.setLevel(logging.DEBUG)
-    logger.info("loglevel=logging.DEBUG")
-  else:
-    logging.basicConfig(format=formatstr, level=logging.INFO, filename=AmbariConfig.AmbariConfig.getLogFile())
-    logger.setLevel(logging.INFO)
-    logger.info("loglevel=logging.INFO")
-    
-  global is_logger_setup
-  is_logger_setup = True
+  logging.basicConfig(format=formatstr, level=logging_level, filename=filename)
+  logger.setLevel(logging_level)
+  logger.info("loglevel=logging.{0}".format(logging._levelNames[logging_level]))
+
+GRACEFUL_STOP_TRIES = 10
+GRACEFUL_STOP_TRIES_SLEEP = 3
+
 
 def add_syslog_handler(logger):
     
@@ -92,7 +123,8 @@ def add_syslog_handler(logger):
 def update_log_level(config):
   # Setting loglevel based on config file
   global logger
-  log_cfg_file = os.path.join(os.path.dirname(AmbariConfig.AmbariConfig.getConfigFile()), "logging.conf")
+  global home_dir
+  log_cfg_file = os.path.join(os.path.dirname(AmbariConfig.AmbariConfig.getConfigFile(home_dir)), "logging.conf")
   if os.path.exists(log_cfg_file):
     logging.config.fileConfig(log_cfg_file)
     # create logger
@@ -114,11 +146,15 @@ def update_log_level(config):
       logger.info("Default loglevel=DEBUG")
 
 
-#  ToDo: move that function inside AmbariConfig
+# TODO AMBARI-18733, move inside AmbariConfig
 def resolve_ambari_config():
+  """
+  Load the configurations.
+  In production, home_dir will be "". When running multiple Agents per host, each agent will have a unique path.
+  """
   global config
-  configPath = os.path.abspath(AmbariConfig.AmbariConfig.getConfigFile())
-
+  global home_dir
+  configPath = os.path.abspath(AmbariConfig.AmbariConfig.getConfigFile(home_dir))
   try:
     if os.path.exists(configPath):
       config.read(configPath)
@@ -128,6 +164,42 @@ def resolve_ambari_config():
   except Exception, err:
     logger.warn(err)
 
+def check_sudo():
+  # don't need to check sudo for root.
+  if os.geteuid() == 0:
+    return
+  
+  runner = shellRunner()
+  test_command = [AMBARI_SUDO_BINARY, '/usr/bin/test', '/']
+  test_command_str = ' '.join(test_command)
+  
+  start_time = time.time()
+  res = runner.run(test_command)
+  end_time = time.time()
+  run_time = end_time - start_time
+  
+  if res['exitCode'] != 0:
+    raise Exception("Please check your sudo configurations.\n" + test_command_str + " failed with " + res['error'] + res['output']) # bad sudo configurations
+  
+  if run_time > 2:
+    logger.warn(("Sudo commands on this host are running slowly ('{0}' took {1} seconds).\n" +
+                "This will create a significant slow down for ambari-agent service tasks.").format(test_command_str, run_time))
+
+# Updates the hard limit for open file handles
+def update_open_files_ulimit(config):
+  global logger
+  # get the current soft and hard limits
+  # if the specified value is greater than or equal to the soft limit
+  # we can update the hard limit
+  (soft_limit, hard_limit) = resource.getrlimit(resource.RLIMIT_NOFILE)
+  open_files_ulimit = config.get_ulimit_open_files()
+  if open_files_ulimit >= soft_limit:
+    try:
+      resource.setrlimit(resource.RLIMIT_NOFILE, (soft_limit, open_files_ulimit))
+      logger.info('open files ulimit = {0}'.format(open_files_ulimit))
+    except ValueError, err:
+      logger.error('Unable to set open files ulimit to {0}: {1}'.format(open_files_ulimit, str(err)))
+      logger.info('open files ulimit = {0}'.format(hard_limit))
 
 def perform_prestart_checks(expected_hostname):
   # Check if current hostname is equal to expected one (got from the server
@@ -161,46 +233,50 @@ def perform_prestart_checks(expected_hostname):
     logger.error(msg)
     print(msg)
     sys.exit(1)
+    
+  check_sudo()
 
 
 def daemonize():
-  # Daemonize current instance of Ambari Agent
-  # Currently daemonization is done via /usr/sbin/ambari-agent script (nohup)
-  # and agent only dumps self pid to file
-  if not os.path.exists(ProcessHelper.piddir):
-    os.makedirs(ProcessHelper.piddir, 0755)
-
   pid = str(os.getpid())
   file(ProcessHelper.pidfile, 'w').write(pid)
-
 
 def stop_agent():
 # stop existing Ambari agent
   pid = -1
   runner = shellRunner()
   try:
-    f = open(ProcessHelper.pidfile, 'r')
-    pid = f.read()
+    with open(ProcessHelper.pidfile, 'r') as f:
+      pid = f.read()
     pid = int(pid)
-    f.close()
+    
     runner.run([AMBARI_SUDO_BINARY, 'kill', '-15', str(pid)])
-    time.sleep(5)
-    if os.path.exists(ProcessHelper.pidfile):
-      raise Exception("PID file still exists.")
-    sys.exit(0)
+    for i in range(GRACEFUL_STOP_TRIES):
+      result = runner.run([AMBARI_SUDO_BINARY, 'kill', '-0', str(pid)])
+      if result['exitCode'] != 0:
+        logger.info("Agent died gracefully, exiting.")
+        sys.exit(0)
+      time.sleep(GRACEFUL_STOP_TRIES_SLEEP)
+    logger.info("Agent not going to die gracefully, going to execute kill -9")
+    raise Exception("Agent is running")
   except Exception, err:
+    #raise
     if pid == -1:
       print ("Agent process is not running")
     else:
       res = runner.run([AMBARI_SUDO_BINARY, 'kill', '-9', str(pid)])
       if res['exitCode'] != 0:
         raise Exception("Error while performing agent stop. " + res['error'] + res['output'])
-    sys.exit(1)
+      else:
+        logger.info("Agent stopped successfully by kill -9, exiting.")
+    sys.exit(0)
 
 def reset_agent(options):
+  global home_dir
   try:
     # update agent config file
     agent_config = ConfigParser.ConfigParser()
+    # TODO AMBARI-18733, calculate configFile based on home_dir
     agent_config.read(configFile)
     server_host = agent_config.get('server', 'hostname')
     new_host = options[2]
@@ -224,21 +300,58 @@ def reset_agent(options):
 
   sys.exit(0)
 
+MAX_RETRIES = 10
+
+def run_threads(server_hostname, heartbeat_stop_callback):
+  # Launch Controller communication
+  controller = Controller(config, server_hostname, heartbeat_stop_callback)
+  controller.start()
+  while controller.is_alive():
+    time.sleep(0.1)
+
+    if controller.getStatusCommandsExecutor() is not None and (not controller.getStatusCommandsExecutor().is_alive() or controller.getStatusCommandsExecutor().hasTimeoutedEvent.is_set()):
+      if controller.getStatusCommandsExecutor().is_alive():
+        logger.info("Terminating statusCommandsExecutor")
+        controller.killStatusCommandsExecutorProcess()
+      logger.info("Respawning statusCommandsExecutor")
+      controller.spawnStatusCommandsExecutorProcess()
+
+  if controller.getStatusCommandsExecutor() is not None and controller.getStatusCommandsExecutor().is_alive():
+    controller.killStatusCommandsExecutorProcess()
+
 # event - event, that will be passed to Controller and NetUtil to make able to interrupt loops form outside process
 # we need this for windows os, where no sigterm available
 def main(heartbeat_stop_callback=None):
   global config
+  global home_dir
+
   parser = OptionParser()
   parser.add_option("-v", "--verbose", dest="verbose", action="store_true", help="verbose log output", default=False)
   parser.add_option("-e", "--expected-hostname", dest="expected_hostname", action="store",
                     help="expected hostname of current host. If hostname differs, agent will fail", default=None)
+  parser.add_option("--home", dest="home_dir", action="store", help="Home directory", default="")
   (options, args) = parser.parse_args()
 
   expected_hostname = options.expected_hostname
+  home_dir = options.home_dir
 
-  current_user = getpass.getuser()
+  logging_level = logging.DEBUG if options.verbose else logging.INFO
 
-  setup_logging(options.verbose)
+  setup_logging(logger, AmbariConfig.AmbariConfig.getLogFile(), logging_level)
+  global is_logger_setup
+  is_logger_setup = True
+  setup_logging(alerts_logger, AmbariConfig.AmbariConfig.getAlertsLogFile(), logging_level)
+  Logger.initialize_logger('resource_management', logging_level=logging_level)
+
+  if home_dir != "":
+    # When running multiple Ambari Agents on this host for simulation, each one will use a unique home directory.
+    Logger.info("Agent is using Home Dir: %s" % str(home_dir))
+
+  # use the host's locale for numeric formatting
+  try:
+    locale.setlocale(locale.LC_ALL, '')
+  except locale.Error as ex:
+    logger.warning("Cannot set locale for ambari-agent. Please check your systemwide locale settings. Failed due to: {0}.".format(str(ex)))
 
   default_cfg = {'agent': {'prefix': '/home/ambari'}}
   config.load(default_cfg)
@@ -277,31 +390,56 @@ def main(heartbeat_stop_callback=None):
 
   update_log_level(config)
 
-  server_hostname = hostname.server_hostname(config)
-  server_url = config.get_api_url()
+  update_open_files_ulimit(config)
 
   if not OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:
     daemonize()
 
-  try:
-    server_ip = socket.gethostbyname(server_hostname)
-    logger.info('Connecting to Ambari server at %s (%s)', server_url, server_ip)
-  except socket.error:
-    logger.warn("Unable to determine the IP address of the Ambari server '%s'", server_hostname)
+  #
+  # Iterate through the list of server hostnames and connect to the first active server
+  #
 
-  # Wait until server is reachable
-  netutil = NetUtil(heartbeat_stop_callback)
-  retries, connected = netutil.try_to_connect(server_url, -1, logger)
-  # Ambari Agent was stopped using stop event
-  if connected:
-    # Launch Controller communication
-    controller = Controller(config, heartbeat_stop_callback)
-    controller.start()
-    controller.join()
-  if not OSCheck.get_os_family() == OSConst.WINSRV_FAMILY:
-    ExitHelper.execute_cleanup()
-    stop_agent()
-  logger.info("finished")
+  active_server = None
+  server_hostnames = hostname.server_hostnames(config)
+
+  connected = False
+  stopped = False
+
+  # Keep trying to connect to a server or bail out if ambari-agent was stopped
+  while not connected and not stopped:
+    for server_hostname in server_hostnames:
+      server_url = config.get_api_url(server_hostname)
+      try:
+        server_ip = socket.gethostbyname(server_hostname)
+        logger.info('Connecting to Ambari server at %s (%s)', server_url, server_ip)
+      except socket.error:
+        logger.warn("Unable to determine the IP address of the Ambari server '%s'", server_hostname)
+
+      # Wait until MAX_RETRIES to see if server is reachable
+      netutil = NetUtil(config, heartbeat_stop_callback)
+      (retries, connected, stopped) = netutil.try_to_connect(server_url, MAX_RETRIES, logger)
+
+      # if connected, launch controller
+      if connected:
+        logger.info('Connected to Ambari server %s', server_hostname)
+        # Set the active server
+        active_server = server_hostname
+        # Launch Controller communication
+        run_threads(server_hostname, heartbeat_stop_callback)
+
+      #
+      # If Ambari Agent connected to the server or
+      # Ambari Agent was stopped using stop event
+      # Clean up if not Windows OS
+      #
+      if connected or stopped:
+        ExitHelper().exit(0)
+        logger.info("finished")
+        break
+    pass # for server_hostname in server_hostnames
+  pass # while not (connected or stopped)
+
+  return active_server
 
 if __name__ == "__main__":
   is_logger_setup = False
@@ -309,7 +447,9 @@ if __name__ == "__main__":
     heartbeat_stop_callback = bind_signal_handlers(agentPid)
   
     main(heartbeat_stop_callback)
-  except:
+  except SystemExit:
+    raise
+  except BaseException:
     if is_logger_setup:
-      logger.exception("Fatal exception occurred:")
+      logger.exception("Exiting with exception:")
     raise

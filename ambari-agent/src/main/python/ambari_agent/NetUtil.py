@@ -17,8 +17,11 @@
 from urlparse import urlparse
 import logging
 import httplib
+import sys
 from ssl import SSLError
 from HeartbeatHandlers import HeartbeatStopHandlers
+from ambari_agent.AmbariConfig import AmbariConfig
+from ambari_commons.inet_utils import ensure_ssl_using_protocol
 
 ERROR_SSL_WRONG_VERSION = "SSLError: Failed to connect. Please check openssl library versions. \n" +\
               "Refer to: https://bugzilla.redhat.com/show_bug.cgi?id=1022468 for more details."
@@ -26,11 +29,13 @@ LOG_REQUEST_MESSAGE = "GET %s -> %s, body: %s"
 
 logger = logging.getLogger(__name__)
 
+ensure_ssl_using_protocol(AmbariConfig.get_resolved_config().get_force_https_protocol())
 
 class NetUtil:
 
-  CONNECT_SERVER_RETRY_INTERVAL_SEC = 10
-  HEARTBEAT_IDDLE_INTERVAL_SEC = 10
+  DEFAULT_CONNECT_RETRY_DELAY_SEC = 10
+  HEARTBEAT_IDLE_INTERVAL_DEFAULT_MIN_SEC = 1
+  HEARTBEAT_IDLE_INTERVAL_DEFAULT_MAX_SEC = 10
   MINIMUM_INTERVAL_BETWEEN_HEARTBEATS = 0.1
 
   # Url within server to request during status check. This url
@@ -45,10 +50,13 @@ class NetUtil:
   # Returns true if the application is stopping, false if continuing execution
   stopCallback = None
 
-  def __init__(self, stop_callback=None):
+  def __init__(self, config, stop_callback=None):
     if stop_callback is None:
       stop_callback = HeartbeatStopHandlers()
     self.stopCallback = stop_callback
+    self.config = config
+    self.connect_retry_delay = int(config.get('server','connect_retry_delay',
+                                              default=self.DEFAULT_CONNECT_RETRY_DELAY_SEC))
 
   def checkURL(self, url):
     """Try to connect to a given url. Result is True if url returns HTTP code 200, in any other case
@@ -59,9 +67,17 @@ class NetUtil:
     logger.info("Connecting to " + url)
     responseBody = ""
 
+    ssl_verify_cert = self.config.get("security","ssl_verify_cert", "0") != "0"
+
     try:
       parsedurl = urlparse(url)
-      ca_connection = httplib.HTTPSConnection(parsedurl[1])
+      
+      if sys.version_info >= (2,7,9) and not ssl_verify_cert:
+          import ssl
+          ca_connection = httplib.HTTPSConnection(parsedurl[1], context=ssl._create_unverified_context())
+      else:
+          ca_connection = httplib.HTTPSConnection(parsedurl[1])
+          
       ca_connection.request("GET", parsedurl[2])
       response = ca_connection.getresponse()
       status = response.status
@@ -83,7 +99,7 @@ class NetUtil:
       return False, responseBody
 
   def try_to_connect(self, server_url, max_retries, logger=None):
-    """Try to connect to a given url, sleeping for CONNECT_SERVER_RETRY_INTERVAL_SEC seconds
+    """Try to connect to a given url, sleeping for connect_retry_delay seconds
     between retries. No more than max_retries is performed. If max_retries is -1, connection
     attempts will be repeated forever until server is not reachable
 
@@ -102,12 +118,40 @@ class NetUtil:
       else:
         if logger is not None:
           logger.warn('Server at {0} is not reachable, sleeping for {1} seconds...'.format(server_url,
-            self.CONNECT_SERVER_RETRY_INTERVAL_SEC))
+            self.connect_retry_delay))
         retries += 1
 
-      if 0 == self.stopCallback.wait(self.CONNECT_SERVER_RETRY_INTERVAL_SEC):
+      if 0 == self.stopCallback.wait(self.connect_retry_delay):
         #stop waiting
         if logger is not None:
           logger.info("Stop event received")
         self.DEBUG_STOP_RETRIES_FLAG = True
-    return retries, connected
+
+    return retries, connected, self.DEBUG_STOP_RETRIES_FLAG
+
+  def get_agent_heartbeat_idle_interval_sec(self, heartbeat_idle_interval_min, heartbeat_idle_interval_max, cluster_size):
+    """
+    Returns the interval in seconds to be used between agent heartbeats when
+    there are pending stages which requires higher heartbeat rate to reduce the latency
+    between the completion of the last command of the current stage and the starting of first
+    command of next stage.
+
+    The heartbeat intervals for elevated heartbeats is calculated as a function of the size of the cluster.
+
+    Using a higher hearbeat rate in case of large clusters will cause agents to flood
+    the server with heartbeat messages thus the calculated heartbeat interval is restricted to
+    [heartbeat_idle_interval_min, heartbeat_idle_interval_max] range.
+
+    :param cluster_size: the number of nodes the cluster consists of
+    :return: the heartbeat interval in seconds
+    """
+
+    heartbeat_idle_interval = cluster_size // heartbeat_idle_interval_max
+
+    if heartbeat_idle_interval < heartbeat_idle_interval_min:
+      return heartbeat_idle_interval_min
+
+    if heartbeat_idle_interval > heartbeat_idle_interval_max:
+      return heartbeat_idle_interval_max
+
+    return heartbeat_idle_interval

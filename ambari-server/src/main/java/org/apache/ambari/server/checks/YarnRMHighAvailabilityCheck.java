@@ -17,12 +17,10 @@
  */
 package org.apache.ambari.server.checks;
 
-import java.util.Map;
+import java.util.Arrays;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
-import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 import org.apache.commons.lang.BooleanUtils;
@@ -34,7 +32,7 @@ import com.google.inject.Singleton;
  * for ResourceManager..
  */
 @Singleton
-@UpgradeCheck(group = UpgradeCheckGroup.MULTIPLE_COMPONENT_WARNING, order = 2.0f)
+@UpgradeCheck(group = UpgradeCheckGroup.MULTIPLE_COMPONENT_WARNING, order = 17.2f)
 public class YarnRMHighAvailabilityCheck extends AbstractCheckDescriptor {
 
   /**
@@ -49,17 +47,7 @@ public class YarnRMHighAvailabilityCheck extends AbstractCheckDescriptor {
    */
   @Override
   public boolean isApplicable(PrereqCheckRequest request) throws AmbariException {
-    if (!super.isApplicable(request)) {
-      return false;
-    }
-
-    final Cluster cluster = clustersProvider.get().getCluster(request.getClusterName());
-    Map<String, Service> services = cluster.getServices();
-    if (!services.containsKey("YARN")) {
-      return false;
-    }
-
-    return true;
+    return super.isApplicable(request, Arrays.asList("YARN"), true);
   }
 
   /**

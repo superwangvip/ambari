@@ -19,8 +19,6 @@ package org.apache.ambari.server.orm.dao;
 
 import java.util.List;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
@@ -32,6 +30,7 @@ import org.apache.ambari.server.orm.entities.RequestScheduleEntity;
 import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.ResourceTypeEntity;
 import org.apache.ambari.server.orm.entities.StackEntity;
+import org.apache.ambari.server.security.authorization.ResourceType;
 import org.apache.ambari.server.state.scheduler.BatchRequest;
 import org.junit.After;
 import org.junit.Before;
@@ -40,6 +39,8 @@ import org.junit.Test;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
+
+import junit.framework.Assert;
 
 public class RequestScheduleDAOTest {
   private Injector injector;
@@ -77,11 +78,11 @@ public class RequestScheduleDAOTest {
     RequestScheduleEntity scheduleEntity = new RequestScheduleEntity();
 
     // create an admin resource to represent this cluster
-    ResourceTypeEntity resourceTypeEntity = resourceTypeDAO.findById(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
+    ResourceTypeEntity resourceTypeEntity = resourceTypeDAO.findById(ResourceType.CLUSTER.getId());
     if (resourceTypeEntity == null) {
       resourceTypeEntity = new ResourceTypeEntity();
-      resourceTypeEntity.setId(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE);
-      resourceTypeEntity.setName(ResourceTypeEntity.CLUSTER_RESOURCE_TYPE_NAME);
+      resourceTypeEntity.setId(ResourceType.CLUSTER.getId());
+      resourceTypeEntity.setName(ResourceType.CLUSTER.name());
       resourceTypeEntity = resourceTypeDAO.merge(resourceTypeEntity);
     }
 

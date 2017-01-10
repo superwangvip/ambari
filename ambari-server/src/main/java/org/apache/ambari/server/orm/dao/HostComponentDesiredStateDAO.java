@@ -18,19 +18,20 @@
 
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Inject;
-import com.google.inject.Provider;
-import com.google.inject.Singleton;
-import com.google.inject.persist.Transactional;
-import org.apache.ambari.server.orm.RequiresSession;
-import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntity;
-import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntityPK;
-import org.apache.ambari.server.orm.entities.HostEntity;
+import java.util.List;
 
 import javax.persistence.EntityManager;
 import javax.persistence.NoResultException;
 import javax.persistence.TypedQuery;
-import java.util.List;
+
+import org.apache.ambari.server.orm.RequiresSession;
+import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntity;
+import org.apache.ambari.server.orm.entities.HostEntity;
+
+import com.google.inject.Inject;
+import com.google.inject.Provider;
+import com.google.inject.Singleton;
+import com.google.inject.persist.Transactional;
 
 @Singleton
 public class HostComponentDesiredStateDAO {
@@ -44,8 +45,8 @@ public class HostComponentDesiredStateDAO {
   DaoUtils daoUtils;
 
   @RequiresSession
-  public HostComponentDesiredStateEntity findByPK(HostComponentDesiredStateEntityPK primaryKey) {
-    return entityManagerProvider.get().find(HostComponentDesiredStateEntity.class, primaryKey);
+  public HostComponentDesiredStateEntity findById(long id) {
+    return entityManagerProvider.get().find(HostComponentDesiredStateEntity.class, id);
   }
 
   @RequiresSession
@@ -76,6 +77,29 @@ public class HostComponentDesiredStateDAO {
     return daoUtils.selectSingle(query);
   }
 
+  /**
+   * Retrieve the single Host Component Desired State for the given unique cluster, service, component, and host.
+   *
+   * @param clusterId Cluster ID
+   * @param serviceName Service Name
+   * @param componentName Component Name
+   * @param hostId Host ID
+   * @return Return the Host Component Desired State entity that match the criteria.
+   */
+  @RequiresSession
+  public HostComponentDesiredStateEntity findByIndex(Long clusterId, String serviceName,
+                                                     String componentName, Long hostId) {
+    final TypedQuery<HostComponentDesiredStateEntity> query = entityManagerProvider.get()
+      .createNamedQuery("HostComponentDesiredStateEntity.findByIndex", HostComponentDesiredStateEntity.class);
+
+    query.setParameter("clusterId", clusterId);
+    query.setParameter("serviceName", serviceName);
+    query.setParameter("componentName", componentName);
+    query.setParameter("hostId", hostId);
+
+    return daoUtils.selectSingle(query);
+  }
+
   @Transactional
   public void refresh(HostComponentDesiredStateEntity hostComponentDesiredStateEntity) {
     entityManagerProvider.get().refresh(hostComponentDesiredStateEntity);
@@ -95,15 +119,20 @@ public class HostComponentDesiredStateDAO {
   public void remove(HostComponentDesiredStateEntity hostComponentDesiredStateEntity) {
     HostEntity hostEntity = hostComponentDesiredStateEntity.getHostEntity();
 
-    entityManagerProvider.get().remove(merge(hostComponentDesiredStateEntity));
+    if (hostEntity == null) {
+      throw new IllegalStateException(String.format("Missing hostEntity for host id %1d",
+              hostComponentDesiredStateEntity.getHostId()));
+    }
 
-    // Make sure that the state entity is removed from its host entity
     hostEntity.removeHostComponentDesiredStateEntity(hostComponentDesiredStateEntity);
+
+    entityManagerProvider.get().remove(hostComponentDesiredStateEntity);
     hostDAO.merge(hostEntity);
   }
 
   @Transactional
-  public void removeByPK(HostComponentDesiredStateEntityPK primaryKey) {
-    remove(findByPK(primaryKey));
+  public void removeId(long id) {
+    remove(findById(id));
   }
+
 }

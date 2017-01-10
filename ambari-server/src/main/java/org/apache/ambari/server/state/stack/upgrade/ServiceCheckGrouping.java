@@ -19,7 +19,9 @@ package org.apache.ambari.server.state.stack.upgrade;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -50,19 +52,27 @@ public class ServiceCheckGrouping extends Grouping {
 
   private static Logger LOG = LoggerFactory.getLogger(ServiceCheckGrouping.class);
 
+  /**
+   * During a Rolling Upgrade, the priority services are ran first, then the remaining services in the cluster.
+   * During a Stop-and-Start Upgrade, only the priority services are ran.
+   */
   @XmlElementWrapper(name="priority")
   @XmlElement(name="service")
   private Set<String> priorityServices = new LinkedHashSet<String>();
 
+  /**
+   * During a Rolling Upgrade, exclude certain services.
+   */
   @XmlElementWrapper(name="exclude")
   @XmlElement(name="service")
   private Set<String> excludeServices = new HashSet<String>();
 
-  private ServiceCheckBuilder m_builder = new ServiceCheckBuilder();
-
+  /**
+   * {@inheritDoc}
+   */
   @Override
   public ServiceCheckBuilder getBuilder() {
-    return m_builder;
+    return new ServiceCheckBuilder(this);
   }
 
   /**
@@ -73,26 +83,50 @@ public class ServiceCheckGrouping extends Grouping {
   }
 
   /**
+   * @return the set of service names that should be excluded
+   */
+  public Set<String> getExcluded() {
+    return excludeServices;
+  }
+
+  /**
    * Used to build stages for service check groupings.
    */
   public class ServiceCheckBuilder extends StageWrapperBuilder {
+
     private Cluster m_cluster;
     private AmbariMetaInfo m_metaInfo;
 
+    /**
+     * Constructor.
+     *
+     * @param grouping
+     *          the upgrade/downgrade grouping (not {@code null}).
+     */
+    protected ServiceCheckBuilder(Grouping grouping) {
+      super(grouping);
+    }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void add(UpgradeContext ctx, HostsType hostsType, String service,
-        boolean clientOnly, ProcessingComponent pc) {
+        boolean clientOnly, ProcessingComponent pc, Map<String, String> params) {
       // !!! nothing to do here
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
-    public List<StageWrapper> build(UpgradeContext ctx) {
-      m_cluster = ctx.getCluster();
-      m_metaInfo = ctx.getAmbariMetaInfo();
+    public List<StageWrapper> build(UpgradeContext upgradeContext,
+        List<StageWrapper> stageWrappers) {
+      m_cluster = upgradeContext.getCluster();
+      m_metaInfo = upgradeContext.getAmbariMetaInfo();
 
-      List<StageWrapper> result = new ArrayList<StageWrapper>();
-      if (ctx.getDirection().isDowngrade()) {
+      List<StageWrapper> result = new ArrayList<StageWrapper>(stageWrappers);
+      if (upgradeContext.getDirection().isDowngrade()) {
         return result;
       }
 
@@ -101,31 +135,34 @@ public class ServiceCheckGrouping extends Grouping {
       Set<String> clusterServices = new LinkedHashSet<String>(serviceMap.keySet());
 
       // create stages for the priorities
-      for (String service : ServiceCheckGrouping.this.priorityServices) {
-        if (checkServiceValidity(ctx, service, serviceMap)) {
+      for (String service : priorityServices) {
+        if (checkServiceValidity(upgradeContext, service, serviceMap)) {
           StageWrapper wrapper = new StageWrapper(
-              StageWrapper.Type.SERVICE_CHECK,
-              "Service Check " + ctx.getServiceDisplay(service),
-              new TaskWrapper(service, "", Collections.<String>emptySet(),
-                  new ServiceCheckTask()));
-          result.add(wrapper);
+            StageWrapper.Type.SERVICE_CHECK,
+            "Service Check " + upgradeContext.getServiceDisplay(service),
+            new TaskWrapper(service, "", Collections.<String>emptySet(),
+              new ServiceCheckTask()));
 
+          result.add(wrapper);
           clusterServices.remove(service);
         }
       }
 
-      // create stages for everything else, as long it is valid
-      for (String service : clusterServices) {
-        if (ServiceCheckGrouping.this.excludeServices.contains(service)) {
-          continue;
-        }
-        if (checkServiceValidity(ctx, service, serviceMap)) {
-          StageWrapper wrapper = new StageWrapper(
+      if (upgradeContext.getType() == UpgradeType.ROLLING) {
+        // During Rolling Upgrade, create stages for everything else, as long it is valid
+        for (String service : clusterServices) {
+          if (excludeServices.contains(service)) {
+            continue;
+          }
+
+          if (checkServiceValidity(upgradeContext, service, serviceMap)) {
+            StageWrapper wrapper = new StageWrapper(
               StageWrapper.Type.SERVICE_CHECK,
-              "Service Check " + ctx.getServiceDisplay(service),
+              "Service Check " + upgradeContext.getServiceDisplay(service),
               new TaskWrapper(service, "", Collections.<String>emptySet(),
-                  new ServiceCheckTask()));
-          result.add(wrapper);
+                new ServiceCheckTask()));
+            result.add(wrapper);
+          }
         }
       }
       return result;
@@ -157,6 +194,75 @@ public class ServiceCheckGrouping extends Grouping {
         }
       }
       return false;
+    }
+  }
+
+  /**
+   * Attempts to merge all the service check groupings.  This merges the excluded list and
+   * the priorities.  The priorities are merged in an order specific manner.
+   */
+  public void merge(Iterator<Grouping> iterator) throws AmbariException {
+    List<String> priorities = new ArrayList<>();
+    priorities.addAll(getPriorities());
+    Map<String, Set<String>> skippedPriorities = new HashMap<>();
+    while (iterator.hasNext()) {
+      Grouping next = iterator.next();
+      if (!(next instanceof ServiceCheckGrouping)) {
+        throw new AmbariException("Invalid group type " + next.getClass().getSimpleName() + " expected service check group");
+      }
+      ServiceCheckGrouping checkGroup = (ServiceCheckGrouping) next;
+      getExcluded().addAll(checkGroup.getExcluded());
+
+      boolean added = addPriorities(priorities, checkGroup.getPriorities(), checkGroup.addAfterGroupEntry);
+      if (added) {
+        addSkippedPriorities(priorities, skippedPriorities, checkGroup.getPriorities());
+      }
+      else {
+        // store these services until later
+        if (skippedPriorities.containsKey(checkGroup.addAfterGroupEntry)) {
+          Set<String> tmp = skippedPriorities.get(checkGroup.addAfterGroupEntry);
+          tmp.addAll(checkGroup.getPriorities());
+        }
+        else {
+          skippedPriorities.put(checkGroup.addAfterGroupEntry, checkGroup.getPriorities());
+        }
+      }
+    }
+    getPriorities().clear();
+    getPriorities().addAll(priorities);
+  }
+
+  /**
+   * Add the given child priorities if the service they are supposed to come after have been added.
+   */
+  private boolean addPriorities(List<String> priorities, Set<String> childPriorities, String after) {
+    if (after == null) {
+      priorities.addAll(childPriorities);
+      return true;
+    }
+    else {
+      // Check the current priorities, if the "after" priority is there then add these
+      for (int index = priorities.size() - 1; index >= 0; index--) {
+        String priority = priorities.get(index);
+        if (after.equals(priority)) {
+          priorities.addAll(index + 1, childPriorities);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Add the skipped priorities if the services they are supposed to come after have been added
+   */
+  private void addSkippedPriorities(List<String> priorities, Map<String, Set<String>> skippedPriorites, Set<String> prioritiesJustAdded) {
+    for (String priority : prioritiesJustAdded) {
+      if (skippedPriorites.containsKey(priority)) {
+        Set<String> prioritiesToAdd = skippedPriorites.remove(priority);
+        addPriorities(priorities, prioritiesToAdd, priority);
+        addSkippedPriorities(priorities, skippedPriorites, prioritiesToAdd);
+      }
     }
   }
 }

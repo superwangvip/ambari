@@ -19,9 +19,9 @@
 package org.apache.ambari.server.stack;
 
 
-import org.apache.ambari.server.AmbariException;
-
 import java.util.Map;
+
+import org.apache.ambari.server.AmbariException;
 
 /**
  * Stack Definition Module.
@@ -37,10 +37,11 @@ public interface StackDefinitionModule <T, I> {
    * @param parent          the parent that this module will be merged with
    * @param allStacks       collection of all stack modules in the tree
    * @param commonServices  collection of all common service modules in the tree
+   * @param extensions  collection of all extension modules in the tree
    *
    * @throws AmbariException if resolution fails
    */
-  public void resolve(T parent, Map<String, StackModule> allStacks, Map<String, ServiceModule> commonServices) throws AmbariException;
+  public void resolve(T parent, Map<String, StackModule> allStacks, Map<String, ServiceModule> commonServices, Map<String, ExtensionModule> extensions) throws AmbariException;
 
   /**
    * Obtain the associated module information.

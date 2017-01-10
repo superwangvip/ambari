@@ -1,6 +1,6 @@
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query;
 
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.Precision;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 
 import java.util.List;
 
@@ -44,4 +44,5 @@ public interface Condition {
   void addOrderByColumn(String column);
   void setNoLimit();
   boolean doUpdate();
+  void setMetricNamesNotCondition(boolean metricNamesNotCondition);
 }

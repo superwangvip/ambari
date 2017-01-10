@@ -17,8 +17,9 @@
  */
 
 var App = require('app');
+var misc = require('utils/misc');
 
-App.MainServiceController = Em.ArrayController.extend({
+App.MainServiceController = Em.ArrayController.extend(App.SupportClientConfigsDownload, {
 
   name: 'mainServiceController',
 
@@ -29,7 +30,7 @@ App.MainServiceController = Em.ArrayController.extend({
     if (!App.router.get('clusterController.isLoaded')) {
       return [];
     }
-    return App.Service.find();
+    return misc.sortByOrder(App.StackService.find().mapProperty('serviceName'), App.Service.find().toArray());
   }.property('App.router.clusterController.isLoaded').volatile(),
 
   /**
@@ -49,10 +50,14 @@ App.MainServiceController = Em.ArrayController.extend({
    * @type {bool}
    */
   isAllServicesInstalled: function () {
-    if (!this.get('content.content')) return false;
-    var availableServices = App.StackService.find().mapProperty('serviceName');
-    return this.get('content.content').length == availableServices.length;
-  }.property('content.content.@each', 'content.content.length'),
+    if (!this.get('content')) return false;
+    var notAvailableServices = App.ServiceSimple.find().filterProperty('doNotShowAndInstall').mapProperty('name');
+    var availableServices = App.ServiceSimple.find().filterProperty('doNotShowAndInstall', false);
+    var installedServices = this.get('content').filter(function (service) {
+      return !notAvailableServices.contains(service.get('serviceName'));
+    });
+    return installedServices.length == availableServices.length;
+  }.property('content.@each', 'content.length'),
 
   /**
    * Should "Start All"-button be disabled
@@ -76,16 +81,19 @@ App.MainServiceController = Em.ArrayController.extend({
     if (this.get('isStartStopAllClicked') == true) {
       return true;
     }
-    var startedServiceLength = this.get('content').filterProperty('healthStatus', 'green').length;
-    return (startedServiceLength === 0);
+    return !this.get('content').someProperty('healthStatus', 'green');
   }.property('isStartStopAllClicked', 'content.@each.healthStatus'),
+
+  /**
+   * Should "Refresh All"-button be disabled
+   * @type {bool}
+   */
+  isRestartAllRequiredDisabled: Em.computed.everyBy('content', 'isRestartRequired', false),
 
   /**
    * @type {bool}
    */
-  isStartStopAllClicked: function () {
-    return (App.router.get('backgroundOperationsController').get('allOperationsCount') !== 0);
-  }.property('App.router.backgroundOperationsController.allOperationsCount'),
+  isStartStopAllClicked: Em.computed.notEqual('App.router.backgroundOperationsController.allOperationsCount', 0),
 
   /**
    * Callback for <code>start all service</code> button
@@ -133,6 +141,13 @@ App.MainServiceController = Em.ArrayController.extend({
         self.allServicesCall(state, query);
       }, bodyMessage);
     }
+  },
+
+  /**
+   * Download client configs for all services
+   */
+  downloadAllClientConfigs: function() {
+    this.downloadClientConfigsCall({resourceType: this.resourceTypeEnum.CLUSTER});
   },
 
   /**
@@ -188,7 +203,7 @@ App.MainServiceController = Em.ArrayController.extend({
   isStopAllServicesFailed: function() {
     var workStatuses = App.Service.find().mapProperty('workStatus');
     for (var i = 0; i < workStatuses.length; i++) {
-      if (workStatuses[i] != 'INSTALLED' && workStatuses[i] != 'STOPPING') {
+      if (workStatuses[i] !== 'INSTALLED' && workStatuses[i] !== 'STOPPING') {
         return true;
       }
     }
@@ -201,12 +216,12 @@ App.MainServiceController = Em.ArrayController.extend({
   silentStopSuccess: function () {
     var self = this;
 
-    App.router.get('applicationController').dataLoading().done(function (initValue) {
+    App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
       if (initValue) {
         App.router.get('backgroundOperationsController').showPopup();
       }
 
-      Ember.run.later(function () {
+      Em.run.later(function () {
         self.set('shouldStart', true);
       }, App.bgOperationsUpdateInterval);
     });
@@ -241,7 +256,7 @@ App.MainServiceController = Em.ArrayController.extend({
    */
   silentCallSuccessCallback: function () {
     // load data (if we need to show this background operations popup) from persist
-    App.router.get('applicationController').dataLoading().done(function (initValue) {
+    App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
       if (initValue) {
         App.router.get('backgroundOperationsController').showPopup();
       }
@@ -259,7 +274,7 @@ App.MainServiceController = Em.ArrayController.extend({
     params.query.set('status', 'SUCCESS');
 
     // load data (if we need to show this background operations popup) from persist
-    App.router.get('applicationController').dataLoading().done(function (initValue) {
+    App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
       if (initValue) {
         App.router.get('backgroundOperationsController').showPopup();
       }
@@ -289,5 +304,48 @@ App.MainServiceController = Em.ArrayController.extend({
     }
     App.router.get('addServiceController').setDBProperty('onClosePath', 'main.services.index');
     App.router.transitionTo('main.serviceAdd');
+  },
+
+  /**
+   * Show confirmation popup and send request to restart all host components with stale_configs=true
+   */
+  restartAllRequired: function () {
+    var self = this;
+    if (!this.get('isRestartAllRequiredDisabled')) {
+      return App.showConfirmationPopup(function () {
+            self.restartHostComponents();
+          }, Em.I18n.t('services.service.refreshAll.confirmMsg').format(
+              App.HostComponent.find().filterProperty('staleConfigs').mapProperty('service.displayName').uniq().join(', ')),
+          null,
+          null,
+          Em.I18n.t('services.service.restartAll.confirmButton')
+      );
+    } else {
+      return null;
+    }
+  },
+
+  /**
+   * Send request restart host components from hostComponentsToRestart
+   * @returns {$.ajax}
+   */
+  restartHostComponents: function () {
+    App.ajax.send({
+      name: 'restart.staleConfigs',
+      sender: this,
+      success: 'restartAllRequiredSuccessCallback'
+    });
+  },
+
+  /**
+   * Success callback for restartAllRequired
+   */
+  restartAllRequiredSuccessCallback: function () {
+    // load data (if we need to show this background operations popup) from persist
+    App.router.get('userSettingsController').dataLoading('show_bg').done(function (initValue) {
+      if (initValue) {
+        App.router.get('backgroundOperationsController').showPopup();
+      }
+    });
   }
 });

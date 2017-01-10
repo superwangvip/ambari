@@ -18,9 +18,11 @@ limitations under the License.
 """
 
 import os
-from resource_management import *
-
+from resource_management.libraries.script.script import Script
+from resource_management.core.resources.service import ServiceConfig
+from resource_management.core.resources.system import File
 from ambari_commons import OSConst
+from resource_management.core.source import InlineTemplate
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 
 def _ldap_common():
@@ -30,7 +32,7 @@ def _ldap_common():
          mode=params.mode,
          group=params.knox_group,
          owner=params.knox_user,
-         content=params.ldap_log4j
+         content=InlineTemplate(params.ldap_log4j)
     )
 
     File(os.path.join(params.knox_conf_dir, 'users.ldif'),

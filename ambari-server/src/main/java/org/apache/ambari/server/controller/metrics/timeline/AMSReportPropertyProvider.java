@@ -17,8 +17,22 @@
  */
 package org.apache.ambari.server.controller.metrics.timeline;
 
+import static org.apache.ambari.server.controller.metrics.MetricsPaddingMethod.ZERO_PADDING_PARAM;
+import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.TIMELINE_METRICS;
+
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
+import org.apache.ambari.server.controller.AmbariServer;
 import org.apache.ambari.server.controller.internal.PropertyInfo;
+import org.apache.ambari.server.controller.internal.URLStreamProvider;
 import org.apache.ambari.server.controller.metrics.MetricHostProvider;
 import org.apache.ambari.server.controller.metrics.MetricsPaddingMethod;
 import org.apache.ambari.server.controller.metrics.MetricsPropertyProvider;
@@ -32,20 +46,11 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.TemporalInfo;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
-import org.apache.ambari.server.controller.utilities.StreamProvider;
+import org.apache.ambari.server.events.MetricsCollectorHostDownEvent;
+import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
 import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 import org.apache.http.client.utils.URIBuilder;
-
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.apache.ambari.server.controller.metrics.MetricsPaddingMethod.ZERO_PADDING_PARAM;
-import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.TIMELINE_METRICS;
 
 public class AMSReportPropertyProvider extends MetricsReportPropertyProvider {
   private MetricsPaddingMethod metricsPaddingMethod;
@@ -53,9 +58,10 @@ public class AMSReportPropertyProvider extends MetricsReportPropertyProvider {
   MetricsRequestHelper requestHelper;
   private static AtomicInteger printSkipPopulateMsgHostCounter = new AtomicInteger(0);
   private static AtomicInteger printSkipPopulateMsgHostCompCounter = new AtomicInteger(0);
+  private AmbariEventPublisher ambariEventPublisher;
 
   public AMSReportPropertyProvider(Map<String, Map<String, PropertyInfo>> componentPropertyInfoMap,
-                                 StreamProvider streamProvider,
+                                   URLStreamProvider streamProvider,
                                  ComponentSSLConfiguration configuration,
                                  TimelineMetricCacheProvider cacheProvider,
                                  MetricHostProvider hostProvider,
@@ -66,6 +72,9 @@ public class AMSReportPropertyProvider extends MetricsReportPropertyProvider {
 
     this.metricCache = cacheProvider.getTimelineMetricsCache();
     this.requestHelper = new MetricsRequestHelper(streamProvider);
+    if (AmbariServer.getController() != null) {
+      this.ambariEventPublisher = AmbariServer.getController().getAmbariEventPublisher();
+    }
   }
 
   /**
@@ -172,9 +181,9 @@ public class AMSReportPropertyProvider extends MetricsReportPropertyProvider {
 
     Map<String, MetricReportRequest> reportRequestMap = getPropertyIdMaps(request, ids);
     String host = hostProvider.getCollectorHostName(clusterName, TIMELINE_METRICS);
-    String port = hostProvider.getCollectorPortName(clusterName, TIMELINE_METRICS);
+    String port = hostProvider.getCollectorPort(clusterName, TIMELINE_METRICS);
     URIBuilder uriBuilder = AMSPropertyProvider.getAMSUriBuilder(host,
-      port != null ? Integer.parseInt(port) : 8188);
+      port != null ? Integer.parseInt(port) : 6188, configuration.isHttpsEnabled());
 
     for (Map.Entry<String, MetricReportRequest> entry : reportRequestMap.entrySet()) {
       MetricReportRequest reportRequest = entry.getValue();
@@ -204,13 +213,24 @@ public class AMSReportPropertyProvider extends MetricsReportPropertyProvider {
 
       // Self populating cache updates itself on every get with latest results
       TimelineMetrics timelineMetrics;
-      if (metricCache != null && metricCacheKey.getTemporalInfo() != null) {
-        timelineMetrics = metricCache.getAppTimelineMetricsFromCache(metricCacheKey);
-      } else {
-        try {
-          timelineMetrics = requestHelper.fetchTimelineMetrics(uriBuilder.toString());
-        } catch (IOException e) {
-          timelineMetrics = null;
+      try {
+        if (metricCache != null && metricCacheKey.getTemporalInfo() != null) {
+          timelineMetrics = metricCache.getAppTimelineMetricsFromCache(metricCacheKey);
+        } else {
+          timelineMetrics = requestHelper.fetchTimelineMetrics(uriBuilder,
+            temporalInfo.getStartTimeMillis(),
+            temporalInfo.getEndTimeMillis());
+        }
+      } catch (IOException io) {
+        timelineMetrics = null;
+        if (io instanceof SocketTimeoutException || io instanceof ConnectException) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Skip populating metrics on socket timeout exception.");
+          }
+          if (ambariEventPublisher != null) {
+            ambariEventPublisher.publish(new MetricsCollectorHostDownEvent(clusterName, host));
+          }
+          break;
         }
       }
 

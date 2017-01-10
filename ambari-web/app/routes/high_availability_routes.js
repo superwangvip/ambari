@@ -26,7 +26,8 @@ module.exports = App.WizardRoute.extend({
     highAvailabilityWizardController.dataLoading().done(function () {
         App.router.get('updateController').set('isWorking', false);
         var popup = App.ModalPopup.show({
-          classNames: ['full-width-modal'],
+          classNames: ['wizard-modal-wrapper'],
+          modalDialogClasses: ['modal-xlg'],
           header: Em.I18n.t('admin.highAvailability.wizard.header'),
           bodyClass: App.HighAvailabilityWizardView.extend({
             controller: highAvailabilityWizardController
@@ -52,10 +53,9 @@ module.exports = App.WizardRoute.extend({
           }.observes('App.router.highAvailabilityWizardController.currentStep'),
 
           onClose: function () {
-            var self = this;
             var currStep = App.router.get('highAvailabilityWizardController.currentStep');
             var highAvailabilityProgressPageController = App.router.get('highAvailabilityProgressPageController');
-            if (parseInt(currStep) > 4) {
+            if (parseInt(currStep, 10) > 4) {
               if (!App.supports.autoRollbackHA) {
                 highAvailabilityProgressPageController.manualRollback();
               } else {
@@ -66,22 +66,11 @@ module.exports = App.WizardRoute.extend({
             } else {
               var controller = App.router.get('highAvailabilityWizardController');
               controller.clearTasksData();
-              controller.finish();
-              App.router.get('updateController').set('isWorking', true);
-              App.clusterStatus.setClusterStatus({
-                clusterName: controller.get('content.cluster.name'),
-                clusterState: 'DEFAULT',
-                localdb: App.db.data
-              }, {
-                alwaysCallback: function () {
-                  self.hide();
-                  App.router.transitionTo('main.services.index');
-                  location.reload();
-                }
-              });
+              controller.resetOnClose(controller, 'main.services.index');
             }
           },
           didInsertElement: function () {
+            this._super();
             this.fitHeight();
           }
         });
@@ -99,6 +88,7 @@ module.exports = App.WizardRoute.extend({
           }
         }
       Em.run.next(function () {
+        App.router.get('wizardWatcherController').setUser(highAvailabilityWizardController.get('name'));
         router.transitionTo('step' + highAvailabilityWizardController.get('currentStep'));
       });
     });
@@ -107,15 +97,14 @@ module.exports = App.WizardRoute.extend({
   step1: Em.Route.extend({
     route: '/step1',
     connectOutlets: function (router) {
-      var controller = router.get('highAvailabilityWizardController');
+      var controller = router.get('highAvailabilityWizardController'),
+        highAvailabilityWizardStep1Controller = router.get('highAvailabilityWizardStep1Controller');
       controller.dataLoading().done(function () {
         controller.setCurrentStep('1');
-        controller.usersLoading().done(function () {
-          controller.saveHdfsUser();
-          controller.loadAllPriorSteps().done(function () {
-            controller.connectOutlet('highAvailabilityWizardStep1', controller.get('content'));
-          });
-        })
+        highAvailabilityWizardStep1Controller.setHawqInstalled();
+        controller.loadAllPriorSteps().done(function () {
+          controller.connectOutlet('highAvailabilityWizardStep1', controller.get('content'));
+        });
       })
     },
     unroutePath: function () {
@@ -172,7 +161,7 @@ module.exports = App.WizardRoute.extend({
       controller.dataLoading().done(function () {
         controller.setCurrentStep('3');
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep3',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep3', controller.get('content'));
         });
       });
     },
@@ -180,6 +169,7 @@ module.exports = App.WizardRoute.extend({
       return false;
     },
     next: function (router) {
+      App.set('router.nextBtnClickInProgress', true);
       var controller = router.get('highAvailabilityWizardController');
       var stepController = router.get('highAvailabilityWizardStep3Controller');
       controller.saveServiceConfigProperties(stepController);
@@ -188,6 +178,10 @@ module.exports = App.WizardRoute.extend({
       if (App.Service.find().someProperty('serviceName', 'HBASE')) {
         controller.saveConfigTag(stepController.get("hbaseSiteTag"));
       }
+      if (App.Service.find().someProperty('serviceName', 'RANGER')) {
+        controller.saveConfigTag(stepController.get("rangerEnvTag"));
+      }
+      App.set('router.nextBtnClickInProgress', false);
       router.transitionTo('step4');
     },
     back: Em.Router.transitionTo('step2')
@@ -201,7 +195,7 @@ module.exports = App.WizardRoute.extend({
         controller.setCurrentStep('4');
         controller.setLowerStepsDisable(4);
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep4',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep4', controller.get('content'));
         });
       })
     },
@@ -223,7 +217,7 @@ module.exports = App.WizardRoute.extend({
         controller.setCurrentStep('5');
         controller.setLowerStepsDisable(5);
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep5',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep5', controller.get('content'));
         });
       })
     },
@@ -245,7 +239,7 @@ module.exports = App.WizardRoute.extend({
         controller.setCurrentStep('6');
         controller.setLowerStepsDisable(6);
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep6',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep6', controller.get('content'));
         });
       })
     },
@@ -265,7 +259,7 @@ module.exports = App.WizardRoute.extend({
         controller.setCurrentStep('7');
         controller.setLowerStepsDisable(7);
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep7',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep7', controller.get('content'));
         });
       })
     },
@@ -287,7 +281,7 @@ module.exports = App.WizardRoute.extend({
         controller.setCurrentStep('8');
         controller.setLowerStepsDisable(8);
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep8',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep8', controller.get('content'));
         });
       })
     },
@@ -309,7 +303,7 @@ module.exports = App.WizardRoute.extend({
         controller.setCurrentStep('9');
         controller.setLowerStepsDisable(9);
         controller.loadAllPriorSteps().done(function () {
-          controller.connectOutlet('highAvailabilityWizardStep9',  controller.get('content'));
+          controller.connectOutlet('highAvailabilityWizardStep9', controller.get('content'));
         });
       })
     },
@@ -317,14 +311,20 @@ module.exports = App.WizardRoute.extend({
       return false;
     },
     next: function (router) {
-      var controller = router.get('highAvailabilityWizardController');
-      controller.clearTasksData();
-      controller.finish();
-      App.clusterStatus.setClusterStatus({
-        clusterName: controller.get('content.cluster.name'),
-        clusterState: 'DEFAULT',
-        localdb: App.db.data
-      },{alwaysCallback: function() {controller.get('popup').hide();router.transitionTo('main.services.index');location.reload();}});
+      var proceed = function() {
+        var controller = router.get('highAvailabilityWizardController');
+        controller.clearTasksData();
+        controller.resetOnClose(controller, 'main.services.index');
+      };
+      if (App.Service.find().someProperty('serviceName', 'HAWQ')) {
+        App.showAlertPopup(
+            Em.I18n.t('admin.highAvailability.wizard.step9.hawq.confirmPopup.header'),
+            Em.I18n.t('admin.highAvailability.wizard.step9.hawq.confirmPopup.body'),
+            proceed);
+      }
+      else {
+        proceed();
+      }
     }
   })
 

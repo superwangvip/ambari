@@ -19,6 +19,16 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import static org.easymock.EasyMock.anyObject;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collection;
@@ -42,22 +52,13 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.easymock.EasyMock.anyObject;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 /**
  * ExportBlueprintRequest unit tests.
  */
 @SuppressWarnings("unchecked")
 public class ExportBlueprintRequestTest {
   private static final String CLUSTER_NAME = "c1";
+  private static final String CLUSTER_ID = "2";
 
   private AmbariManagementController controller = createNiceMock(AmbariManagementController.class);
 
@@ -86,6 +87,7 @@ public class ExportBlueprintRequestTest {
   public void testExport_noConfigs() throws Exception {
     Resource clusterResource = new ResourceImpl(Resource.Type.Cluster);
     clusterResource.setProperty(ClusterResourceProvider.CLUSTER_NAME_PROPERTY_ID, CLUSTER_NAME);
+    clusterResource.setProperty(ClusterResourceProvider.CLUSTER_ID_PROPERTY_ID, CLUSTER_ID);
     clusterResource.setProperty(ClusterResourceProvider.CLUSTER_VERSION_PROPERTY_ID, "TEST-1.0");
 
     TreeNode<Resource> clusterNode = new TreeNodeImpl<Resource>(null, clusterResource, "cluster");
@@ -127,7 +129,7 @@ public class ExportBlueprintRequestTest {
     String hg1Name = null;
     String hg2Name = null;
     for (HostGroup group : hostGroups.values()) {
-      Collection<String> components = group.getComponents();
+      Collection<String> components = group.getComponentNames();
       if (components.containsAll(host1ComponentsList)) {
         assertEquals(host1ComponentsList.size(), components.size());
         assertEquals("1", group.getCardinality());

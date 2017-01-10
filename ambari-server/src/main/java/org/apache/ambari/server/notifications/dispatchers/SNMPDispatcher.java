@@ -20,8 +20,10 @@ package org.apache.ambari.server.notifications.dispatchers;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.ambari.server.notifications.Notification;
 import org.apache.ambari.server.notifications.NotificationDispatcher;
@@ -50,6 +52,7 @@ import org.snmp4j.smi.OctetString;
 import org.snmp4j.smi.UdpAddress;
 import org.snmp4j.smi.VariableBinding;
 import org.snmp4j.transport.DefaultUdpTransportMapping;
+import org.snmp4j.transport.UdpTransportMapping;
 import org.snmp4j.util.DefaultPDUFactory;
 
 import com.google.inject.Singleton;
@@ -84,12 +87,45 @@ public class SNMPDispatcher implements NotificationDispatcher {
 
   private Snmp snmp;
 
+  private final Integer port;
+  private volatile UdpTransportMapping transportMapping;
+
   public SNMPDispatcher(Snmp snmp) {
+    this.port = null;
     this.snmp = snmp;
   }
 
   public SNMPDispatcher() throws IOException {
-    this(new Snmp(new DefaultUdpTransportMapping()));
+    this((Integer) null);
+  }
+
+  /**
+   * Creates SNMP server with specified port. In case port is null will be used random value as default
+   * @param port port
+   * @throws IOException
+   */
+  public SNMPDispatcher(Integer port) throws IOException {
+    if(port != null && port >= 0 && port <= '\uffff') {
+      //restrict invalid ports to avoid exception on socket create
+      this.port = port;
+    } else {
+      this.port = null;
+    }
+  }
+
+  private void createTransportMapping() throws IOException {
+    if (transportMapping == null) {
+      synchronized (this) {
+        if (transportMapping == null) {
+          if (port != null) {
+            LOG.info("Setting SNMP dispatch port: " + port);
+            transportMapping = new DefaultUdpTransportMapping(new UdpAddress(port), true);
+          } else {
+            transportMapping = new DefaultUdpTransportMapping();
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -115,7 +151,8 @@ public class SNMPDispatcher implements NotificationDispatcher {
   public void dispatch(Notification notification) {
     LOG.info("Sending SNMP trap: {}", notification.Subject);
     try {
-      snmp = new Snmp(new DefaultUdpTransportMapping());
+      createTransportMapping();
+      snmp = new Snmp(transportMapping);
       SnmpVersion snmpVersion = getSnmpVersion(notification.DispatchProperties);
       sendTraps(notification, snmpVersion);
       successCallback(notification);
@@ -125,6 +162,7 @@ public class SNMPDispatcher implements NotificationDispatcher {
     } catch (Exception ex) {
       LOG.error("Error occurred during SNMP trap dispatching.", ex);
       failureCallback(notification);
+      transportMapping = null;
     }
   }
 
@@ -138,10 +176,11 @@ public class SNMPDispatcher implements NotificationDispatcher {
       stringValuesConfig.put(propertyEntry.getKey(), propertyEntry.getValue().toString());
     }
     try {
-      getDispatchProperty(stringValuesConfig, BODY_OID_PROPERTY);
-      getDispatchProperty(stringValuesConfig, SUBJECT_OID_PROPERTY);
-      getDispatchProperty(stringValuesConfig, TRAP_OID_PROPERTY);
-      getDispatchProperty(stringValuesConfig, PORT_PROPERTY);
+
+      for (String property : getSetOfDefaultNeededPropertyNames()) {
+        getDispatchProperty(stringValuesConfig, property);
+      }
+
       SnmpVersion snmpVersion = getSnmpVersion(stringValuesConfig);
       switch (snmpVersion) {
         case SNMPv3:
@@ -166,6 +205,14 @@ public class SNMPDispatcher implements NotificationDispatcher {
       return TargetConfigurationResult.invalid(ex.getMessage());
     }
     return TargetConfigurationResult.valid();
+  }
+
+  /**
+   * @return Set that contains names of properties that are needed for all SNMP configurations.
+   */
+  protected Set<String> getSetOfDefaultNeededPropertyNames() {
+    return new HashSet<>(Arrays.asList(BODY_OID_PROPERTY, SUBJECT_OID_PROPERTY,
+            TRAP_OID_PROPERTY, PORT_PROPERTY));
   }
 
   /**
@@ -340,7 +387,7 @@ public class SNMPDispatcher implements NotificationDispatcher {
    * @return property value
    * @throws InvalidSnmpConfigurationException if property with such key does not exist
    */
-  private static String getDispatchProperty(Map<String, String> dispatchProperties, String key) throws InvalidSnmpConfigurationException {
+  protected static String getDispatchProperty(Map<String, String> dispatchProperties, String key) throws InvalidSnmpConfigurationException {
     if (dispatchProperties == null || !dispatchProperties.containsKey(key)) {
       throw new InvalidSnmpConfigurationException(String.format("Property \"%s\" should be set.", key));
     }
@@ -353,7 +400,7 @@ public class SNMPDispatcher implements NotificationDispatcher {
    * @return corresponding SnmpVersion instance
    * @throws InvalidSnmpConfigurationException if dispatch properties doesn't contain required property
    */
-  private SnmpVersion getSnmpVersion(Map<String, String> dispatchProperties) throws InvalidSnmpConfigurationException {
+  protected SnmpVersion getSnmpVersion(Map<String, String> dispatchProperties) throws InvalidSnmpConfigurationException {
     String snmpVersion = getDispatchProperty(dispatchProperties, SNMP_VERSION_PROPERTY);
     try {
       return SnmpVersion.valueOf(snmpVersion);
@@ -370,7 +417,7 @@ public class SNMPDispatcher implements NotificationDispatcher {
    * @return corresponding TrapSecurity instance
    * @throws InvalidSnmpConfigurationException if dispatch properties doesn't contain required property
    */
-  private TrapSecurity getSecurityLevel(Map<String, String> dispatchProperties) throws InvalidSnmpConfigurationException {
+  protected TrapSecurity getSecurityLevel(Map<String, String> dispatchProperties) throws InvalidSnmpConfigurationException {
     String securityLevel = getDispatchProperty(dispatchProperties, SECURITY_LEVEL_PROPERTY);
     try {
       return TrapSecurity.valueOf(securityLevel);
@@ -391,5 +438,13 @@ public class SNMPDispatcher implements NotificationDispatcher {
     if (notification.Callback != null) {
       notification.Callback.onSuccess(notification.CallbackIds);
     }
+  }
+
+  public Integer getPort() {
+    return port;
+  }
+
+  protected UdpTransportMapping getTransportMapping() {
+    return transportMapping;
   }
 }

@@ -31,6 +31,8 @@ import subprocess
 from ambari_commons.shell import shellRunner
 import time
 import uuid
+import json
+import glob
 from AmbariConfig import AmbariConfig
 from ambari_commons import OSCheck, OSConst
 from ambari_commons.os_family_impl import OsFamilyImpl
@@ -39,9 +41,9 @@ log = logging.getLogger()
 
 
 def run_os_command(cmd):
-  if type(cmd) == str:
-    cmd = shlex.split(cmd)
+  shell = (type(cmd) == str)
   process = subprocess.Popen(cmd,
+                             shell=shell,
                              stdout=subprocess.PIPE,
                              stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE
@@ -51,10 +53,18 @@ def run_os_command(cmd):
 
 
 class Facter(object):
-  def __init__(self):
-    self.config = self.resolve_ambari_config()
-  
+  def __init__(self, config):
+    """
+    Initialize the configs, which can be provided if using multiple Agents per host.
+    :param config: Agent configs. None if will use the default location.
+    """
+    self.config = config if config is not None else self.resolve_ambari_config()
+
   def resolve_ambari_config(self):
+    """
+    Resolve the default Ambari Agent configs.
+    :return: The default configs.
+    """
     try:
       config = AmbariConfig()
       if os.path.exists(AmbariConfig.getConfigFile()):
@@ -93,8 +103,12 @@ class Facter(object):
   # Returns the CPU hardware architecture
   def getArchitecture(self):
     result = platform.processor()
-    if result == '':
-      return 'OS NOT SUPPORTED'
+    if not result:
+      retcode, out, err = run_os_command("lscpu | grep Architecture: | awk '{ print $2 }'")
+      out = out.strip()
+      if out:
+        return out
+      return 'unknown cpu arch'
     else:
       return result
 
@@ -150,40 +164,97 @@ class Facter(object):
   def getUptimeDays(self):
     return self.getUptimeSeconds() / (60 * 60 * 24)
 
-  def facterInfo(self):
-    facterInfo = {}
-    facterInfo['id'] = self.getId()
-    facterInfo['kernel'] = self.getKernel()
-    facterInfo['domain'] = self.getDomain()
-    facterInfo['fqdn'] = self.getFqdn()
-    facterInfo['hostname'] = self.getHostname()
-    facterInfo['macaddress'] = self.getMacAddress()
-    facterInfo['architecture'] = self.getArchitecture()
-    facterInfo['operatingsystem'] = self.getOperatingSystem()
-    facterInfo['operatingsystemrelease'] = self.getOperatingSystemRelease()
-    facterInfo['physicalprocessorcount'] = self.getProcessorcount()
-    facterInfo['processorcount'] = self.getProcessorcount()
-    facterInfo['timezone'] = self.getTimeZone()
-    facterInfo['hardwareisa'] = self.getArchitecture()
-    facterInfo['hardwaremodel'] = self.getArchitecture()
-    facterInfo['kernelrelease'] = self.getKernelRelease()
-    facterInfo['kernelversion'] = self.getKernelVersion()
-    facterInfo['osfamily'] = self.getOsFamily()
-    facterInfo['kernelmajversion'] = self.getKernelMajVersion()
+  def getSystemResourceIfExists(self, systemResources, key, default):
+    if key in systemResources:
+      return systemResources[key]
+    else:
+      return default
 
-    facterInfo['ipaddress'] = self.getIpAddress()
-    facterInfo['netmask'] = self.getNetmask()
-    facterInfo['interfaces'] = self.getInterfaces()
-
-    facterInfo['uptime_seconds'] = str(self.getUptimeSeconds())
-    facterInfo['uptime_hours'] = str(self.getUptimeHours())
-    facterInfo['uptime_days'] = str(self.getUptimeDays())
-
-    facterInfo['memorysize'] = self.getMemorySize()
-    facterInfo['memoryfree'] = self.getMemoryFree()
-    facterInfo['memorytotal'] = self.getMemoryTotal()
-
+  def replaceFacterInfoWithSystemResources(self, systemResources, facterInfo):
+    """
+    Replace facter info with fake system resource data (if there are any).
+    """
+    for key in facterInfo:
+      facterInfo[key] = self.getSystemResourceIfExists(systemResources, key, facterInfo[key])
     return facterInfo
+
+  def getSystemResourceOverrides(self):
+    """
+    Read all json files from 'system_resource_overrides' directory, and later these values are used as
+    fake system data for hosts. In case of the key-value pairs cannot be loaded use default behaviour.
+    """
+    systemResources = {}
+    if self.config.has_option('agent', 'system_resource_overrides'):
+      systemResourceDir = self.config.get('agent', 'system_resource_overrides', '').strip()
+      if systemResourceDir:
+        if os.path.isdir(systemResourceDir) and os.path.exists(systemResourceDir):
+          try:
+            for filename in glob.glob('%s/*.json' % systemResourceDir):
+              with open(filename) as fp:
+                data = json.loads(fp.read())
+                for (key, value) in data.items():
+                  systemResources[key] = data[key]
+          except:
+            log.warn(
+              "Cannot read values from json files in %s. it won't be used for gathering system resources." % systemResourceDir)
+        else:
+          log.info(
+            "Directory: '%s' does not exist - it won't be used for gathering system resources." % systemResourceDir)
+      else:
+        log.info("'system_resource_dir' is not set - it won't be used for gathering system resources.")
+    return systemResources
+
+  def getFqdn(self):
+    raise NotImplementedError()
+
+  def getNetmask(self):
+    raise NotImplementedError()
+
+  def getInterfaces(self):
+    raise NotImplementedError()
+
+  def getUptimeSeconds(self):
+    raise NotImplementedError()
+
+  def getMemorySize(self):
+    raise NotImplementedError()
+
+  def getMemoryFree(self):
+    raise NotImplementedError()
+
+  def getMemoryTotal(self):
+    raise NotImplementedError()
+
+  def facterInfo(self):
+    return {
+      'id': self.getId(),
+      'kernel': self.getKernel(),
+      'domain': self.getDomain(),
+      'fqdn': self.getFqdn(),
+      'hostname': self.getHostname(),
+      'macaddress': self.getMacAddress(),
+      'architecture': self.getArchitecture(),
+      'operatingsystem': self.getOperatingSystem(),
+      'operatingsystemrelease': self.getOperatingSystemRelease(),
+      'physicalprocessorcount': self.getProcessorcount(),
+      'processorcount': self.getProcessorcount(),
+      'timezone': self.getTimeZone(),
+      'hardwareisa': self.getArchitecture(),
+      'hardwaremodel': self.getArchitecture(),
+      'kernelrelease': self.getKernelRelease(),
+      'kernelversion': self.getKernelVersion(),
+      'osfamily': self.getOsFamily(),
+      'kernelmajversion': self.getKernelMajVersion(),
+      'ipaddress': self.getIpAddress(),
+      'netmask': self.getNetmask(),
+      'interfaces': self.getInterfaces(),
+      'uptime_seconds': str(self.getUptimeSeconds()),
+      'uptime_hours': str(self.getUptimeHours()),
+      'uptime_days': str(self.getUptimeDays()),
+      'memorysize': self.getMemorySize(),
+      'memoryfree': self.getMemoryFree(),
+      'memorytotal': self.getMemoryTotal()
+    }
 
   #Convert kB to GB
   @staticmethod
@@ -290,8 +361,12 @@ class FacterWindows(Facter):
 
   def facterInfo(self):
     facterInfo = super(FacterWindows, self).facterInfo()
-    facterInfo['swapsize'] = Facter.convertSizeMbToGb(self.getSwapSize())
-    facterInfo['swapfree'] = Facter.convertSizeMbToGb(self.getSwapFree())
+    systemResourceOverrides = self.getSystemResourceOverrides()
+    facterInfo = self.replaceFacterInfoWithSystemResources(systemResourceOverrides, facterInfo)
+    facterInfo['swapsize'] = Facter.convertSizeMbToGb(
+      self.getSystemResourceIfExists(systemResourceOverrides, 'swapsize', self.getSwapSize()))
+    facterInfo['swapfree'] = Facter.convertSizeMbToGb(
+      self.getSystemResourceIfExists(systemResourceOverrides, 'swapfree', self.getSwapFree()))
     return facterInfo
 
 
@@ -303,8 +378,8 @@ class FacterLinux(Facter):
   GET_UPTIME_CMD = "cat /proc/uptime"
   GET_MEMINFO_CMD = "cat /proc/meminfo"
 
-  def __init__(self):
-    super(FacterLinux,self).__init__()
+  def __init__(self, config):
+    super(FacterLinux,self).__init__(config)
     self.DATA_IFCONFIG_SHORT_OUTPUT = FacterLinux.setDataIfConfigShortOutput()
     self.DATA_UPTIME_OUTPUT = FacterLinux.setDataUpTimeOutput()
     self.DATA_MEMINFO_OUTPUT = FacterLinux.setMemInfoOutput()
@@ -468,14 +543,20 @@ class FacterLinux(Facter):
 
   def facterInfo(self):
     facterInfo = super(FacterLinux, self).facterInfo()
+    systemResourceOverrides = self.getSystemResourceOverrides()
+    facterInfo = self.replaceFacterInfoWithSystemResources(systemResourceOverrides, facterInfo)
+
     facterInfo['selinux'] = self.isSeLinux()
-    facterInfo['swapsize'] = Facter.convertSizeKbToGb(self.getSwapSize())
-    facterInfo['swapfree'] = Facter.convertSizeKbToGb(self.getSwapFree())
+    facterInfo['swapsize'] = Facter.convertSizeKbToGb(
+      self.getSystemResourceIfExists(systemResourceOverrides, 'swapsize', self.getSwapSize()))
+    facterInfo['swapfree'] = Facter.convertSizeKbToGb(
+      self.getSystemResourceIfExists(systemResourceOverrides, 'swapfree', self.getSwapFree()))
     return facterInfo
 
 
 def main(argv=None):
-  print Facter().facterInfo()
+  config = None
+  print Facter(config).facterInfo()
 
 
 if __name__ == '__main__':

@@ -19,15 +19,13 @@
 package org.apache.ambari.server.controller;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.google.common.collect.Multimap;
+import org.apache.ambari.server.state.ClusterHealthReport;
 import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.State;
-import org.apache.ambari.server.state.ClusterHealthReport;
 
 public class ClusterResponse {
 
@@ -55,6 +53,8 @@ public class ClusterResponse {
   private Integer totalHosts;
 
   private ClusterHealthReport clusterHealthReport;
+
+  private Map<String, String> credentialStoreServiceProperties = null;
 
   public ClusterResponse(Long clusterId, String clusterName,
                          State provisioningState, SecurityType securityType, Set<String> hostNames, Integer totalHosts,
@@ -230,5 +230,13 @@ public class ClusterResponse {
 
   public void setDesiredServiceConfigVersions(Map<String, Collection<ServiceConfigVersionResponse>> desiredServiceConfigVersions) {
     this.desiredServiceConfigVersions = desiredServiceConfigVersions;
+  }
+
+  public void setCredentialStoreServiceProperties(Map<String, String> credentialServiceProperties) {
+    this.credentialStoreServiceProperties = credentialServiceProperties;
+  }
+
+  public Map<String, String> getCredentialStoreServiceProperties() {
+    return credentialStoreServiceProperties;
   }
 }

@@ -129,7 +129,7 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
   /**
    * The property containing the dispatch recipients
    */
-  private static final String AMBARI_DISPATCH_RECIPIENTS = "ambari.dispatch.recipients";
+  public static final String AMBARI_DISPATCH_RECIPIENTS = "ambari.dispatch.recipients";
 
   /**
    * The context key for Ambari information to be passed to Velocity.
@@ -451,7 +451,7 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
     String targetType = target.getNotificationType();
 
     // build the velocity objects for template rendering
-    AmbariInfo ambari = new AmbariInfo(m_metaInfo.get());
+    AmbariInfo ambari = new AmbariInfo(m_metaInfo.get(), m_configuration);
     AlertSummaryInfo summary = new AlertSummaryInfo(histories);
     DispatchInfo dispatch = new DispatchInfo(target);
 
@@ -516,7 +516,7 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
     String targetType = target.getNotificationType();
 
     // build the velocity objects for template rendering
-    AmbariInfo ambari = new AmbariInfo(m_metaInfo.get());
+    AmbariInfo ambari = new AmbariInfo(m_metaInfo.get(), m_configuration);
     AlertInfo alert = new AlertInfo(history);
     DispatchInfo dispatch = new DispatchInfo(target);
 
@@ -558,6 +558,10 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
         bodyWriter.write(alert.getAlertName());
         bodyWriter.write(" ");
         bodyWriter.write(alert.getAlertText());
+        if (alert.hasHostName()) {
+          bodyWriter.write(" ");
+          bodyWriter.append(alert.getHostName());
+        }
         bodyWriter.write("\n");
       }
     }
@@ -712,7 +716,7 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
      *
      * @param history
      */
-    protected AlertInfo(AlertHistoryEntity history) {
+    public AlertInfo(AlertHistoryEntity history) {
       m_history = history;
     }
 
@@ -771,6 +775,25 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
     public AlertState getAlertState() {
       return m_history.getAlertState();
     }
+
+    /**
+     * Gets the definition id of the alert.
+     *
+     * @return
+     */
+    public Long getAlertDefinitionId() {
+      return m_history.getAlertDefinitionId();
+    }
+
+    /**
+     * Gets the hash of alert definition entity.
+     *
+     * @return
+     */
+    public int getAlertDefinitionHash() {
+      return m_history.getAlertDefinitionHash();
+    }
+
 
     /**
      * Gets the descriptive name of the alert.
@@ -1042,7 +1065,8 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
      *
      * @param metaInfo
      */
-    protected AmbariInfo(AmbariMetaInfo metaInfo) {
+    protected AmbariInfo(AmbariMetaInfo metaInfo, Configuration m_configuration) {
+      m_url = m_configuration.getAmbariDisplayUrl();
       m_version = metaInfo.getServerVersion();
     }
 
@@ -1051,6 +1075,10 @@ public class AlertNoticeDispatchService extends AbstractScheduledService {
      */
     public String getHostName() {
       return m_hostName;
+    }
+
+    public boolean hasUrl() {
+      return m_url != null;
     }
 
     /**

@@ -21,10 +21,13 @@ package org.apache.ambari.server.topology;
 
 import java.util.Map;
 
+import org.apache.ambari.server.controller.internal.ProvisionClusterRequest;
+
 /**
  * Factory for creating topology requests.
  */
 public interface TopologyRequestFactory {
-  public TopologyRequest createProvisionClusterRequest(Map<String, Object> properties) throws InvalidTopologyTemplateException;
+
+  public ProvisionClusterRequest createProvisionClusterRequest(Map<String, Object> properties, SecurityConfiguration securityConfiguration) throws InvalidTopologyTemplateException;
   // todo: use to create other request types
 }

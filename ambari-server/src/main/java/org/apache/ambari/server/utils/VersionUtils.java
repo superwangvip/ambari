@@ -17,6 +17,9 @@
  */
 package org.apache.ambari.server.utils;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.ambari.server.bootstrap.BootStrapImpl;
 import org.apache.commons.lang.StringUtils;
 
@@ -27,27 +30,35 @@ import org.apache.commons.lang.StringUtils;
  */
 public class VersionUtils {
   /**
-   * Compares two versions strings of the form N.N.N.N or even N.N.N.N-### (which should ignore everything after the dash).
+   * Compares two versions strings of the form N.N.N.N or even N.N.N.N-###
+   * (which should ignore everything after the dash). If the user has a custom
+   * stack, e.g., 2.3.MYNAME or MYNAME.2.3, then any segment that contains
+   * letters should be ignored.
    *
    * @param version1
+   *          the first operand. If set to {@value BootStrapImpl#DEV_VERSION}
+   *          then this will always return {@code 0)}
    * @param version2
-   * @param maxLengthToCompare The maximum length to compare - 2 means only Major and Minor
-   *                           0 to compare the whole version strings
-   * @return 0 if both are equal up to the length compared, -1 if first one is lower, +1 otherwise
+   *          the second operand.
+   * @param maxLengthToCompare
+   *          The maximum length to compare - 2 means only Major and Minor 0 to
+   *          compare the whole version strings
+   * @return 0 if both are equal up to the length compared, -1 if first one is
+   *         lower, +1 otherwise
    */
   public static int compareVersions(String version1, String version2, int maxLengthToCompare)
     throws IllegalArgumentException {
     if (version1 == null){
       throw new IllegalArgumentException("version1 cannot be null");
     }
-    
+
     if (version2 == null){
       throw new IllegalArgumentException("version2 cannot be null");
-    }    
-    
+    }
+
     version1 = StringUtils.trim(version1);
     version2 = StringUtils.trim(version2);
-    
+
     if (version1.indexOf('-') >=0) {
       version1 = version1.substring(0, version1.indexOf('-'));
     }
@@ -65,18 +76,42 @@ public class VersionUtils {
       throw new IllegalArgumentException("maxLengthToCompare cannot be less than 0");
     }
 
-    if(BootStrapImpl.DEV_VERSION.equals(version1.trim())) return 0;
+    if(BootStrapImpl.DEV_VERSION.equals(version1.trim())) {
+      return 0;
+    }
 
     String[] version1Parts = version1.split("\\.");
     String[] version2Parts = version2.split("\\.");
 
     int length = Math.max(version1Parts.length, version2Parts.length);
     length = maxLengthToCompare == 0 || maxLengthToCompare > length ? length : maxLengthToCompare;
+
+    List<Integer> stack1Parts = new ArrayList<Integer>();
+    List<Integer> stack2Parts = new ArrayList<Integer>();
+
     for (int i = 0; i < length; i++) {
-      int stack1Part = i < version1Parts.length ?
-          Integer.parseInt(version1Parts[i]) : 0;
-      int stack2Part = i < version2Parts.length ?
-          Integer.parseInt(version2Parts[i]) : 0;
+      // Robust enough to handle strings in the version
+      try {
+        int stack1Part = i < version1Parts.length ?
+            Integer.parseInt(version1Parts[i]) : 0;
+        stack1Parts.add(stack1Part);
+      } catch (NumberFormatException e) {
+        stack1Parts.add(0);
+      }
+      try {
+        int stack2Part = i < version2Parts.length ?
+            Integer.parseInt(version2Parts[i]) : 0;
+        stack2Parts.add(stack2Part);
+      } catch (NumberFormatException e) {
+        stack2Parts.add(0);
+      }
+    }
+
+    length = Math.max(stack1Parts.size(), stack2Parts.size());
+    for (int i = 0; i < length; i++) {
+      Integer stack1Part = stack1Parts.get(i);
+      Integer stack2Part = stack2Parts.get(i);
+
       if (stack1Part < stack2Part) {
         return -1;
       }
@@ -92,13 +127,20 @@ public class VersionUtils {
    * Compares two versions strings of the form N.N.N.N
    *
    * @param version1
+   *          the first operand. If set to {@value BootStrapImpl#DEV_VERSION}
+   *          then this will always return {@code 0)}
    * @param version2
-   * @param allowEmptyVersions Allow one or both version values to be null or empty string
-   * @return 0 if both are equal up to the length compared, -1 if first one is lower, +1 otherwise
+   *          the second operand.
+   * @param allowEmptyVersions
+   *          Allow one or both version values to be null or empty string
+   * @return 0 if both are equal up to the length compared, -1 if first one is
+   *         lower, +1 otherwise
    */
   public static int compareVersions(String version1, String version2, boolean allowEmptyVersions) {
     if (allowEmptyVersions) {
-      if (version1 != null && version1.equals(BootStrapImpl.DEV_VERSION)) return 0;
+      if (version1 != null && version1.equals(BootStrapImpl.DEV_VERSION)) {
+        return 0;
+      }
       if (version1 == null && version2 == null) {
         return 0;
       } else {
@@ -129,7 +171,10 @@ public class VersionUtils {
    * Compares two versions strings of the form N.N.N.N
    *
    * @param version1
+   *          the first operand. If set to {@value BootStrapImpl#DEV_VERSION}
+   *          then this will always return {@code 0)}
    * @param version2
+   *          the second operand.
    * @return 0 if both are equal, -1 if first one is lower, +1 otherwise
    */
   public static int compareVersions(String version1, String version2) {
@@ -140,8 +185,12 @@ public class VersionUtils {
    * Compares two version for equality, allows empty versions
    *
    * @param version1
+   *          the first operand. If set to {@value BootStrapImpl#DEV_VERSION}
+   *          then this will always return {@code 0)}
    * @param version2
-   * @param allowEmptyVersions Allow one or both version values to be null or empty string
+   *          the second operand.
+   * @param allowEmptyVersions
+   *          Allow one or both version values to be null or empty string
    * @return true if versions are equal; false otherwise
    */
   public static boolean areVersionsEqual(String version1, String version2, boolean allowEmptyVersions) {

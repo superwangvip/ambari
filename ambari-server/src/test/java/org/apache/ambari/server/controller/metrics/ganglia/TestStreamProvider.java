@@ -18,15 +18,17 @@ package org.apache.ambari.server.controller.metrics.ganglia;
  * limitations under the License.
  */
 
-import org.apache.ambari.server.controller.utilities.StreamProvider;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
-public class TestStreamProvider implements StreamProvider {
+import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
+import org.apache.ambari.server.controller.internal.URLStreamProvider;
+
+public class TestStreamProvider extends URLStreamProvider {
   // Allow for filename to be set at runtime
   protected String fileName;
   private String lastSpec;
@@ -34,7 +36,14 @@ public class TestStreamProvider implements StreamProvider {
   private boolean isLastSpecUpdated;
 
   public TestStreamProvider(String fileName) {
+    super(1000, 1000, ComponentSSLConfiguration.instance());
     this.fileName = fileName;
+  }
+
+  @Override
+  public TestHttpUrlConnection processURL(String spec, String requestMethod, String body, Map<String, List<String>> headers)
+    throws IOException {
+    return new TestHttpUrlConnection(readFrom(spec));
   }
 
   @Override

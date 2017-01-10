@@ -23,6 +23,7 @@ App.WidgetWizardStep2View = Em.View.extend({
 
   /**
    * calculate template by widget type
+   * @type {object}
    */
   templateType: function () {
     switch (this.get('controller.content.widgetType')) {
@@ -38,7 +39,9 @@ App.WidgetWizardStep2View = Em.View.extend({
       case 'GRAPH':
         return {
           isGraph: true
-        }
+        };
+      default:
+        return {};
     }
   }.property('controller.content.widgetType'),
 
@@ -46,7 +49,7 @@ App.WidgetWizardStep2View = Em.View.extend({
     Em.run.later(this, function () {
       App.tooltip($("[rel='threshold-tooltip']"));
     }, 500);
-  }.observes(''),
+  },
 
   didInsertElement: function () {
     var controller = this.get('controller');
@@ -62,6 +65,7 @@ App.WidgetWizardStep2View = Em.View.extend({
 App.WidgetPropertyTextFieldView = Em.TextField.extend({
   valueBinding: 'property.value',
   placeholderBinding: 'property.placeholder',
+  classNames: ['form-control'],
   classNameBindings: ['property.classNames', 'parentView.basicClass']
 });
 
@@ -73,6 +77,7 @@ App.WidgetPropertyThresholdView = Em.View.extend({
 App.WidgetPropertySelectView = Em.Select.extend({
   contentBinding: 'property.options',
   classNameBindings: ['property.classNames', 'parentView.basicClass'],
+  classNames: ['form-control'],
   optionLabelPath: "content.label",
   optionValuePath: "content.value",
   didInsertElement: function () {

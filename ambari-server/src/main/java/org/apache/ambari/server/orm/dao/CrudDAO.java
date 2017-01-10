@@ -17,12 +17,14 @@
  */
 package org.apache.ambari.server.orm.dao;
 
+import java.util.Collection;
 import java.util.List;
 
 import javax.persistence.EntityManager;
 import javax.persistence.TypedQuery;
 
 import org.apache.ambari.server.orm.RequiresSession;
+
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.persist.Transactional;
@@ -73,12 +75,27 @@ public class CrudDAO<E, K> {
   }
 
   /**
+   * Retrieves the maximum ID from the entities.
+   *
+   * @param idColName name of the column that corresponds to the ID.
+   * @return maximum ID, or 0 if none exist.
+   */
+  @RequiresSession
+  public Long findMaxId(String idColName) {
+    final TypedQuery<Long> query = entityManagerProvider.get().createQuery("SELECT MAX(entity." + idColName + ") FROM "
+        + entityClass.getSimpleName() + " entity", Long.class);
+    // May be null if no results.
+    Long result = daoUtils.selectOne(query);
+    return result == null ? 0 : result;
+  }
+
+  /**
    * Creates entity.
    *
    * @param entity entity to create
    */
   @Transactional
-  public void create(E entity) {
+  protected void create(E entity) {
     entityManagerProvider.get().persist(entity);
   }
 
@@ -111,6 +128,19 @@ public class CrudDAO<E, K> {
   @Transactional
   public void remove(E entity) {
     entityManagerProvider.get().remove(merge(entity));
+    entityManagerProvider.get().getEntityManagerFactory().getCache().evictAll();
+  }
+
+  /**
+   * Deletes entities.
+   *
+   * @param entities entities to delete
+   */
+  @Transactional
+  public void remove(Collection<E> entities) {
+    for (E entity : entities) {
+      entityManagerProvider.get().remove(merge(entity));
+    }
     entityManagerProvider.get().getEntityManagerFactory().getCache().evictAll();
   }
 

@@ -20,13 +20,15 @@ package org.apache.ambari.server.state;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Represents a single instance of a 'Config Type'
  */
 public interface Config {
+  Map<PropertyInfo.PropertyType, Set<String>> getPropertiesTypes();
 
-  void setStackId(StackId stackId);
+  void setPropertiesTypes(Map<PropertyInfo.PropertyType, Set<String>> propertiesTypes);
 
   /**
    * @return Config Type
@@ -62,18 +64,6 @@ public interface Config {
   public Map<String, Map<String, String>> getPropertiesAttributes();
 
   /**
-   * Change the version tag
-   * @param versionTag
-   */
-  public void setTag(String versionTag);
-
-  /**
-   * Set config version
-   * @param version
-   */
-  public void setVersion(Long version);
-
-  /**
    * Replace properties with new provided set
    * @param properties Property Map to replace existing one
    */
@@ -106,11 +96,5 @@ public interface Config {
   /**
    * Persist the configuration.
    */
-  public void persist();
-
-  /**
-   * Persist the configuration, optionally creating a new config entity.
-   */
-  public void persist(boolean newConfig);
-
+  public void save();
 }

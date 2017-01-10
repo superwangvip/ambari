@@ -58,9 +58,13 @@ public class ActionMetadata {
 
   private void fillHostComponentCommands() {
     //Standart commands for any host component
-    // TODO: Add START/STOP/INSTALL commands
     defaultHostComponentCommands.add("RESTART");
+    defaultHostComponentCommands.add("START");
+    defaultHostComponentCommands.add("STOP");
+    defaultHostComponentCommands.add("INSTALL");
     defaultHostComponentCommands.add("CONFIGURE");
+    defaultHostComponentCommands.add("CONFIGURE_FUNCTION");
+    defaultHostComponentCommands.add("DISABLE_SECURITY");
   }
 
   private void fillServiceClients() {
@@ -95,6 +99,20 @@ public class ActionMetadata {
 
   public String getServiceCheckAction(String serviceName) {
     return serviceCheckActions.get(serviceName.toLowerCase());
+  }
+
+  /**
+   * Get service name by service check action name
+   * @param serviceCheckAction service check action name like ZOOKEEPER_QUORUM_SERVICE_CHECK
+   * @return service name (capitalized) or null if not found
+   */
+  public String getServiceNameByServiceCheckAction(String serviceCheckAction) {
+    for (Map.Entry<String, String> entry : serviceCheckActions.entrySet()) {
+      if (entry.getValue().equals(serviceCheckAction)) {
+        return entry.getKey().toUpperCase();
+      }
+    }
+    return null;
   }
 
   public void addServiceCheckAction(String serviceName) {

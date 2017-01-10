@@ -28,6 +28,8 @@ import javax.persistence.Basic;
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
@@ -47,15 +49,25 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.security.SecurityHelper;
 import org.apache.ambari.server.security.SecurityHelperImpl;
 import org.apache.ambari.server.security.authorization.AmbariAuthorizationFilter;
+import org.apache.ambari.server.view.ViewContextImpl;
+import org.apache.ambari.server.view.ViewRegistry;
 import org.apache.ambari.server.view.configuration.InstanceConfig;
 import org.apache.ambari.server.view.validation.InstanceValidationResultImpl;
 import org.apache.ambari.server.view.validation.ValidationException;
 import org.apache.ambari.server.view.validation.ValidationResultImpl;
-import org.apache.ambari.view.validation.Validator;
+import org.apache.ambari.view.ClusterType;
 import org.apache.ambari.view.ResourceProvider;
+import org.apache.ambari.view.ViewContext;
 import org.apache.ambari.view.ViewDefinition;
 import org.apache.ambari.view.ViewInstanceDefinition;
+import org.apache.ambari.view.migration.ViewDataMigrationContext;
+import org.apache.ambari.view.migration.ViewDataMigrator;
 import org.apache.ambari.view.validation.ValidationResult;
+import org.apache.ambari.view.validation.Validator;
+
+import com.google.inject.AbstractModule;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
 
 /**
  * Represents an instance of a View.
@@ -65,14 +77,17 @@ import org.apache.ambari.view.validation.ValidationResult;
     name = "UQ_viewinstance_name", columnNames = {"view_name", "name"}
   )
 )
-@NamedQueries({
-  @NamedQuery(name = "allViewInstances",
-      query = "SELECT viewInstance FROM ViewInstanceEntity viewInstance"),
-  @NamedQuery(name = "viewInstanceByResourceId", query =
-      "SELECT viewInstance " +
-          "FROM ViewInstanceEntity viewInstance " +
-          "WHERE viewInstance.resource.id=:resourceId")
-})
+@NamedQueries({ @NamedQuery(
+    name = "allViewInstances",
+    query = "SELECT viewInstance FROM ViewInstanceEntity viewInstance"),
+    @NamedQuery(
+        name = "viewInstanceByResourceId",
+        query = "SELECT viewInstance FROM ViewInstanceEntity viewInstance "
+            + "WHERE viewInstance.resource.id=:resourceId"),
+    @NamedQuery(
+        name = "getResourceIdByViewInstance",
+        query = "SELECT viewInstance.resource FROM ViewInstanceEntity viewInstance "
+            + "WHERE viewInstance.viewName = :viewName AND viewInstance.name = :instanceName"), })
 
 @TableGenerator(name = "view_instance_id_generator",
   table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
@@ -114,7 +129,14 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
    * The associated cluster handle.
    */
   @Column(name = "cluster_handle", nullable = true)
-  private String clusterHandle;
+  private Long clusterHandle;
+
+  /**
+   *  Cluster Type for cluster Handle
+   */
+  @Enumerated(value = EnumType.STRING)
+  @Column(name = "cluster_type", nullable = false, length = 100)
+  private ClusterType clusterType = ClusterType.LOCAL_AMBARI;
 
   /**
    * Visible flag.
@@ -129,6 +151,13 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
   @Column
   @Basic
   private String icon;
+
+
+  @OneToOne(cascade = CascadeType.ALL)
+  @JoinColumns({
+          @JoinColumn(name = "short_url", referencedColumnName = "url_id", nullable = true)
+  })
+  private ViewURLEntity viewUrl;
 
   /**
    * The big icon path.
@@ -211,12 +240,17 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
   @Transient
   private SecurityHelper securityHelper = SecurityHelperImpl.getInstance();
 
+  /**
+   * The view data migrator.
+   */
+  @Transient
+  private ViewDataMigrator dataMigrator;
 
   // ----- Constructors ------------------------------------------------------
 
   public ViewInstanceEntity() {
     instanceConfig = null;
-    this.alterNames = 1;
+    alterNames = 1;
   }
 
   /**
@@ -226,14 +260,15 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
    * @param instanceConfig the associated configuration
    */
   public ViewInstanceEntity(ViewEntity view, InstanceConfig instanceConfig) {
-    this.name = instanceConfig.getName();
+    name = instanceConfig.getName();
     this.instanceConfig = instanceConfig;
     this.view = view;
-    this.viewName = view.getName();
-    this.description = instanceConfig.getDescription();
-    this.clusterHandle = null;
-    this.visible = instanceConfig.isVisible() ? 'Y' : 'N';
-    this.alterNames = 1;
+    viewName = view.getName();
+    description = instanceConfig.getDescription();
+    clusterHandle = null;
+    visible = instanceConfig.isVisible() ? 'Y' : 'N';
+    alterNames = 1;
+    clusterType = ClusterType.LOCAL_AMBARI;
 
     String label = instanceConfig.getLabel();
     this.label = (label == null || label.length() == 0) ? view.getLabel() : label;
@@ -264,13 +299,13 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
    */
   public ViewInstanceEntity(ViewEntity view, String name, String label) {
     this.name = name;
-    this.instanceConfig = null;
+    instanceConfig = null;
     this.view = view;
-    this.viewName = view.getName();
-    this.description = null;
-    this.clusterHandle = null;
-    this.visible = 'Y';
-    this.alterNames = 1;
+    viewName = view.getName();
+    description = null;
+    clusterHandle = null;
+    visible = 'Y';
+    alterNames = 1;
     this.label = label;
   }
 
@@ -333,9 +368,13 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
   }
 
   @Override
-  public String getClusterHandle() {
+  public Long getClusterHandle() {
     return clusterHandle;
   }
+
+
+
+
 
   @Override
   public boolean isVisible() {
@@ -371,6 +410,7 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
   public void setViewName(String viewName) {
     this.viewName = viewName;
   }
+
 
   /**
    * Get the name of this instance.
@@ -411,12 +451,31 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
   /**
    * Set a cluster association for this view instance with the Ambari cluster
    * identified by the given cluster handle.  For a local cluster reference,
-   * the cluster handle is simply the unique cluster name.
+   * the cluster handle is simply the unique cluster id.
    *
    * @param clusterHandle  the cluster identifier
    */
-  public void setClusterHandle(String clusterHandle) {
+  public void setClusterHandle(Long clusterHandle) {
     this.clusterHandle = clusterHandle;
+  }
+
+  /**
+   *  Get the type of cluster the view instance is attached to
+   *
+   * @return clusterType the type of cluster for cluster handle
+   */
+  @Override
+  public ClusterType getClusterType() {
+    return clusterType;
+  }
+
+  /**
+   * Set the type of cluster for cluster handle
+   *
+   * @param clusterType
+   */
+  public void setClusterType(ClusterType clusterType) {
+    this.clusterType = clusterType;
   }
 
   /**
@@ -774,6 +833,42 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
   }
 
   /**
+   * Get the data migrator instance for view instance.
+   *
+   * @param dataMigrationContext  the data migration context to inject into migrator instance.
+   * @return  the data migrator.
+   * @throws ClassNotFoundException  if class defined in the archive could not be loaded
+   */
+  public ViewDataMigrator getDataMigrator(ViewDataMigrationContext dataMigrationContext)
+      throws ClassNotFoundException {
+    if (view != null) {
+      if (dataMigrator == null && view.getConfiguration().getDataMigrator() != null) {
+        ClassLoader cl = view.getClassLoader();
+        dataMigrator = getDataMigrator(view.getConfiguration().getDataMigratorClass(cl),
+                                       new ViewContextImpl(view, ViewRegistry.getInstance()),
+                                       dataMigrationContext);
+      }
+    }
+    return dataMigrator;
+  }
+
+  // get the data migrator class; inject a migration and view contexts
+  private static ViewDataMigrator getDataMigrator(Class<? extends ViewDataMigrator> clazz,
+                                                  final ViewContext viewContext,
+                                                  final ViewDataMigrationContext dataMigrationContext) {
+    Injector viewInstanceInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(ViewContext.class)
+                .toInstance(viewContext);
+        bind(ViewDataMigrationContext.class)
+            .toInstance(dataMigrationContext);
+      }
+    });
+    return viewInstanceInjector.getInstance(clazz);
+  }
+
+  /**
    * Validate the state of the instance.
    *
    * @param viewEntity the view entity to which this instance will be bound
@@ -871,8 +966,12 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
 
     ViewInstanceEntity that = (ViewInstanceEntity) o;
 
@@ -884,6 +983,29 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
     int result = viewName.hashCode();
     result = 31 * result + name.hashCode();
     return result;
+  }
+
+  /**
+   * Get the view URL associated with the instance
+   * @return
+     */
+  public ViewURLEntity getViewUrl() {
+    return viewUrl;
+  }
+
+  /**
+   * Set the view URL associated with the instance
+   * @param viewUrl
+     */
+  public void setViewUrl(ViewURLEntity viewUrl) {
+    this.viewUrl = viewUrl;
+  }
+
+  /**
+   * Remove the URL associated with this entity
+   */
+  public void clearUrl() {
+    viewUrl = null;
   }
 
   //----- ViewInstanceVersionDTO inner class --------------------------------------------------
@@ -948,4 +1070,5 @@ public class ViewInstanceEntity implements ViewInstanceDefinition {
       return instanceName;
     }
   }
+
 }

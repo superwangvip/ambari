@@ -18,8 +18,7 @@
 
 package org.apache.ambari.server.api.services;
 
-import org.apache.ambari.server.api.resources.ResourceInstance;
-import org.apache.ambari.server.controller.spi.Resource;
+import java.util.Collections;
 
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -32,7 +31,9 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
-import java.util.Collections;
+
+import org.apache.ambari.server.api.resources.ResourceInstance;
+import org.apache.ambari.server.controller.spi.Resource;
 
 
 /**
@@ -132,6 +133,18 @@ public class PermissionService extends BaseService {
     return handleRequest(headers, null, ui, Request.Type.DELETE, createPermissionResource(permissionId));
   }
 
+  /**
+   * Gets the role (permission) authorization service.
+   *
+   * @param request      the request
+   * @param permissionId the permission id
+   * @return the RoleAuthorizationService
+   */
+  @Path("{permissionId}/authorizations")
+  public RoleAuthorizationService getRoleAuthorizations(
+      @Context javax.ws.rs.core.Request request, @PathParam("permissionId") String permissionId) {
+    return new RoleAuthorizationService(permissionId);
+  }
 
   // ----- helper methods ----------------------------------------------------
 

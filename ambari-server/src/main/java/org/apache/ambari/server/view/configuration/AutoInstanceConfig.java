@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,11 +18,15 @@
 
 package org.apache.ambari.server.view.configuration;
 
+import java.util.List;
+import java.util.Set;
+
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlElementWrapper;
-import java.util.List;
+import javax.xml.bind.annotation.adapters.CollapsedStringAdapter;
+import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
 /**
  * View auto instance configuration.
@@ -43,7 +47,25 @@ public class AutoInstanceConfig extends InstanceConfig {
    */
   @XmlElementWrapper
   @XmlElement(name="service")
+  @XmlJavaTypeAdapter(CollapsedStringAdapter.class)
   private List<String> services;
+
+  /**
+   * A list of roles that should have access to this view.
+   * <p>
+   * Example values:
+   * <ul>
+   * <li>CLUSTER.ADMINISTRATOR</li>
+   * <li>CLUSTER.OPERATOR</li>
+   * <li>SERVICE.ADMINISTRATOR</li>
+   * <li>SERVICE.OPERATOR</li>
+   * <li>CLUSTER.USER</li>
+   * </ul>
+   */
+  @XmlElementWrapper
+  @XmlElement(name="role")
+  @XmlJavaTypeAdapter(CollapsedStringAdapter.class)
+  private Set<String> roles;
 
   /**
    * Get the stack id used for auto instance creation.
@@ -61,5 +83,12 @@ public class AutoInstanceConfig extends InstanceConfig {
    */
   public List<String> getServices() {
     return services;
+  }
+
+  /**
+   * @return the set of roles that should have access to this view
+   */
+  public Set<String> getRoles() {
+    return roles;
   }
 }

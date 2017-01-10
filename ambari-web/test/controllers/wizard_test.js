@@ -22,55 +22,57 @@ require('controllers/wizard');
 
 var c;
 
+function getSteps(start, count) {
+  var steps = [];
+  for (var j = start; j <= count; j++) {
+    steps.push(Em.Object.create({step: j, value: false}));
+  }
+  return steps;
+}
+
 describe('App.WizardController', function () {
 
   var wizardController = App.WizardController.create({});
 
   var totalSteps = 11;
-  var ruller = [];
-  for(var i = 0; i < totalSteps; i++) {
-    ruller.push(i);
-  }
-
+  var ruller = d3.range(0, totalSteps);
+  var i;
   beforeEach(function () {
     c = App.WizardController.create({});
   });
 
-  describe('#setLowerStepsDisable', function() {
-    for(var i = 1; i < totalSteps; i++) {
-      var indx = i;
-      var steps = [];
-      for(var j = 1; j <= indx; j++) {
-        steps.push(Em.Object.create({step:j,value:false}));
-      }
-      wizardController.set('isStepDisabled', steps);
-      for(j = 1; j <= indx; j++) {
-        it('Steps: ' + i + ' | Disabled: ' + (j-1), function() {
-          wizardController.setLowerStepsDisable(j);
-          expect(wizardController.get('isStepDisabled').filterProperty('value', true).length).to.equal(j-1);
-        });
-      }
-    }
+  describe('#setLowerStepsDisable', function () {
+    var steps = getSteps(1, 10);
+    wizardController.set('isStepDisabled', steps);
+    steps.forEach(function (step) {
+      var index = step.get('step');
+      it('Steps: 10 | Disabled: ' + (index - 1), function () {
+        wizardController.setLowerStepsDisable(index);
+        expect(wizardController.get('isStepDisabled').filterProperty('value', true).length).to.be.equal(index - 1);
+      });
+    });
   });
 
   // isStep0 ... isStep10 tests
   App.WizardController1 = App.WizardController.extend({currentStep:''});
   var tests = [];
-  for(var i = 0; i < totalSteps; i++) {
+  for (i = 0; i < totalSteps; i++) {
     var n = ruller.slice(0);
-    n.splice(i,1);
-    tests.push({i:i,n:n});
+    n.splice(i, 1);
+    tests.push({i: i, n: n});
   }
-  tests.forEach(function(test) {
-    describe('isStep'+test.i, function() {
+  tests.forEach(function (test) {
+    describe('isStep' + test.i, function () {
       var w = App.WizardController1.create();
       w.set('currentStep', test.i);
-      it('Current Step is ' + test.i + ', so isStep' + test.i + ' is TRUE', function() {
-        expect(w.get('isStep'+ test.i)).to.equal(true);
+
+      it('Current Step is {0}, so isStep{1} is TRUE'.format(test.i, test.i), function () {
+        expect(w.get('isStep' + test.i)).to.equal(true);
       });
-      test.n.forEach(function(indx) {
-        it('Current Step is ' + test.i + ', so isStep' + indx + ' is FALSE', function() {
-          expect(w.get('isStep'+ indx)).to.equal(false);
+
+      test.n.forEach(function (indx) {
+        it('Current Step is {0}, so isStep{1} is FALSE'.format(test.i, indx), function () {
+          expect(w.get('isStep' + indx)).to.equal(false);
         });
       });
     });
@@ -79,27 +81,30 @@ describe('App.WizardController', function () {
 
   describe('#gotoStep', function() {
     var w = App.WizardController1.create();
-    var steps = [];
-    for(var j = 0; j < totalSteps; j++) {
-      steps.push(Em.Object.create({step:j,value:false}));
-    }
+    var steps = getSteps(0, totalSteps - 1);
     steps.forEach(function(step, index) {
       step.set('value', true);
       w.set('isStepDisabled', steps);
-      it('step ' + index + ' is disabled, so gotoStep('+index+') is not possible', function() {
+      it('step {0} is disabled, so gotoStep({1}) is not possible'.format(index, index), function() {
         expect(w.gotoStep(index)).to.equal(false);
       });
     });
   });
 
   describe('#launchBootstrapSuccessCallback', function() {
-    it('Save bootstrapRequestId', function() {
-      var data = {requestId: 123};
-      var params = {popup: {finishLoading: function(){}}};
+    var params = {popup: {finishLoading: function(){}}};
+    beforeEach(function () {
       sinon.spy(params.popup, "finishLoading");
-      wizardController.launchBootstrapSuccessCallback(data, {}, params);
-      expect(params.popup.finishLoading.calledWith(123)).to.be.true;
+    });
+
+    afterEach(function () {
       params.popup.finishLoading.restore();
+    });
+
+    it('Save bootstrapRequestId', function() {
+      var data = {requestId: 123, status: 'SUCCESS', log: 'ok'};
+      wizardController.launchBootstrapSuccessCallback(data, {}, params);
+      expect(params.popup.finishLoading.calledWith(123, null, 'SUCCESS', 'ok')).to.be.true;
     });
   });
 
@@ -125,6 +130,7 @@ describe('App.WizardController', function () {
       sinon.stub(wizardController, 'get')
         .withArgs('installOptionsTemplate').returns({useSsh: true})
         .withArgs('installWindowsOptionsTemplate').returns({useSsh: false});
+      this.stub = sinon.stub(App, 'get');
     });
 
     afterEach(function () {
@@ -134,7 +140,7 @@ describe('App.WizardController', function () {
 
     cases.forEach(function (item) {
       it(title.format(item.expected), function () {
-        sinon.stub(App, 'get').withArgs('isHadoopWindowsStack').returns(item.isHadoopWindowsStack);
+        this.stub.withArgs('isHadoopWindowsStack').returns(item.isHadoopWindowsStack);
         expect(wizardController.getInstallOptions()).to.eql(item.expected);
       });
     });
@@ -145,7 +151,7 @@ describe('App.WizardController', function () {
 
     wizardController.setProperties({
       content: {},
-      name: 'wizard'
+      name: 'wizardController'
     });
 
     beforeEach(function () {
@@ -156,12 +162,23 @@ describe('App.WizardController', function () {
       App.get.restore();
     });
 
-    it('should clear install options', function () {
-      wizardController.clearInstallOptions();
-      expect(wizardController.get('content.installOptions')).to.eql(wizardController.get('installOptionsTemplate'));
-      expect(wizardController.get('content.hosts')).to.eql({});
-      expect(wizardController.getDBProperty('installOptions')).to.eql(wizardController.get('installOptionsTemplate'));
-      expect(wizardController.getDBProperty('hosts')).to.eql({});
+    describe('should clear install options', function () {
+
+      beforeEach(function () {
+        wizardController.clearInstallOptions();
+      });
+      it('content.installOptions', function () {
+        expect(wizardController.get('content.installOptions')).to.eql(wizardController.get('installOptionsTemplate'));
+      });
+      it('content.hosts', function () {
+        expect(wizardController.get('content.hosts')).to.eql({});
+      });
+      it('installOptions', function () {
+        expect(wizardController.getDBProperty('installOptions')).to.eql(wizardController.get('installOptionsTemplate'));
+      });
+      it('hosts', function () {
+        expect(wizardController.getDBProperty('hosts')).to.eql({});
+      });
     });
   });
 
@@ -247,17 +264,144 @@ describe('App.WizardController', function () {
   });
 
   describe('#showLaunchBootstrapPopup', function () {
-    beforeEach(function(){
-      sinon.stub(App.ModalPopup,'show', function(data){
-        data.finishLoading.call(wizardController);
-      });
-    });
     afterEach(function(){
       App.ModalPopup.show.restore();
     });
-    it('should set error', function () {
-      wizardController.showLaunchBootstrapPopup(Em.K);
-      expect(wizardController.get('isError')).to.be.true;
+
+    describe('errors', function () {
+
+      beforeEach(function () {
+        sinon.stub(App.ModalPopup,'show', function (data) {
+          data.finishLoading.call(c);
+        });
+      });
+
+      it('should set error', function () {
+        c.showLaunchBootstrapPopup(Em.K);
+        expect(c.get('isError')).to.be.true;
+      });
+    });
+
+    describe('#finishLoading', function () {
+      var stepController = App.get('router.wizardStep3Controller'),
+        cases = [
+          {
+            requestId: null,
+            serverError: 'error',
+            wizardControllerProperties: {
+              isError: true,
+              showFooter: true,
+              showCloseButton: true,
+              serverError: 'error'
+            },
+            stepControllerProperties: {
+              isRegistrationInProgress: false,
+              isBootstrapFailed: true
+            },
+            bootStatus: 'FAILED',
+            callbackCallCount: 0,
+            hideCallCount: 0,
+            title: 'no request id'
+          },
+          {
+            requestId: 0,
+            status: 'ERROR',
+            log: 'log',
+            wizardControllerProperties: {
+              isError: true,
+              showFooter: true,
+              showCloseButton: true,
+              serverError: 'log'
+            },
+            stepControllerProperties: {
+              isRegistrationInProgress: false,
+              isBootstrapFailed: true
+            },
+            bootStatus: 'FAILED',
+            callbackCallCount: 0,
+            hideCallCount: 0,
+            title: 'ERROR status'
+          },
+          {
+            requestId: 1,
+            log: 'log',
+            wizardControllerProperties: {
+              isError: false,
+              showFooter: false,
+              showCloseButton: false,
+              serverError: null
+            },
+            stepControllerProperties: {
+              isRegistrationInProgress: true,
+              isBootstrapFailed: false
+            },
+            bootStatus: 'PENDING',
+            callbackCallCount: 1,
+            hideCallCount: 1,
+            title: 'request accepted'
+          }
+        ];
+      beforeEach(function () {
+        c.setProperties({
+          isError: false,
+          showFooter: false,
+          showCloseButton: false,
+          serverError: null,
+          hide: Em.K,
+          callback: Em.K
+        });
+        stepController.setProperties({
+          isRegistrationInProgress: true,
+          isBootstrapFailed: false,
+          hosts: [
+            {
+              bootStatus: 'PENDING'
+            },
+            {
+              bootStatus: 'PENDING'
+            }
+          ]
+        });
+        sinon.spy(c, 'hide');
+        sinon.spy(c, 'callback');
+      });
+      afterEach(function () {
+        c.hide.restore();
+        c.callback.restore();
+      });
+      cases.forEach(function (item) {
+        describe(item.title, function () {
+          var wizardControllerProperties = Em.keys(item.wizardControllerProperties),
+            stepControllerProperties = Em.keys(item.stepControllerProperties);
+
+          beforeEach(function () {
+            sinon.stub(App.ModalPopup,'show', function (data) {
+              data.finishLoading.call(c, item.requestId, item.serverError, item.status, item.log);
+            });
+            c.showLaunchBootstrapPopup(c.callback);
+          });
+
+          it('wizardControllerProperties are valid', function () {
+            expect(c.getProperties.apply(c, wizardControllerProperties)).to.eql(item.wizardControllerProperties);
+          });
+
+          it('stepControllerProperties are valid', function () {
+            expect(stepController.getProperties.apply(stepController, stepControllerProperties)).to.eql(item.stepControllerProperties);
+          });
+
+          it('bootStatus is valid', function () {
+            expect(stepController.get('hosts').mapProperty('bootStatus').uniq()).to.eql([item.bootStatus]);
+          });
+
+          it('callback is called needed number of times', function () {
+            expect(c.callback.callCount).to.equal(item.callbackCallCount);
+          });
+
+          it('hide is called needed number of times', function () {
+            expect(c.hide.callCount).to.equal(item.hideCallCount);
+          });
+        });
+      });
     });
   });
 
@@ -468,11 +612,9 @@ describe('App.WizardController', function () {
       sinon.stub(wizardController,'showLaunchBootstrapPopup').returns({
         name: 'popup'
       });
-      sinon.stub(App.ajax,'send', Em.K);
     });
     afterEach(function(){
       wizardController.showLaunchBootstrapPopup.restore();
-      App.ajax.send.restore();
     });
     it('should return popup', function () {
       expect(wizardController.launchBootstrap()).to.be.eql({
@@ -482,15 +624,21 @@ describe('App.WizardController', function () {
   });
 
   describe('#save', function () {
-    it('should save data', function () {
-      var res;
+    var res;
+    beforeEach(function () {
       sinon.stub(wizardController,'setDBProperty', function(data){
         res = data;
       });
       sinon.stub(wizardController,'toJSInstance').returns('val');
-      wizardController.save('name');
+    });
+
+    afterEach(function () {
       wizardController.setDBProperty.restore();
       wizardController.toJSInstance.restore();
+    });
+
+    it('should save data', function () {
+      wizardController.save('name');
       expect(res).to.be.equal('name');
     });
   });
@@ -530,20 +678,11 @@ describe('App.WizardController', function () {
       sinon.stub(wizardController,'saveClusterStatus', function(data){
         res = JSON.parse(JSON.stringify(data));
       });
-      sinon.stub(App.ajax,'send').returns({
-        then: function() {}
-      });
     });
     afterEach(function(){
       wizardController.saveClusterStatus.restore();
-      App.ajax.send.restore();
     });
     it('should call callbeck with data', function () {
-      var jsonData = {
-        Requests: {
-          id: 1
-        }
-      };
       wizardController.set('content', Em.Object.create({
         cluster: {
           oldRequestsId: '1'
@@ -694,7 +833,7 @@ describe('App.WizardController', function () {
       sinon.stub(App.MainAdminServiceAccountsController,'create').returns({
         loadUsers: function() {},
         get: function(type) {
-          if (type == 'dataIsLoaded') {
+          if (type === 'dataIsLoaded') {
             return true;
           }
           return Em.Object.create({
@@ -767,7 +906,7 @@ describe('App.WizardController', function () {
     });
     it('should load services from server', function () {
       wizardController.loadServicesFromServer();
-      expect(res).to.eql('services');
+      expect(res).to.be.equal('services');
     });
   });
 
@@ -913,14 +1052,18 @@ describe('App.WizardController', function () {
 
     beforeEach(function () {
       c.set('content', {});
+      sinon.stub(c, 'setDBProperty', Em.K);
       sinon.stub(c, 'setDBProperties', Em.K);
       sinon.stub(c, 'getDBProperty').withArgs('fileNamesToUpdate').returns([]);
+      sinon.stub(c, 'setPersistentProperty', Em.K);
       sinon.stub(App.config, 'shouldSupportFinal').returns(true);
     });
 
     afterEach(function () {
+      c.setDBProperty.restore();
       c.setDBProperties.restore();
       c.getDBProperty.restore();
+      c.setPersistentProperty.restore();
       App.config.shouldSupportFinal.restore();
     });
 
@@ -999,12 +1142,34 @@ describe('App.WizardController', function () {
             isFinal: true,
             defaultIsFinal: true,
             supportsFinal: true,
-            filename: 'filename',
+            filename: 'hdfs-site',
             displayType: 'string',
             isRequiredByAgent: true,
             hasInitialValue: true,
             isRequired: true,
-            group: {name: 'group'},
+            isUserProperty: true,
+            showLabel: true,
+            category: 'some_category'
+          }),
+          Em.Object.create({
+            id: 'id',
+            name: 'name2',
+            value: 'value',
+            defaultValue: 'defaultValue',
+            description: 'description',
+            serviceName: 'serviceName',
+            domain: 'domain',
+            isVisible: true,
+            isNotDefaultValue: true,
+            isFinal: true,
+            defaultIsFinal: true,
+            supportsFinal: true,
+            filename: 'hdfs-site',
+            displayType: 'string',
+            isRequiredByAgent: true,
+            hasInitialValue: true,
+            isRequired: false,
+            isUserProperty: false,
             showLabel: true,
             category: 'some_category'
           })
@@ -1030,6 +1195,7 @@ describe('App.WizardController', function () {
             isRequiredByAgent: true,
             hasInitialValue: true,
             isRequired: true,
+            isUserProperty: false,
             group: {name: 'group'},
             showLabel: true,
             category: 'some_category'
@@ -1038,7 +1204,7 @@ describe('App.WizardController', function () {
       })
     ]});
 
-    it('should save configs to content.serviceConfigProperties', function () {
+    it('should save configs from default config group to content.serviceConfigProperties', function () {
       c.saveServiceConfigProperties(stepController);
       var saved = c.get('content.serviceConfigProperties');
       expect(saved.length).to.equal(2);
@@ -1048,16 +1214,24 @@ describe('App.WizardController', function () {
     it('should not save admin_principal or admin_password to the localStorage', function () {
       c.saveServiceConfigProperties(kerberosStepController);
       var saved = c.get('content.serviceConfigProperties');
-      saved.forEach(function(config) {
-        expect(config.value).to.equal('');
-      });
+      expect(saved.everyProperty('value', '')).to.be.true;
+    });
+
+    it('should save `isUserProperty` and `isRequired` attributes correctly', function() {
+      c.saveServiceConfigProperties(stepController);
+      var saved = c.get('content.serviceConfigProperties'),
+          nameProp = saved.filterProperty('filename', 'hdfs-site.xml').findProperty('name', 'name'),
+          name2Prop = saved.filterProperty('filename', 'hdfs-site.xml').findProperty('name', 'name2');
+      assert.isTrue(Em.get(nameProp, 'isRequired'), 'hdfs-site.xml:name isRequired validation');
+      assert.isTrue(Em.get(nameProp, 'isUserProperty'), 'hdfs-site.xml:name isUserProperty validation');
+      assert.isFalse(Em.get(name2Prop, 'isRequired'), 'hdfs-site.xml:name2 isRequired validation');
+      assert.isFalse(Em.get(name2Prop, 'isUserProperty'), 'hdfs-site.xml:name2 isUserProperty validation');
     });
   });
 
   describe('#enableStep', function () {
 
-    it('should update appropriate value in isStepDisabled', function () {
-
+    beforeEach(function () {
       c.set('isStepDisabled', [
         Em.Object.create({step: 1, value: true}),
         Em.Object.create({step: 2, value: true}),
@@ -1067,10 +1241,14 @@ describe('App.WizardController', function () {
         Em.Object.create({step: 6, value: true}),
         Em.Object.create({step: 7, value: true})
       ]);
+    });
 
+    it('should update 1st value in isStepDisabled', function () {
       c.enableStep(1);
       expect(c.get('isStepDisabled')[0].get('value')).to.be.false;
+    });
 
+    it('should update 6th value in isStepDisabled', function () {
       c.enableStep(7);
       expect(c.get('isStepDisabled')[6].get('value')).to.be.false;
     });
@@ -1333,8 +1511,8 @@ describe('App.WizardController', function () {
       }
     ];
 
-    it('should convert objects and arrays to pure JS objects and arrays', function () {
-      testCases.forEach(function (testCase) {
+    testCases.forEach(function (testCase, index) {
+      it('should convert objects and arrays to pure JS objects and arrays (' + (index + 1) + ')', function () {
         expect(c.toJSInstance(testCase.o)).to.eql(testCase.e);
       });
     });
@@ -1343,13 +1521,11 @@ describe('App.WizardController', function () {
   describe('#loadConfigThemes', function() {
     beforeEach(function () {
       sinon.stub(wizardController, 'loadConfigThemeForServices').returns({
-        always: function(callback) {callback();}
+        always: Em.clb
       });
       sinon.stub(App.themesMapper, 'generateAdvancedTabs').returns(true);
       sinon.stub(App.config, 'loadConfigsFromStack').returns({
-        done: function(callback) {
-          callback();
-        }
+        done: Em.clb
       });
       sinon.stub(App.StackService, 'find').returns(Em.A([
         Em.Object.create({
@@ -1357,6 +1533,7 @@ describe('App.WizardController', function () {
           serviceName: 's1'
         })
       ]));
+      this.stub = sinon.stub(App, 'get');
     });
     afterEach(function () {
       App.get.restore();
@@ -1365,16 +1542,16 @@ describe('App.WizardController', function () {
       App.themesMapper.generateAdvancedTabs.restore();
       wizardController.loadConfigThemeForServices.restore();
     });
-    it('Should load config themes', function() { 
-      sinon.stub(App, 'get').returns(true);
-      wizardController.loadConfigThemes().then(function(data) {
-        expect().to.be.undefined;
+    it('Should load config themes', function(done) {
+      this.stub.returns(true);
+      wizardController.loadConfigThemes().then(function() {
+        done();
       });
     });
-    it('Should load config themes', function() {
-      sinon.stub(App, 'get').returns(false); 
-      wizardController.loadConfigThemes().then(function(data) {
-        expect().to.be.undefined;
+    it('Should load config themes (2)', function(done) {
+      this.stub.returns(false);
+      wizardController.loadConfigThemes().then(function() {
+        done();
       });
     });
   });
@@ -1499,6 +1676,71 @@ describe('App.WizardController', function () {
       expect(c.get('content.recommendations')).to.eql({});
     });
 
+  });
+
+  describe("#resetOnClose()", function () {
+    var ctrl = Em.Object.create({
+      finish: Em.K,
+      popup: {
+        hide: Em.K
+      }
+    });
+
+    var mock = Em.Object.create({
+      resetUser: Em.K
+    });
+
+    beforeEach(function () {
+      sinon.stub(ctrl, 'finish');
+      sinon.stub(ctrl.popup, 'hide');
+      sinon.stub(App.router, 'get').returns(mock);
+      sinon.stub(App.clusterStatus, 'setClusterStatus', function (arg1, arg2) {
+        arg2.alwaysCallback();
+      });
+      sinon.stub(Em.run, 'next');
+      sinon.stub(mock, 'resetUser');
+      sinon.stub(App.router, 'transitionTo');
+
+      c.resetOnClose(ctrl, 'path');
+    });
+
+    afterEach(function () {
+      ctrl.finish.restore();
+      ctrl.popup.hide.restore();
+      App.router.get.restore();
+      App.clusterStatus.setClusterStatus.restore();
+      Em.run.next.restore();
+      mock.resetUser.restore();
+      App.router.transitionTo.restore();
+    });
+
+    it("resetUser should be called", function () {
+      expect(mock.resetUser.calledOnce).to.be.true;
+    });
+
+    it("finish should be called", function () {
+      expect(ctrl.finish.calledOnce).to.be.true;
+    });
+
+    it("isWorking should be true", function () {
+      expect(mock.get('isWorking')).to.be.true;
+    });
+
+    it("App.clusterStatus.setClusterStatus should be called", function () {
+      expect(App.clusterStatus.setClusterStatus.calledOnce).to.be.true;
+    });
+
+    it("popup should be hidden", function () {
+      expect(ctrl.get('popup').hide.calledOnce).to.be.true;
+    });
+
+    it("App.router.transitionTo should be called", function () {
+      expect(App.router.transitionTo.calledOnce).to.be.true;
+    });
+
+    it("Em.run.next should be called", function () {
+      expect(Em.run.next.calledOnce).to.be.true;
+    });
   });
 
 });

@@ -93,17 +93,19 @@ App.MainServiceManageConfigGroupView = Em.View.extend({
     this.get('controller').loadHosts();
   },
 
-  didInsertElement: function () {
-    this.selectDefaultGroup();
-    App.tooltip($('.properties-link'));
-    App.tooltip($("[rel='button-info']"));
-    App.tooltip($("[rel='button-info-dropdown']"), {placement: 'left'});
-  },
-
   willDestroyElement: function () {
     this.get('controller.configGroups').clear();
     this.get('controller.originalConfigGroups').clear();
   },
+
+  showTooltip: function () {
+    if (!this.get('controller.isLoaded')) return false;
+    Em.run.next(function(){
+      App.tooltip($('.properties-link'));
+      App.tooltip($("[rel='button-info']"));
+      App.tooltip($("[rel='button-info-dropdown']"), {placement: 'left'});
+    });
+  }.observes('controller.isLoaded'),
 
   /**
    * Disable actions remove and rename for Default config group
@@ -135,16 +137,6 @@ App.MainServiceManageConfigGroupView = Em.View.extend({
   }.observes('selectedConfigGroup'),
 
   /**
-   * Select first config group after all groups are loaded
-   * @method onLoad
-   */
-  onLoad: function () {
-    if (this.get('controller.isLoaded')) {
-      this.set('selectedConfigGroup', this.get('controller.configGroups')[0])
-    }
-  }.observes('controller.isLoaded', 'controller.configGroups'),
-
-  /**
    * Select default config group after all config groups are loaded
    * @method selectDefaultGroup
    */
@@ -152,6 +144,6 @@ App.MainServiceManageConfigGroupView = Em.View.extend({
     if (this.get('controller.isLoaded')) {
       this.set('selectedConfigGroup', [this.get('controller.configGroups').findProperty('isDefault')]);
     }
-  }.observes('controller.isLoaded')
+  }.observes('controller.isLoaded', 'controller.groupDeleteTrigger')
 
 });

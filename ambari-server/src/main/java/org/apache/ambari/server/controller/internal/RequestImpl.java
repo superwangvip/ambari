@@ -18,9 +18,6 @@
 
 package org.apache.ambari.server.controller.internal;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -30,6 +27,9 @@ import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.ResourceProvider;
 import org.apache.ambari.server.controller.spi.SortRequest;
 import org.apache.ambari.server.controller.spi.TemporalInfo;
+
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 
 /**
  * Default request implementation.
@@ -52,25 +52,29 @@ public class RequestImpl implements Request {
    * Request Info properties.  These are properties that are specific to the request
    * but not to any resource.
    */
-  private Map<String, String> requestInfoProperties;
+  private final Map<String, String> requestInfoProperties;
 
   /**
    * Map of property to temporal info.
    */
-  private Map<String, TemporalInfo> m_mapTemporalInfo = new HashMap<String, TemporalInfo>();
+  private final Map<String, TemporalInfo> m_mapTemporalInfo;
 
   /**
    * An optional page request which a concrete {@link ResourceProvider} can use
    * to return a slice of results.
    */
-  private PageRequest m_pageRequest = null;
+  private final PageRequest m_pageRequest;
 
   /**
    * An optional sort request which a concrete {@link ResourceProvider} can use
    * to return sorted results.
    */
-  private SortRequest m_sortRequest = null;
+  private final SortRequest m_sortRequest;
 
+  /**
+   * Is it a dry run request?
+   */
+  private final boolean dryRun;
 
   // ----- Constructors ------------------------------------------------------
 
@@ -82,7 +86,7 @@ public class RequestImpl implements Request {
    * @param requestInfoProperties  request properties; may be null
    * @param mapTemporalInfo        temporal info
    */
-  public RequestImpl(Set<String> propertyIds, Set<Map<String, Object>> properties,
+  public  RequestImpl(Set<String> propertyIds, Set<Map<String, Object>> properties,
                      Map<String, String> requestInfoProperties, Map<String,TemporalInfo> mapTemporalInfo) {
     this(propertyIds, properties, requestInfoProperties, mapTemporalInfo, null, null);
   }
@@ -100,22 +104,22 @@ public class RequestImpl implements Request {
   public RequestImpl(Set<String> propertyIds, Set<Map<String, Object>> properties,
                      Map<String, String> requestInfoProperties, Map<String, TemporalInfo> mapTemporalInfo,
                      SortRequest sortRequest, PageRequest pageRequest) {
+
     this.propertyIds = propertyIds == null ?
-        Collections.unmodifiableSet(new HashSet<String>()) :
-        Collections.unmodifiableSet(propertyIds);
+        ImmutableSet.<String>of() : ImmutableSet.copyOf(propertyIds);
 
     this.properties = properties == null ?
-        Collections.unmodifiableSet(new HashSet<Map<String, Object>>()) :
-        Collections.unmodifiableSet(properties);
+        ImmutableSet.<Map<String,Object>>of() : ImmutableSet.copyOf(properties);
 
     this.requestInfoProperties = requestInfoProperties == null ?
-        Collections.unmodifiableMap(new HashMap<String, String>()) :
-        Collections.unmodifiableMap(requestInfoProperties);
+        ImmutableMap.<String, String>of() : ImmutableMap.copyOf(requestInfoProperties);
 
-    setTemporalInfo(mapTemporalInfo);
 
+    m_mapTemporalInfo = mapTemporalInfo;
     m_sortRequest = sortRequest;
     m_pageRequest = pageRequest;
+
+    this.dryRun = this.requestInfoProperties.containsKey(DIRECTIVE_DRY_RUN) && Boolean.parseBoolean(this.requestInfoProperties.get(DIRECTIVE_DRY_RUN));
   }
 
   // ----- Request -----------------------------------------------------------
@@ -140,10 +144,6 @@ public class RequestImpl implements Request {
     return m_mapTemporalInfo == null ? null : m_mapTemporalInfo.get(id);
   }
 
-  private void setTemporalInfo(Map<String, TemporalInfo> mapTemporalInfo) {
-    m_mapTemporalInfo = mapTemporalInfo;
-  }
-
   @Override
   public PageRequest getPageRequest() {
     return m_pageRequest;
@@ -152,6 +152,11 @@ public class RequestImpl implements Request {
   @Override
   public SortRequest getSortRequest() {
     return m_sortRequest;
+  }
+
+  @Override
+  public boolean isDryRunRequest() {
+    return dryRun;
   }
 
   @Override

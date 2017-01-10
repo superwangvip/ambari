@@ -21,7 +21,6 @@ package org.apache.ambari.server.orm.entities;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 
-
 import java.util.Collection;
 import java.util.Collections;
 
@@ -71,5 +70,16 @@ public class BlueprintEntityTest {
     Collection<BlueprintConfigEntity> configurations = Collections.emptyList();
     entity.setConfigurations(configurations);
     assertSame(configurations, entity.getConfigurations());
+  }
+
+  /**
+   * Test get and set of Setting object.
+   */
+  @Test
+  public void testSetGetSetting() {
+    BlueprintEntity entity = new BlueprintEntity();
+    Collection<BlueprintSettingEntity> setting = Collections.emptyList();
+    entity.setSettings(setting);
+    assertSame(setting, entity.getSettings());
   }
 }

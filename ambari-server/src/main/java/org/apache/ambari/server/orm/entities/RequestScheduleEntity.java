@@ -17,6 +17,9 @@
  */
 package org.apache.ambari.server.orm.entities;
 
+import java.util.Collection;
+import java.util.List;
+
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
@@ -30,8 +33,6 @@ import javax.persistence.NamedQuery;
 import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.TableGenerator;
-import java.util.Collection;
-import java.util.List;
 
 @Table(name = "requestschedule")
 @Entity
@@ -68,6 +69,9 @@ public class RequestScheduleEntity {
 
   @Column(name = "batch_toleration_limit")
   private Integer batchTolerationLimit;
+
+  @Column(name = "authenticated_user_id")
+  private Integer authenticatedUserId;
 
   @Column(name = "create_user")
   private String createUser;
@@ -294,6 +298,14 @@ public class RequestScheduleEntity {
 
   public void setRequestEntities(List<RequestEntity> requestEntities) {
     this.requestEntities = requestEntities;
+  }
+
+  public Integer getAuthenticatedUserId() {
+    return authenticatedUserId;
+  }
+
+  public void setAuthenticatedUserId(Integer authenticatedUser) {
+    this.authenticatedUserId = authenticatedUser;
   }
 
   @Override

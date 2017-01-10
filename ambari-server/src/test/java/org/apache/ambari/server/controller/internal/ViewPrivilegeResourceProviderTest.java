@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,18 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Set;
+
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.orm.dao.GroupDAO;
@@ -30,7 +42,6 @@ import org.apache.ambari.server.orm.dao.ResourceTypeDAO;
 import org.apache.ambari.server.orm.dao.UserDAO;
 import org.apache.ambari.server.orm.dao.ViewDAO;
 import org.apache.ambari.server.orm.dao.ViewInstanceDAO;
-import org.apache.ambari.server.orm.entities.GroupEntity;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
 import org.apache.ambari.server.orm.entities.PrincipalEntity;
 import org.apache.ambari.server.orm.entities.PrincipalTypeEntity;
@@ -42,6 +53,7 @@ import org.apache.ambari.server.orm.entities.ViewEntityTest;
 import org.apache.ambari.server.orm.entities.ViewInstanceEntity;
 import org.apache.ambari.server.orm.entities.ViewInstanceEntityTest;
 import org.apache.ambari.server.security.SecurityHelper;
+import org.apache.ambari.server.security.TestAuthenticationFactory;
 import org.apache.ambari.server.view.ViewInstanceHandlerList;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.apache.ambari.server.view.ViewRegistryTest;
@@ -50,19 +62,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Set;
-
-import static org.easymock.EasyMock.createMock;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.createStrictMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.easymock.EasyMock.verify;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * ViewPrivilegeResourceProvider tests.
@@ -136,17 +136,19 @@ public class ViewPrivilegeResourceProviderTest {
     expect(principalEntity.getId()).andReturn(20L).anyTimes();
     expect(userEntity.getPrincipal()).andReturn(principalEntity).anyTimes();
     expect(userEntity.getUserName()).andReturn("joe").anyTimes();
-    expect(permissionEntity.getPermissionName()).andReturn("VIEW.USE").anyTimes();
+    expect(permissionEntity.getPermissionName()).andReturn("VIEW.USER").anyTimes();
+    expect(permissionEntity.getPermissionLabel()).andReturn("View User").anyTimes();
     expect(principalEntity.getPrincipalType()).andReturn(principalTypeEntity).anyTimes();
     expect(principalTypeEntity.getName()).andReturn("USER").anyTimes();
 
-    expect(permissionDAO.findById(PermissionEntity.VIEW_USE_PERMISSION)).andReturn(permissionEntity);
+    expect(permissionDAO.findById(PermissionEntity.VIEW_USER_PERMISSION)).andReturn(permissionEntity);
 
     expect(userDAO.findUsersByPrincipal(principalEntities)).andReturn(userEntities);
-    expect(groupDAO.findGroupsByPrincipal(principalEntities)).andReturn(Collections.<GroupEntity>emptyList());
 
     replay(privilegeDAO, userDAO, groupDAO, principalDAO, permissionDAO, resourceDAO, privilegeEntity, resourceEntity,
         userEntity, principalEntity, permissionEntity, principalTypeEntity);
+
+    SecurityContextHolder.getContext().setAuthentication(TestAuthenticationFactory.createAdministrator("admin"));
 
     PrivilegeResourceProvider provider = new ViewPrivilegeResourceProvider();
     Set<Resource> resources = provider.getResources(PropertyHelper.getReadRequest(), null);
@@ -155,7 +157,8 @@ public class ViewPrivilegeResourceProviderTest {
 
     Resource resource = resources.iterator().next();
 
-    Assert.assertEquals("VIEW.USE", resource.getPropertyValue(AmbariPrivilegeResourceProvider.PERMISSION_NAME_PROPERTY_ID));
+    Assert.assertEquals("VIEW.USER", resource.getPropertyValue(AmbariPrivilegeResourceProvider.PERMISSION_NAME_PROPERTY_ID));
+    Assert.assertEquals("View User", resource.getPropertyValue(AmbariPrivilegeResourceProvider.PERMISSION_LABEL_PROPERTY_ID));
     Assert.assertEquals("joe", resource.getPropertyValue(AmbariPrivilegeResourceProvider.PRINCIPAL_NAME_PROPERTY_ID));
     Assert.assertEquals("USER", resource.getPropertyValue(AmbariPrivilegeResourceProvider.PRINCIPAL_TYPE_PROPERTY_ID));
 

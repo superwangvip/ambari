@@ -19,7 +19,6 @@
 package org.apache.ambari.server.state;
 
 import java.util.Map;
-import java.util.concurrent.locks.ReadWriteLock;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.ServiceComponentResponse;
@@ -27,6 +26,20 @@ import org.apache.ambari.server.controller.ServiceComponentResponse;
 public interface ServiceComponent {
 
   String getName();
+
+  /**
+   * Get a true or false value specifying
+   * if auto start was enabled for this component.
+   * @return true or false
+   */
+  boolean isRecoveryEnabled();
+
+  /**
+   * Set a true or false value specifying if this
+   * component is to be enabled for auto start or not.
+   * @param recoveryEnabled - true or false
+   */
+  void setRecoveryEnabled(boolean recoveryEnabled);
 
   String getServiceName();
 
@@ -42,6 +55,16 @@ public interface ServiceComponent {
 
   void setDesiredStackVersion(StackId stackVersion);
 
+  String getDesiredVersion();
+
+  void setDesiredVersion(String version);
+
+  /**
+   * Refresh Component info due to current stack
+   * @throws AmbariException
+   */
+  void updateComponentInfo() throws AmbariException;
+
   Map<String, ServiceComponentHost> getServiceComponentHosts();
 
   ServiceComponentHost getServiceComponentHost(String hostname)
@@ -54,12 +77,6 @@ public interface ServiceComponent {
       throws AmbariException ;
 
   ServiceComponentResponse convertToResponse();
-
-  void refresh();
-
-  boolean isPersisted();
-
-  void persist();
 
   void debugDump(StringBuilder sb);
 
@@ -80,10 +97,4 @@ public interface ServiceComponent {
       String hostName) throws AmbariException;
 
   void delete() throws AmbariException;
-
-  /**
-   * Get lock to control access to cluster structure
-   * @return cluster-global lock
-   */
-  ReadWriteLock getClusterGlobalLock();
 }

@@ -26,6 +26,8 @@ import javax.persistence.Basic;
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
 import javax.persistence.Entity;
+import javax.persistence.EnumType;
+import javax.persistence.Enumerated;
 import javax.persistence.FetchType;
 import javax.persistence.Id;
 import javax.persistence.IdClass;
@@ -36,10 +38,21 @@ import javax.persistence.NamedQuery;
 import javax.persistence.OneToMany;
 import javax.persistence.Table;
 
+import org.apache.ambari.server.actionmanager.CommandExecutionType;
+
 @Entity
 @Table(name = "stage")
 @IdClass(org.apache.ambari.server.orm.entities.StageEntityPK.class)
-@NamedQueries({ @NamedQuery(name = "StageEntity.findByCommandStatuses", query = "SELECT stage from StageEntity stage WHERE EXISTS (SELECT roleCommand.stageId from HostRoleCommandEntity roleCommand WHERE roleCommand.status IN :statuses AND roleCommand.stageId = stage.stageId AND roleCommand.requestId = stage.requestId ) ORDER by stage.requestId, stage.stageId") })
+@NamedQueries({
+    @NamedQuery(
+        name = "StageEntity.findByCommandStatuses",
+        query = "SELECT stage from StageEntity stage WHERE stage.stageId IN (SELECT roleCommand.stageId from HostRoleCommandEntity roleCommand WHERE roleCommand.status IN :statuses AND roleCommand.stageId = stage.stageId AND roleCommand.requestId = stage.requestId ) ORDER BY stage.requestId, stage.stageId"),
+    @NamedQuery(
+        name = "StageEntity.findByRequestIdAndCommandStatuses",
+        query = "SELECT stage from StageEntity stage WHERE stage.stageId IN (SELECT roleCommand.stageId from HostRoleCommandEntity roleCommand WHERE roleCommand.requestId = :requestId AND roleCommand.status IN :statuses AND roleCommand.stageId = stage.stageId AND roleCommand.requestId = stage.requestId ) ORDER BY stage.stageId"),
+    @NamedQuery(
+        name = "StageEntity.findIdsByRequestId",
+        query = "SELECT stage.stageId FROM StageEntity stage WHERE stage.requestId = :requestId ORDER BY stage.stageId ASC") })
 public class StageEntity {
 
   @Column(name = "cluster_id", updatable = false, nullable = false)
@@ -57,6 +70,9 @@ public class StageEntity {
   @Column(name = "skippable", nullable = false)
   private Integer skippable = Integer.valueOf(0);
 
+  @Column(name = "supports_auto_skip_failure", nullable = false)
+  private Integer supportsAutoSkipOnFailure = Integer.valueOf(0);
+
   @Column(name = "log_info")
   @Basic
   private String logInfo = "";
@@ -64,6 +80,11 @@ public class StageEntity {
   @Column(name = "request_context")
   @Basic
   private String requestContext = "";
+
+  @Basic
+  @Enumerated(value = EnumType.STRING)
+  @Column(name = "command_execution_type", nullable = false)
+  private CommandExecutionType commandExecutionType = CommandExecutionType.STAGE;
 
   /**
    * On large clusters, this value can be in the 10,000's of kilobytes. During
@@ -166,6 +187,14 @@ public class StageEntity {
     }
   }
 
+  public CommandExecutionType getCommandExecutionType() {
+    return commandExecutionType;
+  }
+
+  public void setCommandExecutionType(CommandExecutionType commandExecutionType) {
+    this.commandExecutionType = commandExecutionType;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -244,5 +273,28 @@ public class StageEntity {
    */
   public void setSkippable(boolean skippable) {
     this.skippable = skippable ? 1 : 0;
+  }
+
+  /**
+   * Determine whether this stage supports automatically skipping failures of
+   * its commands.
+   *
+   * @return {@code true} if this stage supports automatically skipping failures
+   *         of its commands.
+   */
+  public boolean isAutoSkipOnFailureSupported() {
+    return supportsAutoSkipOnFailure != 0;
+  }
+
+  /**
+   * Sets whether this stage supports automatically skipping failures of its
+   * commands.
+   *
+   * @param supportsAutoSkipOnFailure
+   *          {@code true} if this stage supports automatically skipping
+   *          failures of its commands.
+   */
+  public void setAutoSkipFailureSupported(boolean supportsAutoSkipOnFailure) {
+    this.supportsAutoSkipOnFailure = supportsAutoSkipOnFailure ? 1 : 0;
   }
 }

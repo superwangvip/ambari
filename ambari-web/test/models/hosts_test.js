@@ -20,68 +20,37 @@ var App = require('app');
 
 require('models/hosts');
 
-var hostInfo,
-  statusCases = [
-    {
-      status: 'REGISTERED',
-      bootStatusForDisplay: 'Success',
-      bootBarColor: 'progress-success',
-      bootStatusColor: 'text-success',
-      isBootDone: true
-    },
-    {
-      status: 'FAILED',
-      bootStatusForDisplay: 'Failed',
-      bootBarColor: 'progress-danger',
-      bootStatusColor: 'text-error',
-      isBootDone: true
-    },
-    {
-      status: 'PENDING',
-      bootStatusForDisplay: 'Preparing',
-      bootBarColor: 'progress-info',
-      bootStatusColor: 'text-info',
-      isBootDone: false
-    },
-    {
-      status: 'RUNNING',
-      bootStatusForDisplay: 'Installing',
-      bootBarColor: 'progress-info',
-      bootStatusColor: 'text-info',
-      isBootDone: false
-    },
-    {
-      status: 'DONE',
-      bootStatusForDisplay: 'Registering',
-      bootBarColor: 'progress-info',
-      bootStatusColor: 'text-info',
-      isBootDone: false
-    },
-    {
-      status: 'REGISTERING',
-      bootStatusForDisplay: 'Registering',
-      bootBarColor: 'progress-info',
-      bootStatusColor: 'text-info',
-      isBootDone: false
-    }
-  ],
-  tests = ['bootStatusForDisplay', 'bootBarColor', 'bootStatusColor', 'isBootDone'];
+function getModel() {
+  return App.HostInfo.create();
+}
 
 describe('App.HostInfo', function () {
 
-  beforeEach(function () {
-    hostInfo = App.HostInfo.create();
-  });
+  App.TestAliases.testAsComputedGetByKey(getModel(), 'bootStatusForDisplay', 'bootStatusForDisplayMap', 'bootStatus', {defaultValue: 'Registering', map: {PENDING: 'Preparing',
+    REGISTERED: 'Success',
+    FAILED: 'Failed',
+    RUNNING: 'Installing',
+    DONE: 'Registering',
+    REGISTERING: 'Registering'}});
 
-  tests.forEach(function (property) {
-    describe('#' + property, function () {
-      statusCases.forEach(function (testCase) {
-        it('should be ' + testCase[property], function () {
-          hostInfo.set('bootStatus', testCase.status);
-          expect(hostInfo.get(property)).to.equal(testCase[property]);
-        });
-      });
-    });
-  });
+  App.TestAliases.testAsComputedGetByKey(getModel(), 'bootBarColor', 'bootBarColorMap', 'bootStatus', {defaultValue: 'progress-bar-info', map: {
+    REGISTERED: 'progress-bar-success',
+    FAILED: 'progress-bar-danger',
+    PENDING: 'progress-bar-info',
+    RUNNING: 'progress-bar-info',
+    DONE: 'progress-bar-info',
+    REGISTERING: 'progress-bar-info'
+  }});
+
+  App.TestAliases.testAsComputedGetByKey(getModel(), 'bootStatusColor', 'bootStatusColorMap', 'bootStatus', {defaultValue: 'text-info', map: {
+    REGISTERED: 'text-success',
+    FAILED: 'text-danger',
+    PENDING: 'text-info',
+    RUNNING: 'text-info',
+    DONE: 'text-info',
+    REGISTERING: 'text-info'
+  }});
+
+  App.TestAliases.testAsComputedExistsIn(getModel(), 'isBootDone', 'bootStatus', ['REGISTERED', 'FAILED']);
 
 });

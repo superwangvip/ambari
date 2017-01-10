@@ -26,13 +26,18 @@ angular.module('ambariAdminConsole', [
   'pascalprecht.translate'
 ])
 .constant('Settings', {
-	baseUrl: '/api/v1',
+  siteRoot: '{proxy_root}/'.replace(/\{.+\}/g, ''),
+	baseUrl: '{proxy_root}/api/v1'.replace(/\{.+\}/g, ''),
   testMode: (window.location.port == 8000),
-  mockDataPrefix: 'assets/data/'
+  mockDataPrefix: 'assets/data/',
+  isLDAPConfigurationSupported: false,
+  isLoginActivitiesSupported: false,
+  maxStackTraceLength: 1000,
+  errorStorageSize: 500000
 })
-.config(['RestangularProvider', '$httpProvider', '$provide', function(RestangularProvider, $httpProvider, $provide) {
+.config(['RestangularProvider', '$httpProvider', '$provide', 'Settings', function(RestangularProvider, $httpProvider, $provide, Settings) {
   // Config Ajax-module
-  RestangularProvider.setBaseUrl('/api/v1');
+  RestangularProvider.setBaseUrl(Settings.baseUrl);
   RestangularProvider.setDefaultHeaders({'X-Requested-By':'ambari'});
 
   $httpProvider.defaults.headers.post['Content-Type'] = 'plain/text';
@@ -64,7 +69,7 @@ angular.module('ambariAdminConsole', [
 
     function error(response) {
       if (response.status == 403) {
-        window.location = "/";
+        window.location = Settings.siteRoot;
         return;
       }
       return $q.reject(response);
@@ -129,4 +134,65 @@ angular.module('ambariAdminConsole', [
     }];
     return $delegate;
   }]);
+
+  $provide.decorator('$exceptionHandler', ['$delegate', 'Utility', '$window', function ($delegate, Utility, $window) {
+    return function (error, cause) {
+      var ls = JSON.parse($window.localStorage.getItem('errors')) || {},
+        key = new Date().getTime(),
+        origin = $window.location.origin || ($window.location.protocol + '//' + $window.location.host),
+        pattern = new RegExp(origin + '/.*scripts', 'g'),
+        stackTrace = error && error.stack && error.stack.replace(pattern, '').substr(0, Settings.maxStackTraceLength),
+        file = error && error.fileName,
+        line = error && error.lineNumber,
+        col = error && error.columnNumber;
+
+      if (error && error.stack && (!file || !line || !col)) {
+        var patternText = '(' + $window.location.protocol + '//.*\\.js):(\\d+):(\\d+)',
+          details = error.stack.match(new RegExp(patternText));
+        file = file || (details && details [1]);
+        line = line || (details && Number(details [2]));
+        col = col || (details && Number(details [3]));
+      }
+
+      var val = {
+        file: file,
+        line: line,
+        col: col,
+        error: error.toString(),
+        stackTrace: stackTrace
+      };
+
+      //overwrite errors if storage full
+      if (JSON.stringify(ls).length > Settings.errorStorageSize) {
+        delete ls[Object.keys(ls).sort()[0]];
+      }
+
+      ls[key] = val;
+      var lsString = JSON.stringify(ls);
+      $window.localStorage.setItem('errors', lsString);
+      Utility.postUserPref('errors', ls);
+      $delegate(error, cause);
+    };
+  }]);
+
+  if (!Array.prototype.find) {
+    Array.prototype.find = function (callback, context) {
+      if (this == null) {
+        throw new TypeError('Array.prototype.find called on null or undefined');
+      }
+      if (typeof callback !== 'function') {
+        throw new TypeError(callback + ' is not a function');
+      }
+      var list = Object(this),
+        length = list.length >>> 0,
+        value;
+      for (var i = 0; i < length; i++) {
+        value = list[i];
+        if (callback.call(context, value, i, list)) {
+          return value;
+        }
+      }
+      return undefined;
+    };
+  }
 }]);

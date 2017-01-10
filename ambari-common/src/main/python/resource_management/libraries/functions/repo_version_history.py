@@ -24,7 +24,7 @@ from resource_management.core.logger import Logger
 """
 Repository version file is used while executing install_packages.py
 That allows us to get actual installed version even during reinstalling existing
- repository version (when hdp-select output does not change before and after
+ repository version (when <stack-selector-tool> output does not change before and after
  installing packages).
 
 Format:
@@ -65,7 +65,7 @@ def write_actual_version_to_history_file(repository_version, actual_version):
   Save the tuple of repository_version,actual_version to the repo version history file if the repository_version
   doesn't already exist
   :param repository_version: normalized repo version (without build number) as received from the server
-  :param actual_version: Repo version with the build number, as determined using hdp-select
+  :param actual_version: Repo version with the build number, as determined using <stack-selector-tool>
   :returns Return True if appended the values to the file, otherwise, return False.
   """
   wrote_value = False
@@ -78,7 +78,15 @@ def write_actual_version_to_history_file(repository_version, actual_version):
   value = repository_version + "," + actual_version
   key_exists = False
   try:
-    if read_actual_version_from_history_file(repository_version) is None:
+    if os.path.isfile(REPO_VERSION_HISTORY_FILE):
+      with open(REPO_VERSION_HISTORY_FILE, "r") as f:
+        for line in f.readlines():
+          line_parts = line.split(",")
+          if line_parts and len(line_parts) == 2 and line_parts[0] == repository_version and line_parts[1] == actual_version:
+            key_exists = True
+            break
+
+    if not key_exists:
       with open(REPO_VERSION_HISTORY_FILE, "a") as f:
         f.write(repository_version + "," + actual_version + "\n")
         wrote_value = True

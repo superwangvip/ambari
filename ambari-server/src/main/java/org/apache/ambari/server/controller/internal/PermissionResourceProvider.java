@@ -18,6 +18,11 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
 import org.apache.ambari.server.controller.spi.Predicate;
@@ -29,11 +34,6 @@ import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.orm.dao.PermissionDAO;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
-
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Resource provider for permission instances.
@@ -50,7 +50,9 @@ public class PermissionResourceProvider extends AbstractResourceProvider {
    */
   public static final String PERMISSION_ID_PROPERTY_ID   = "PermissionInfo/permission_id";
   public static final String PERMISSION_NAME_PROPERTY_ID = "PermissionInfo/permission_name";
+  public static final String PERMISSION_LABEL_PROPERTY_ID = "PermissionInfo/permission_label";
   public static final String RESOURCE_NAME_PROPERTY_ID   = "PermissionInfo/resource_name";
+  public static final String SORT_ORDER_PROPERTY_ID   = "PermissionInfo/sort_order";
 
 
   /**
@@ -68,7 +70,9 @@ public class PermissionResourceProvider extends AbstractResourceProvider {
   static {
     propertyIds.add(PERMISSION_ID_PROPERTY_ID);
     propertyIds.add(PERMISSION_NAME_PROPERTY_ID);
+    propertyIds.add(PERMISSION_LABEL_PROPERTY_ID);
     propertyIds.add(RESOURCE_NAME_PROPERTY_ID);
+    propertyIds.add(SORT_ORDER_PROPERTY_ID);
   }
 
 
@@ -125,7 +129,7 @@ public class PermissionResourceProvider extends AbstractResourceProvider {
   }
 
   @Override
-  public RequestStatus deleteResources(Predicate predicate)
+  public RequestStatus deleteResources(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     throw new UnsupportedOperationException("Not supported.");
   }
@@ -152,7 +156,9 @@ public class PermissionResourceProvider extends AbstractResourceProvider {
 
     setResourceProperty(resource, PERMISSION_ID_PROPERTY_ID, entity.getId(), requestedIds);
     setResourceProperty(resource, PERMISSION_NAME_PROPERTY_ID, entity.getPermissionName(), requestedIds);
+    setResourceProperty(resource, PERMISSION_LABEL_PROPERTY_ID, entity.getPermissionLabel(), requestedIds);
     setResourceProperty(resource, RESOURCE_NAME_PROPERTY_ID, entity.getResourceType().getName(), requestedIds);
+    setResourceProperty(resource, SORT_ORDER_PROPERTY_ID, entity.getSortOrder(), requestedIds);
 
     return resource;
   }

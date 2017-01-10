@@ -17,12 +17,14 @@
  */
 package org.apache.ambari.server.state.scheduler;
 
-import com.google.gson.Gson;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import com.google.inject.assistedinject.Assisted;
-import com.google.inject.assistedinject.AssistedInject;
-import com.google.inject.persist.Transactional;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import javax.annotation.Nullable;
+
 import org.apache.ambari.server.controller.RequestScheduleResponse;
 import org.apache.ambari.server.orm.dao.ClusterDAO;
 import org.apache.ambari.server.orm.dao.HostDAO;
@@ -30,7 +32,6 @@ import org.apache.ambari.server.orm.dao.RequestScheduleBatchRequestDAO;
 import org.apache.ambari.server.orm.dao.RequestScheduleDAO;
 import org.apache.ambari.server.orm.entities.ClusterEntity;
 import org.apache.ambari.server.orm.entities.RequestScheduleBatchRequestEntity;
-import org.apache.ambari.server.orm.entities.RequestScheduleBatchRequestEntityPK;
 import org.apache.ambari.server.orm.entities.RequestScheduleEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -38,12 +39,12 @@ import org.apache.ambari.server.utils.DateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import com.google.gson.Gson;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
+import com.google.inject.assistedinject.Assisted;
+import com.google.inject.assistedinject.AssistedInject;
+import com.google.inject.persist.Transactional;
 
 public class RequestExecutionImpl implements RequestExecution {
   private Cluster cluster;
@@ -174,7 +175,8 @@ public class RequestExecutionImpl implements RequestExecution {
         requestScheduleEntity.getCreateUser(),
         DateUtils.convertToReadableTime(requestScheduleEntity.getCreateTimestamp()),
         requestScheduleEntity.getUpdateUser(),
-        DateUtils.convertToReadableTime(requestScheduleEntity.getUpdateTimestamp())
+        DateUtils.convertToReadableTime(requestScheduleEntity.getUpdateTimestamp()),
+        requestScheduleEntity.getAuthenticatedUserId()
       );
       return response;
     } finally {
@@ -247,7 +249,7 @@ public class RequestExecutionImpl implements RequestExecution {
    * Persist @RequestScheduleEntity with @RequestScheduleBatchHostEntity
    */
   @Transactional
-  private void persistEntities() {
+  void persistEntities() {
     ClusterEntity clusterEntity = clusterDAO.findById(cluster.getClusterId());
     requestScheduleEntity.setClusterEntity(clusterEntity);
     requestScheduleEntity.setCreateTimestamp(System.currentTimeMillis());
@@ -258,7 +260,7 @@ public class RequestExecutionImpl implements RequestExecution {
   }
 
   @Transactional
-  private void persistRequestMapping() {
+  void persistRequestMapping() {
     // Delete existing mappings to support updates
     if (isPersisted) {
       batchRequestDAO.removeByScheduleId(requestScheduleEntity.getScheduleId());
@@ -293,7 +295,7 @@ public class RequestExecutionImpl implements RequestExecution {
   }
 
   @Transactional
-  private void saveIfPersisted() {
+  void saveIfPersisted() {
     if (isPersisted) {
       requestScheduleEntity.setUpdateTimestamp(System.currentTimeMillis());
       // Update the Entity object with new settings
@@ -340,6 +342,11 @@ public class RequestExecutionImpl implements RequestExecution {
   }
 
   @Override
+  public void setAuthenticatedUserId(Integer username) {
+    requestScheduleEntity.setAuthenticatedUserId(username);
+  }
+
+  @Override
   public void setCreateUser(String username) {
     requestScheduleEntity.setCreateUser(username);
   }
@@ -359,6 +366,11 @@ public class RequestExecutionImpl implements RequestExecution {
   public String getUpdateTime() {
     return DateUtils.convertToReadableTime
       (requestScheduleEntity.getUpdateTimestamp());
+  }
+
+  @Override
+  public Integer getAuthenticatedUserId() {
+    return requestScheduleEntity.getAuthenticatedUserId();
   }
 
   @Override

@@ -16,13 +16,78 @@
  * limitations under the License.
  */
 @import 'common.less';
+
+#modal {
+  outline: none;
+}
+
+.host-component-popup-wrap {
+  .task-top-wrap {
+    .operation-name-top {
+      width: 36%;
+      padding-left: 20px;
+      float: left;
+      text-align: left;
+    }
+  }
+  #service-info{
+    .show-more {
+      width: 98.8%;
+      min-height: 20px;
+      cursor: pointer;
+      text-align: center;
+      padding: 10px 10px 10px 0;
+      font-size: 16px;
+    }
+  }
+
+  #host-info, #service-info{
+    overflow: auto;
+    width: 100%;
+    max-height: 340px;
+    &.scheduled{
+      max-height: 255px;
+    }
+  }
+  #host-info, #service-info, #host-log {
+    .log-list-wrap {
+      padding: 10px 10px 10px 20px;
+    }
+    .progress-wrapper {
+      .progress {
+        margin-bottom: 0;
+      }
+    }
+  }
+}
+
+.modal {
+  top: 5%;
+  .modal-body {
+    .top-wrap {
+      &.top-wrap-header {
+        border-bottom: 1px solid #eee;
+        margin-bottom: 20px;
+      }
+    }
+  }
+}
+.modal-body {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.modal-header h4 {
+  margin: 0;
+}
+
 /*90% width modal window start*/
-.full-width-modal {
+.wizard-modal-wrapper {
   .modal {
     .modal-body {
-      div.error{
+      div.error {
         color: #b94a48;
-        .help-inline{
+        .help-block {
           color: #b94a48;
         }
       }
@@ -33,71 +98,9 @@
         -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
         box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
       }
-      .add-cluster-1{
-        width: 100%;
-        height : 500px;
-        margin: 0 auto;
-
-        .each-row{
-          margin-top: 10px;
-        }
-
-        .add-cluster-1-1{
-          width: 100%;
-          height : 100%;
-          float: left;
-        }
-        .add-cluster-1-3{
-          width: 45%;
-          height : 100%;
-          float: left;
-        }
-        .add-cluster-1-2{
-          width: 10%;
-          height : 100%;
-          float: left;
-
-          .add-cluster-1-2-1{
-            width: 100%;
-            height : 40%;
-          }
-          .add-cluster-1-2-2{
-            width: 100%;
-            height : 10%;
-          }
-          .add-cluster-1-2-3{
-            width: 100%;
-            height : 50%;
-          }
-          .middle-line{
-            width : 2%;
-            margin : 0 auto;
-            height : 100%;
-            background-color: #000000;
-          }
-          .add-cluster-center-most-div{
-            height : 30%;
-            text-align: center;
-            position: relative;
-            top: 30%;
-          }
-        }
-      }
-
-
-
     }
   }
 
-  .clear {
-    clear: both;
-  }
-  > div > .dataTable {
-    border: 1px solid silver;
-    th {
-      border-top: none;
-    }
-  }
   .content {
     padding: 0;
   }
@@ -107,7 +110,7 @@
   td .table-striped tbody
   tr:nth-child(odd) td,
   tr:nth-child(even) th {
-    background-color: none;
+    background-color: transparent;
   }
 
 }
@@ -116,58 +119,23 @@
 
 /*700px width modal window start*/
 .modal-690px-width {
-  .modal {
-    width: 690px;
-    margin: 0 0 0 -345px;
-    max-height: 544px;
-    top: 5%;
-  }
-
   .modal-body {
     max-height: 403px;
   }
 }
 /*700px width modal window end*/
 
-/*60% width modal window start*/
-.sixty-percent-width-modal.hideCloseLink{
-  .modal-header{
-    .close{
-      display:none
-    }
+.manage-alert-notifications-popup {
+  .modal-body {
+    overflow: visible;
   }
 }
-.sixty-percent-width-modal-edit-widget {
-  .modal {
-    width: 60%;
-    margin: 0 0 0 -30%;
-    max-height: 544px;
-    top: 5%;
-  }
-  .modal-header{
-    min-width: 650px;
-  }
-  .modal-footer{
-    min-width: 650px;
-  }
 
+/*60% width modal window start*/
+.modal-edit-widget {
   .modal-body {
 
-    max-height: 403px;
-    min-width: 650px;
-
-    #slider-range {
-      margin-top: 40px;
-      margin-bottom: 20px;
-      margin-left: 38px;
-      max-width: 630px;
-      max-height: 15px;
-    }
-    #min-height-limit .span9{
-      min-height: 15px;
-    }
-    #min-height-limit .progress{
-      margin-left: 40px;
+    .progress {
       .bar-success {
         background-image: linear-gradient(to bottom, @health-status-green, @health-status-green);
         background-repeat: repeat-x;
@@ -185,241 +153,32 @@
       }
     }
 
-    .value-on-slider{
-      max-height: 100px;
-      margin-bottom: 40px;
-      margin-top: 10px;
-      text-align: center;
-    }
-    #slider-value1{
-      max-width: 65px;
-    }
-    #slider-value2{
-      max-width: 250px;
-    }
-    #slider-value3{
-      max-width: 250px;
-    }
-    #slider-value4{
-      max-width: 65px;
-    }
-    .slider-error{
-      color: #b94a48;
-      .help-inline{
-        color: #b94a48;
-      }
-    }
-    .slider-error input{
-      border-color: #b94a48;
-      -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-      -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
+    .value-on-slider {
+      margin-top: 30px;
     }
   }
 }
-.sixty-percent-width-modal {
 
-  .modal {
-    width: 60%;
-    margin: 0 0 0 -30%;
-    max-height: 563px;
-    min-width: 590px;
-    top: 5%;
-  }
+.common-modal-wrapper {
 
-  &.modal-full-width {
-    .modal {
-      width: 90%;
-      margin: 0 0 0 -45%;
-      max-height: 90%;
-    }
-  }
-
-  .long-popup-list {
-    height: 280px;
-    overflow: auto;
-    width: 100%;
-  }
   .modal-footer {
-    #footer-checkbox {
+    .footer-checkbox {
       text-align: left;
-      padding-top: 3px;
+      padding-top: 11px;
       margin-left: 22px;
-      float: left;
-      .checkbox {
-        margin: 0px;
-      }
     }
   }
 
   .modal-body {
 
-    max-height: 403px;
+    li.disabled {
+      a {
+        cursor: not-allowed;
+      }
+    }
 
     .form-horizontal{
 
-
-      .add-cluster-1{
-        width: 100%;
-        height : auto;
-        min-height : 350px;
-        margin: 0 auto;
-
-        .each-row{
-          margin-top: 10px;
-        }
-
-        .add-cluster-1-1{
-          width: 100%;
-          height : 100%;
-          float: left;
-          div.error{
-            color: #b94a48;
-            .help-inline{
-              color: #b94a48;
-            }
-          }
-
-          div.error input{
-            border-color: #b94a48;
-            -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-            -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-            box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-          }
-        }
-        .add-cluster-1-3{
-          width: 45%;
-          height : 100%;
-          float: right;
-        }
-        .add-cluster-1-2{
-          width: 10%;
-          height : 100%;
-          float: left;
-
-          .add-cluster-1-2-1{
-            width: 100%;
-            height : 40%;
-          }
-          .add-cluster-1-2-2{
-            width: 100%;
-            height : 10%;
-          }
-          .add-cluster-1-2-3{
-            width: 100%;
-            height : 50%;
-          }
-          .middle-line{
-            width : 2%;
-            margin : 0 auto;
-            height : 100%;
-            background-color: #000000;
-          }
-          .add-cluster-center-most-div{
-            height : 30%;
-            text-align: center;
-            position: relative;
-            top: 30%;
-          }
-        }
-      }
-
-      .add-cluster-2{
-        margin : 0 auto;
-        height : auto;
-        min-height : 350px;
-        table{
-          width : 60%;
-          margin : 0 20%;
-
-          .spacer{
-            height: 20px;
-          }
-
-          tr.error{
-            color: #b94a48;
-            .help-inline{
-              color: #b94a48;
-            }
-
-            input{
-              border-color: #b94a48;
-              -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-              -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-              box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-            }
-          }
-
-          td {
-            width : 50%;
-            a.btn-success{
-              margin-left: 30%;
-            }
-          }
-
-        }
-
-      }
-
-
-      .add-data-set{
-        width: 80%;
-        margin: 0 auto;
-        table{
-          width: 100%;
-        }
-        tr.error{
-          color: #b94a48;
-          .help-inline{
-            color: #b94a48;
-          }
-        }
-
-        div.error{
-          color: #b94a48;
-          .help-inline{
-            color: #b94a48;
-          }
-        }
-
-        div.error input{
-          border-color: #b94a48;
-          -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-          -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-          box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-        }
-
-        td.percent25 {
-          width: 25%;
-        }
-        td.spacer{
-          height: 10px;
-        }
-        td{
-          .btn-group{
-            display : inline;
-            span.caret{
-              float : right;
-            }
-            ul.dropdown-menu{
-              margin-top:15px;
-            }
-          }
-          .ember-view{
-            display : inline;
-          }
-
-        }
-
-        input.hyper-mini{
-          width: 20px;
-        }
-
-        .targetClusterDD{
-          min-width : 170px;
-        }
-
-      }
       .each-row{
         margin-top: 10px;
       }
@@ -428,9 +187,6 @@
         clear:both;
       }
       .override-controls{
-        .icon-ok-sign {
-          color: #5AB400;
-        }
         #filter-dropdown-div {
           .dropdown-menu {
             right: 0;
@@ -445,7 +201,7 @@
             left: auto;
           }
         }
-        .input-append{
+        .input-group{
           input{
             -webkit-border-radius: 4px 0 0 4px;
             -moz-border-radius: 4px 0 0 4px;
@@ -466,36 +222,20 @@
           height: 225px;
           max-height: 225px;
           overflow: auto;
-          border: 1px solid #eee;
         }
         table{
-          th {
-            background-color: #d9edf7;
-          }
           margin: 0 auto;
         }
         .message{
           color: #777;
         }
       }
-      .control-label{
+      .control-label:not(class=["col-md*"]) {
         width:auto;
-      }
-      .overrideSelectBox {
-        width:100%;
       }
     }
   }
 
-  .clear {
-    clear: both;
-  }
-  > div > .dataTable {
-    border: 1px solid silver;
-    th {
-      border-top: none;
-    }
-  }
   .content {
     padding: 0;
   }
@@ -505,8 +245,142 @@
   td .table-striped tbody
   tr:nth-child(odd) td,
   tr:nth-child(even) th {
-    background-color: none;
+    background-color: transparent;
   }
 
 }
 /*60% width modal window end*/
+
+
+/* modal fill screen popup */
+
+.full-height-modal {
+  // padding from the top and bottom for full-height popup of window
+  @modal-padding: 40px;
+
+  .modal {
+
+    &.no-footer {
+      .modal-body {
+        // height: 100%;
+      }
+    }
+
+    &.with-footer {
+      .modal-body {
+        max-height: calc(~"100%" - (@modal-body-padding*2 + @modal-footer-height + @modal-header-height));
+      }
+    }
+  }
+}
+
+/* modal fill screen popup end */
+
+#logs-popup {
+  .controls-block {
+    margin-bottom: 10px;
+    a {
+      padding: 5px;
+      cursor: pointer;
+    }
+  }
+}
+
+.host-progress-popup {
+  .task-detail-info {
+
+    .task-detail-log-info {
+      padding-top: 10px;
+    }
+
+    &.task-detail-info-tabbed {
+
+      .task-detail-log-info {
+        padding-top: 0;
+      }
+
+      .task-top-wrap {
+        padding: 0;
+        border-bottom: none;
+      }
+
+
+      .task-detail-nav {
+        padding-top: 10px;
+        padding-bottom: 20px;
+      }
+
+      .log-tail-content {
+        width: 100%;
+        padding: 15px;
+        overflow-y: auto;
+        box-sizing: border-box;
+        white-space: normal;
+        margin: 0;
+        position: relative;
+
+        & > div {
+          margin: 0;
+          padding: 0;
+
+          &:hover {
+            background: #ccc;
+          }
+        }
+
+        .log-tail-spinner-container {
+          position: absolute;
+          top: 0;
+          left: 3px;
+        }
+      }
+
+      #infinite-scroll-append {
+        text-align: center;
+
+        .glyphicon.glyphicon-spinner {
+          font-size: 24px;
+        }
+      }
+    }
+  }
+}
+
+.modal-xlg {
+  width: 1280px;
+  .wizard {
+    .container {
+      width: 1236px;
+    }
+  }
+}
+
+.modal-graph-line {
+  .modal-dialog {
+    width: 810px;
+  }
+  .modal-body {
+    min-height: 450px !important;
+    overflow: hidden;
+    .corner-icon {
+      position: absolute;
+      right: 15px;
+      text-decoration: none;
+      .glyphicon-save {
+        color: #555;
+      }
+    }
+    .export-graph-list {
+      top: auto;
+      right: 15px;
+    }
+  }
+}
+
+.modal-body {
+  .api-error {
+    max-height: 403px;
+    word-wrap:break-word;
+    overflow: auto;
+  }
+}

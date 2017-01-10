@@ -43,11 +43,6 @@ public interface Host extends Comparable {
   Long getHostId();
 
   /**
-   * @param hostName the hostName to set
-   */
-  void setHostName(String hostName);
-
-  /**
    * @return the currentPingPort
    */
   Integer getCurrentPingPort();
@@ -172,7 +167,7 @@ public interface Host extends Comparable {
    * redhat6: for centos6, rhel6, oraclelinux6 ..
    * ubuntu12 : for ubuntu12
    * suse11: for sles11, suse11 ..
-   *
+   * suse12: for suse12, sles12 ..
    * @return the osFamily
    */
   String getOsFamily();
@@ -338,12 +333,6 @@ public interface Host extends Comparable {
 
   HostResponse convertToResponse();
 
-  boolean isPersisted();
-
-  void persist();
-
-  void refresh();
-
   void importHostInfo(HostInfo hostInfo);
 
   /**
@@ -366,11 +355,20 @@ public interface Host extends Comparable {
 
   /**
    * Get the desired configurations for the host including overrides
+   *
    * @param cluster
+   * @param clusterDesiredConfigs
+   *          the desired configurations for the cluster. Obtaining these can be
+   *          expensive and since this method operates on hosts, it could be
+   *          called 1,000's of times when generating host responses. Therefore,
+   *          the caller should build these once and pass them in. If
+   *          {@code null}, then this method will retrieve them at runtime,
+   *          incurring a performance penality.
    * @return
    * @throws AmbariException
    */
-  Map<String, HostConfig> getDesiredHostConfigs(Cluster cluster) throws AmbariException;
+  Map<String, HostConfig> getDesiredHostConfigs(Cluster cluster,
+      Map<String, DesiredConfig> clusterDesiredConfigs) throws AmbariException;
 
   /**
    * Sets the maintenance state for the host.
@@ -390,4 +388,18 @@ public interface Host extends Comparable {
    * @return
    */
   List<HostVersionEntity> getAllHostVersions();
+
+  /**
+   * Gets whether this host has components which advertise their version.
+   *
+   * @param stackId
+   *          the version of the stack to use when checking version
+   *          advertise-ability.
+   * @return {@code true} if at least 1 component on this host advertises its
+   *         version.
+   * @throws AmbariException
+   *           if there is a problem retrieving the component from the stack.
+   * @see ComponentInfo#isVersionAdvertised()
+   */
+  boolean hasComponentsAdvertisingVersions(StackId stackId) throws AmbariException;
 }

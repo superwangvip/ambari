@@ -18,10 +18,10 @@
 
 package org.apache.ambari.server.api.resources;
 
-import org.apache.ambari.server.controller.spi.Resource;
-
 import java.util.Arrays;
 import java.util.Collections;
+
+import org.apache.ambari.server.controller.spi.Resource;
 
 /**
  * Upgrade resource definition.
@@ -35,7 +35,10 @@ public class UpgradeResourceDefinition extends SimpleResourceDefinition {
    * Constructor.
    */
   public UpgradeResourceDefinition() {
-    super(Resource.Type.Upgrade, "upgrade", "upgrades", Collections.singleton(Resource.Type.UpgradeGroup),
-        Arrays.asList(DOWNGRADE_DIRECTIVE, SKIP_SERVICE_CHECKS_DIRECTIVE));
+    super(Resource.Type.Upgrade,
+        "upgrade",
+        "upgrades",
+        Collections.singleton(Resource.Type.UpgradeGroup),
+        Collections.singletonMap(DirectiveType.CREATE, Arrays.asList(DOWNGRADE_DIRECTIVE, SKIP_SERVICE_CHECKS_DIRECTIVE)));
   }
 }

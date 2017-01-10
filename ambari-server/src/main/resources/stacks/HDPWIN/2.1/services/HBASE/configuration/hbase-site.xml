@@ -23,14 +23,17 @@
   <property>
     <name>dfs.domain.socket.path</name>
     <deleted>true</deleted>
+    <on-ambari-upgrade add="false"/>
   </property>
   <property>
     <name>hbase.tmp.dir</name>
     <value>c:\hadoop\temp\hbase</value>
+    <display-name>HBase tmp directory</display-name>
     <description>Temporary directory on the local filesystem.
       Change this setting to point to a location more permanent
       than '/tmp' (The '/tmp' directory is often cleared on
       machine restart).
     </description>
+    <on-ambari-upgrade add="true"/>
   </property>
 </configuration>

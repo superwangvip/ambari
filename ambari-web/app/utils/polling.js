@@ -39,17 +39,11 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
   mockDataPrefix: '/data/wizard/deploy/5_hosts',
   currentTaskId: null,
 
-  barWidth: function () {
-    return 'width: ' + this.get('progress') + '%;';
-  }.property('progress'),
+  barWidth: Em.computed.format('width: {0}%;', 'progress'),
 
-  isCompleted: function () {
-    return (this.get('isError') || this.get('isSuccess'));
-  }.property('isError', 'isSuccess'),
+  isCompleted: Em.computed.or('isError', 'isSuccess'),
 
-  showLink: function () {
-    return (this.get('isPolling') === true && this.get('isStarted') === true);
-  }.property('isPolling', 'isStarted'),
+  showLink: Em.computed.or('isPolling', 'isStarted'),
 
   start: function () {
     if (Em.isNone(this.get('requestId'))) {
@@ -78,22 +72,17 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
       timeout: App.timeout,
       success: function (data) {
         var jsonData = jQuery.parseJSON(data);
-        console.log("TRACE: Polling -> value of the url is: " + url);
-        console.log("TRACE: Polling-> value of the sent data is: " + self.get('data'));
-        console.log("TRACE: Polling-> value of the received data is: " + jsonData);
         if (Em.isNone(jsonData)) {
           self.set('isSuccess', true);
           self.set('isError', false);
         } else {
-          var requestId = jsonData.Requests.id;
+          var requestId = Em.get(jsonData, 'Requests.id');
           self.set('requestId', requestId);
           self.doPolling();
-          console.log('requestId is: ' + requestId);
         }
       },
 
       error: function () {
-        console.log("ERROR");
         self.set('isError', true);
         self.set('isSuccess', false);
       },
@@ -112,7 +101,7 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
   },
 
   doPolling: function () {
-    if (this.get('requestId')) {
+    if (!Em.isNone(this.get('requestId'))) {
       this.startPolling();
     }
   },
@@ -121,7 +110,7 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
    * server call to obtain task logs
    */
   pollTaskLog: function () {
-    if (this.get('currentTaskId')) {
+    if (!Em.isNone(this.get('currentTaskId'))) {
       App.ajax.send({
         name: 'background_operations.get_by_task',
         sender: this,
@@ -130,7 +119,7 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
           taskId: this.get('currentTaskId')
         },
         success: 'pollTaskLogSuccessCallback'
-      })
+      });
     }
   },
 
@@ -150,35 +139,26 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
    * @return {Boolean}
    */
   startPolling: function () {
-    if (!this.get('requestId')) return false;
-    var self = this;
+    if (Em.isNone(this.get('requestId'))) return false;
 
     this.pollTaskLog();
     App.ajax.send({
       name: 'background_operations.get_by_request',
       sender: this,
       data: {
-        requestId: this.get('requestId')
+        requestId: this.get('requestId'),
+        callback: this.startPolling
       },
-      success: 'startPollingSuccessCallback',
-      error: 'startPollingErrorCallback'
-    })
-      .retry({times: App.maxRetries, timeout: App.timeout})
-      .then(
-        function () {
-          self.closeReloadPopup();
-        },
-        function () {
-          self.showReloadPopup();
-          console.log('Install services all retries failed');
-        }
-      );
+      success: 'reloadSuccessCallback',
+      error: 'reloadErrorCallback'
+    });
     return true;
   },
 
-  startPollingSuccessCallback: function (data) {
+  reloadSuccessCallback: function (data) {
     var self = this;
     var result = this.parseInfo(data);
+    this._super();
     if (!result) {
       window.setTimeout(function () {
         self.startPolling();
@@ -186,11 +166,9 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
     }
   },
 
-  startPollingErrorCallback: function (request, ajaxOptions, error) {
-    console.log("TRACE: In error function for the GET data");
-    console.log("TRACE: value of the url is: " + url);
-    console.log("TRACE: error code status is: " + request.status);
-    if (!this.get('isSuccess')) {
+  reloadErrorCallback: function (request, ajaxOptions, error, opt, params) {
+    this._super(request, ajaxOptions, error, opt, params);
+    if (request.status && !this.get('isSuccess')) {
       this.set('isError', true);
     }
   },
@@ -201,7 +179,7 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
 
   replacePolledData: function (polledData) {
     var currentTaskId = this.get('currentTaskId');
-    if (currentTaskId) {
+    if (!Em.isNone(currentTaskId)) {
       var task = this.get('polledData').findProperty('Tasks.id', currentTaskId);
       var currentTask = polledData.findProperty('Tasks.id', currentTaskId);
       if (task && currentTask) {
@@ -243,16 +221,9 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
 
 
   parseInfo: function (polledData) {
-    console.log('TRACE: Entering task info function');
-    var self = this;
-    var totalProgress = 0;
     var tasksData = polledData.tasks;
-    console.log("The value of tasksData is: ", tasksData);
-    if (!tasksData) {
-      console.log("ERROR: NO tasks available to process");
-    }
     var requestId = this.get('requestId');
-    if (polledData.Requests && polledData.Requests.id && polledData.Requests.id != requestId) {
+    if (polledData.Requests && !Em.isNone(polledData.Requests.id) && polledData.Requests.id != requestId) {
       // We don't want to use non-current requestId's tasks data to
       // determine the current install status.
       // Also, we don't want to keep polling if it is not the
@@ -262,7 +233,6 @@ App.Poll = Em.Object.extend(App.ReloadPopupMixin, {
     this.replacePolledData(tasksData);
     var totalProgress = this.calculateProgressByTasks(tasksData);
     this.set('progress', totalProgress.toString());
-    console.log("INFO: right now the progress is: " + this.get('progress'));
     return this.isPollingFinished(tasksData);
   }
 

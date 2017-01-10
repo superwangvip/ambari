@@ -18,7 +18,12 @@
 
 package org.apache.ambari.server.orm.helpers.dbms;
 
+import java.io.IOException;
+import java.io.Writer;
+import java.util.List;
+
 import org.apache.ambari.server.orm.DBAccessor;
+import org.eclipse.persistence.exceptions.ValidationException;
 import org.eclipse.persistence.platform.database.DatabasePlatform;
 
 public class MySqlHelper extends GenericDbmsHelper {
@@ -74,5 +79,18 @@ public class MySqlHelper extends GenericDbmsHelper {
                                     .append("constraints.TABLE_SCHEMA = \"").append(databaseName).append("\" ")
                                     .append("AND constraints.TABLE_NAME = \"").append(tableName).append("\"");
     return statement.toString();
+  }
+
+  @Override
+  public Writer writeCreateTableStatement(Writer writer, String tableName,
+                                          List<DBAccessor.DBColumnInfo> columns,
+                                          List<String> primaryKeyColumns) {
+    Writer defaultWriter = super.writeCreateTableStatement(writer, tableName, columns, primaryKeyColumns);
+    try {
+      defaultWriter.write(" ENGINE=INNODB");
+    } catch (IOException e) {
+      throw ValidationException.fileError(e);
+    }
+    return defaultWriter;
   }
 }

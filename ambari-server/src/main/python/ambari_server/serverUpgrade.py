@@ -26,24 +26,32 @@ import base64
 import urllib2
 import re
 import glob
+import optparse
+import logging
 
 from ambari_commons.exceptions import FatalException
 from ambari_commons.logging_utils import print_info_msg, print_warning_msg, print_error_msg, get_verbose
 from ambari_commons.os_utils import is_root, run_os_command
-from ambari_server.dbConfiguration import DBMSConfigFactory, check_jdbc_drivers
+from ambari_server.dbConfiguration import DBMSConfigFactory, CUSTOM_JDBC_DB_NAMES, TAR_GZ_ARCHIVE_TYPE,  check_jdbc_drivers, \
+  get_jdbc_driver_path, ensure_jdbc_driver_is_installed, LINUX_DBMS_KEYS_LIST, default_connectors_map
 from ambari_server.properties import Properties
-from ambari_server.serverConfiguration import configDefaults, \
-  check_database_name_property, get_ambari_properties, get_ambari_version, get_full_ambari_classpath, \
+from ambari_server.serverConfiguration import configDefaults, get_resources_location, update_properties, \
+  check_database_name_property, get_ambari_properties, get_ambari_version, \
   get_java_exe_path, get_stack_location, parse_properties_file, read_ambari_user, update_ambari_properties, \
-  update_database_name_property, get_admin_views_dir, get_views_dir,\
+  update_database_name_property, get_admin_views_dir, get_views_dir, get_views_jars, \
   AMBARI_PROPERTIES_FILE, IS_LDAP_CONFIGURED, LDAP_PRIMARY_URL_PROPERTY, RESOURCES_DIR_PROPERTY, \
   SETUP_OR_UPGRADE_MSG, update_krb_jaas_login_properties, AMBARI_KRB_JAAS_LOGIN_FILE, get_db_type, update_ambari_env, \
-  AMBARI_ENV_FILE
+  AMBARI_ENV_FILE, JDBC_DATABASE_PROPERTY
 from ambari_server.setupSecurity import adjust_directory_permissions, \
   generate_env, ensure_can_start_under_current_user
 from ambari_server.utils import compare_versions
 from ambari_server.serverUtils import is_server_runing, get_ambari_server_api_base
 from ambari_server.userInput import get_validated_string_input, get_prompt_default, read_password, get_YN_input
+from ambari_server.serverClassPath import ServerClassPath
+from ambari_server.setupMpacks import replay_mpack_logs
+from ambari_commons.logging_utils import get_debug_mode,   set_debug_mode_from_options
+
+logger = logging.getLogger(__name__)
 
 # constants
 STACK_NAME_VER_SEP = "-"
@@ -56,16 +64,30 @@ STACK_UPGRADE_HELPER_CMD = "{0} -cp {1} " + \
                            "org.apache.ambari.server.upgrade.StackUpgradeHelper" + \
                            " {2} {3} > " + configDefaults.SERVER_OUT_FILE + " 2>&1"
 
+SCHEMA_UPGRADE_HELPER_CMD_DEBUG = "{0} " \
+                         "-server -XX:NewRatio=2 " \
+                         "-XX:+UseConcMarkSweepGC " + \
+                         " -Xdebug -Xrunjdwp:transport=dt_socket,address=5005," \
+                         "server=y,suspend={2} " \
+                         "-cp {1} " + \
+                         "org.apache.ambari.server.upgrade.SchemaUpgradeHelper" + \
+                         " > " + configDefaults.SERVER_OUT_FILE + " 2>&1"
+
+SCHEMA_UPGRADE_DEBUG = False
+
+SUSPEND_START_MODE = False
 
 #
 # Stack upgrade
 #
 
 def upgrade_stack(args):
+  logger.info("Upgrade stack.")
   if not is_root():
     err = 'Ambari-server upgradestack should be run with ' \
           'root-level privileges'
     raise FatalException(4, err)
+
   check_database_name_property()
 
   try:
@@ -84,8 +106,17 @@ def upgrade_stack(args):
   except IndexError:
     repo_url_os = None
 
+  parser = optparse.OptionParser()
+  parser.add_option("-d", type="int", dest="database_index")
+
+  db = get_ambari_properties()[JDBC_DATABASE_PROPERTY]
+
+  idx = LINUX_DBMS_KEYS_LIST.index(db)
+
+  (options, opt_args) = parser.parse_args(["-d {0}".format(idx)])
+
   stack_name, stack_version = stack_id.split(STACK_NAME_VER_SEP)
-  retcode = run_stack_upgrade(stack_name, stack_version, repo_url, repo_url_os)
+  retcode = run_stack_upgrade(options, stack_name, stack_version, repo_url, repo_url_os)
 
   if not retcode == 0:
     raise FatalException(retcode, 'Stack upgrade failed.')
@@ -113,7 +144,7 @@ def load_stack_values(version, filename):
   return values
 
 
-def run_stack_upgrade(stackName, stackVersion, repo_url, repo_url_os):
+def run_stack_upgrade(args, stackName, stackVersion, repo_url, repo_url_os):
   jdk_path = get_java_exe_path()
   if jdk_path is None:
     print_error_msg("No JDK found, please run the \"setup\" "
@@ -127,16 +158,17 @@ def run_stack_upgrade(stackName, stackVersion, repo_url, repo_url_os):
   if repo_url_os is not None:
     stackId['repo_url_os'] = repo_url_os
 
-  command = STACK_UPGRADE_HELPER_CMD.format(jdk_path, get_full_ambari_classpath(),
+  serverClassPath = ServerClassPath(get_ambari_properties(), args)
+  command = STACK_UPGRADE_HELPER_CMD.format(jdk_path, serverClassPath.get_full_ambari_classpath_escaped_for_shell(),
                                             "updateStackId",
                                             "'" + json.dumps(stackId) + "'")
   (retcode, stdout, stderr) = run_os_command(command)
-  print_info_msg("Return code from stack upgrade command, retcode = " + str(retcode))
+  print_info_msg("Return code from stack upgrade command, retcode = {0}".format(str(retcode)))
   if retcode > 0:
     print_error_msg("Error executing stack upgrade, please check the server logs.")
   return retcode
 
-def run_metainfo_upgrade(keyValueMap=None):
+def run_metainfo_upgrade(args, keyValueMap=None):
   jdk_path = get_java_exe_path()
   if jdk_path is None:
     print_error_msg("No JDK found, please run the \"setup\" "
@@ -145,14 +177,14 @@ def run_metainfo_upgrade(keyValueMap=None):
 
   retcode = 1
   if keyValueMap:
-    command = STACK_UPGRADE_HELPER_CMD.format(jdk_path, get_full_ambari_classpath(),
+    serverClassPath = ServerClassPath(get_ambari_properties(), args)
+    command = STACK_UPGRADE_HELPER_CMD.format(jdk_path, serverClassPath.get_full_ambari_classpath_escaped_for_shell(),
                                               'updateMetaInfo',
                                               "'" + json.dumps(keyValueMap) + "'")
     (retcode, stdout, stderr) = run_os_command(command)
-    print_info_msg("Return code from stack upgrade command, retcode = " + str(retcode))
+    print_info_msg("Return code from stack upgrade command, retcode = {0}".format(str(retcode)))
     if retcode > 0:
-      print_error_msg("Error executing metainfo upgrade, please check the "
-                      "server logs.")
+      print_error_msg("Error executing metainfo upgrade, please check the server logs.")
 
   return retcode
 
@@ -162,7 +194,7 @@ def run_metainfo_upgrade(keyValueMap=None):
 #
 
 def change_objects_owner(args):
-  print 'Fixing database objects owner'
+  print_info_msg('Fixing database objects owner', True)
 
   properties = Properties()   #Dummy, args contains the dbms name and parameters already
 
@@ -195,8 +227,8 @@ def upgrade_local_repo(args):
 
     repo_file = os.path.join(stack_root, stack_version_local, "repos", "repoinfo.xml")
 
-    print_info_msg("Local repo file: " + repo_file_local)
-    print_info_msg("Repo file: " + repo_file_local)
+    print_info_msg("Local repo file: {0}".format(repo_file_local))
+    print_info_msg("Repo file: {0}".format(repo_file_local))
 
     metainfo_update_items = {}
 
@@ -210,13 +242,13 @@ def upgrade_local_repo(args):
           if repo_url != local_url:
             metainfo_update_items[k] = local_url
 
-    run_metainfo_upgrade(metainfo_update_items)
+    run_metainfo_upgrade(args, metainfo_update_items)
 
 #
 # Schema upgrade
 #
 
-def run_schema_upgrade():
+def run_schema_upgrade(args):
   db_title = get_db_type(get_ambari_properties()).title
   confirm = get_YN_input("Ambari Server configured for %s. Confirm "
                         "you have made a backup of the Ambari Server database [y/n] (y)? " % db_title, True)
@@ -232,20 +264,38 @@ def run_schema_upgrade():
                     "JDK manually to " + configDefaults.JDK_INSTALL_DIR)
     return 1
 
-  print 'Upgrading database schema'
+  ensure_jdbc_driver_is_installed(args, get_ambari_properties())
 
-  command = SCHEMA_UPGRADE_HELPER_CMD.format(jdk_path, get_full_ambari_classpath())
+  print_info_msg('Upgrading database schema', True)
+
+  serverClassPath = ServerClassPath(get_ambari_properties(), args)
+  class_path = serverClassPath.get_full_ambari_classpath_escaped_for_shell(validate_classpath=True)
+
+  set_debug_mode_from_options(args)
+  debug_mode = get_debug_mode()
+  debug_start = (debug_mode & 1) or SCHEMA_UPGRADE_DEBUG
+  suspend_start = (debug_mode & 2) or SUSPEND_START_MODE
+  suspend_mode = 'y' if suspend_start else 'n'
+  command = SCHEMA_UPGRADE_HELPER_CMD_DEBUG.format(jdk_path, class_path, suspend_mode) if debug_start else SCHEMA_UPGRADE_HELPER_CMD.format(jdk_path, class_path)
 
   ambari_user = read_ambari_user()
   current_user = ensure_can_start_under_current_user(ambari_user)
-  environ = generate_env(ambari_user, current_user)
+  environ = generate_env(args, ambari_user, current_user)
 
   (retcode, stdout, stderr) = run_os_command(command, env=environ)
-  print_info_msg("Return code from schema upgrade command, retcode = " + str(retcode))
+  print_info_msg("Return code from schema upgrade command, retcode = {0}".format(str(retcode)), True)
+  if stdout:
+    print_info_msg("Console output from schema upgrade command:", True)
+    print_info_msg(stdout, True)
+    print
   if retcode > 0:
     print_error_msg("Error executing schema upgrade, please check the server logs.")
+    if stderr:
+      print_error_msg("Error output from schema upgrade command:")
+      print_error_msg(stderr)
+      print
   else:
-    print_info_msg('Schema upgrade completed')
+    print_info_msg('Schema upgrade completed', True)
   return retcode
 
 
@@ -284,15 +334,17 @@ def move_user_custom_actions():
     raise FatalException(1, err)
 
 def upgrade(args):
+  print_info_msg("Upgrade Ambari Server", True)
   if not is_root():
     err = configDefaults.MESSAGE_ERROR_UPGRADE_NOT_ROOT
     raise FatalException(4, err)
-  print 'Updating properties in ' + AMBARI_PROPERTIES_FILE + ' ...'
+  print_info_msg('Updating Ambari Server properties in {0} ...'.format(AMBARI_PROPERTIES_FILE), True)
   retcode = update_ambari_properties()
   if not retcode == 0:
     err = AMBARI_PROPERTIES_FILE + ' file can\'t be updated. Exiting'
     raise FatalException(retcode, err)
 
+  print_info_msg('Updating Ambari Server properties in {0} ...'.format(AMBARI_ENV_FILE), True)
   retcode = update_ambari_env()
   if not retcode == 0:
     err = AMBARI_ENV_FILE + ' file can\'t be updated. Exiting'
@@ -302,12 +354,13 @@ def upgrade(args):
   if retcode == -2:
     pass  # no changes done, let's be silent
   elif retcode == 0:
-    print 'File ' + AMBARI_KRB_JAAS_LOGIN_FILE + ' updated.'
+    print_info_msg("File {0} updated.".format(AMBARI_KRB_JAAS_LOGIN_FILE), True)
   elif not retcode == 0:
     err = AMBARI_KRB_JAAS_LOGIN_FILE + ' file can\'t be updated. Exiting'
     raise FatalException(retcode, err)
 
   restore_custom_services()
+  replay_mpack_logs()
   try:
     update_database_name_property(upgrade=True)
   except FatalException:
@@ -319,7 +372,7 @@ def upgrade(args):
   #TODO check database version
   change_objects_owner(args)
 
-  retcode = run_schema_upgrade()
+  retcode = run_schema_upgrade(args)
   if not retcode == 0:
     print_error_msg("Ambari server upgrade failed. Please look at {0}, for more details.".format(configDefaults.SERVER_LOG_FILE))
     raise FatalException(11, 'Schema upgrade failed.')
@@ -356,20 +409,41 @@ def upgrade(args):
   for admin_views_dir in admin_views_dirs:
     shutil.rmtree(admin_views_dir)
 
-  # Remove ambari views directory for the rest of the jars, at the time of upgrade. At restart all jars present in Ambari will be extracted into work directory
-  views_dir =  get_views_dir(properties)
-  for views in views_dir:
-    shutil.rmtree(views)
+  # Modify timestamp of views jars to current time
+  views_jars = get_views_jars(properties)
+  for views_jar in views_jars:
+    os.utime(views_jar, None)
 
   # check if ambari has obsolete LDAP configuration
   if properties.get_property(LDAP_PRIMARY_URL_PROPERTY) and not properties.get_property(IS_LDAP_CONFIGURED):
     args.warnings.append("Existing LDAP configuration is detected. You must run the \"ambari-server setup-ldap\" command to adjust existing LDAP configuration.")
+
+  # adding custom jdbc name and previous custom jdbc properties
+  # we need that to support new dynamic jdbc names for upgraded ambari
+  add_jdbc_properties(properties)
+
+
+def add_jdbc_properties(properties):
+  for db_name in CUSTOM_JDBC_DB_NAMES:
+    if db_name == "sqlanywhere":
+      symlink_name = db_name + "-jdbc-driver" + TAR_GZ_ARCHIVE_TYPE
+    else:
+      symlink_name = db_name + "-jdbc-driver.jar"
+
+    resources_dir = get_resources_location(properties)
+    custom_db_jdbc_property_name = "custom." + db_name + ".jdbc.name"
+
+    if os.path.lexists(os.path.join(resources_dir, symlink_name)):
+      properties.process_pair(custom_db_jdbc_property_name, symlink_name)
+      properties.process_pair("previous." + custom_db_jdbc_property_name, default_connectors_map[db_name])
+      update_properties(properties)
 
 
 #
 # Set current cluster version (run Finalize during manual RU)
 #
 def set_current(options):
+  logger.info("Set current cluster version.")
   server_status, pid = is_server_runing()
   if not server_status:
     err = 'Ambari Server is not running.'
@@ -402,7 +476,8 @@ def set_current(options):
   data = {
     "ClusterStackVersions": {
       "repository_version": finalize_options.desired_repo_version,
-      "state": "CURRENT"
+      "state": "CURRENT",
+      "force": finalize_options.force_repo_version
     }
   }
 
@@ -469,7 +544,7 @@ def restore_custom_services():
         continue
 
       # process dirs only
-      if os.path.isdir(backup_service):
+      if os.path.isdir(backup_service) and not os.path.islink(backup_service):
         service_name = os.path.basename(backup_service)
         if not service_name in managed_services:
           shutil.copytree(backup_service, os.path.join(current_base_service_dir,service_name))
@@ -487,6 +562,14 @@ class SetCurrentVersionOptions:
       self.desired_repo_version = options.desired_repo_version
     except AttributeError:
       self.desired_repo_version = None
+
+    try:
+      self.force_repo_version = options.force_repo_version
+    except AttributeError:
+      self.force_repo_version = False
+
+    if not self.force_repo_version:
+      self.force_repo_version = False
 
   def no_finalize_options_set(self):
     return self.cluster_name is None or self.desired_repo_version is None

@@ -19,16 +19,17 @@
 
 package org.apache.ambari.server.topology;
 
-import org.apache.ambari.server.controller.internal.ProvisionClusterRequest;
-
 import java.util.Map;
+
+import org.apache.ambari.server.controller.internal.ProvisionClusterRequest;
 
 /**
  * Factory for creating topology requests.
  */
 public class TopologyRequestFactoryImpl implements TopologyRequestFactory {
   @Override
-  public TopologyRequest createProvisionClusterRequest(Map<String, Object> properties) throws InvalidTopologyTemplateException {
-    return new ProvisionClusterRequest(properties);
+  public ProvisionClusterRequest createProvisionClusterRequest(Map<String, Object> properties, SecurityConfiguration securityConfiguration) throws InvalidTopologyTemplateException {
+    return new ProvisionClusterRequest(properties, securityConfiguration);
+
   }
 }

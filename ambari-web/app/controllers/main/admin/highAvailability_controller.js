@@ -18,7 +18,7 @@
 
 var App = require('app');
 
-App.MainAdminHighAvailabilityController = Em.Controller.extend({
+App.MainAdminHighAvailabilityController = App.WizardController.extend({
   name: 'mainAdminHighAvailabilityController',
 
   tag: null,
@@ -38,6 +38,9 @@ App.MainAdminHighAvailabilityController = Em.Controller.extend({
     }
     if (hostComponents.filterProperty('componentName', 'ZOOKEEPER_SERVER').length < 3) {
       message.push(Em.I18n.t('admin.highAvailability.error.zooKeeperNum'));
+    }
+    if(hostComponents.filterProperty('isMaster', true).someProperty('passiveState', "ON") || hostComponents.filterProperty('isMaster', true).someProperty('isImpliedState', true)) {
+      message.push(Em.I18n.t('admin.highAvailability.error.maintenanceMode'));
     }
 
     if (App.router.get('mainHostController.hostsCountMap.TOTAL') < 3) {
@@ -78,12 +81,53 @@ App.MainAdminHighAvailabilityController = Em.Controller.extend({
   },
 
   /**
+   * add Hawq Standby
+   * @return {Boolean}
+   */
+  addHawqStandby: function () {
+    App.router.transitionTo('main.services.addHawqStandby');
+    return true;
+  },
+
+  /**
+   * remove Hawq Standby
+   * @return {Boolean}
+   */
+  removeHawqStandby: function () {
+    App.router.transitionTo('main.services.removeHawqStandby');
+    return true;
+  },
+
+  /**
+   * activate Hawq Standby
+   * @return {Boolean}
+   */
+  activateHawqStandby: function () {
+    App.router.transitionTo('main.services.activateHawqStandby');
+    return true;
+   },
+
+  /**
    * enable Ranger Admin High Availability
    * @return {Boolean}
    */
   enableRAHighAvailability: function () {
     App.router.transitionTo('main.services.enableRAHighAvailability');
     return true;
+  },
+
+  /**
+   * open Manage JournalNode Wizard if there are two started NameNodes with defined active/standby state
+   * @returns {boolean}
+   */
+  manageJournalNode: function() {
+    var nameNodes = App.HostComponent.find().filterProperty('componentName', 'NAMENODE');
+    if (nameNodes.someProperty('displayNameAdvanced', 'Active NameNode') && nameNodes.someProperty('displayNameAdvanced', 'Standby NameNode')) {
+      App.router.transitionTo('main.services.manageJournalNode');
+      return true;
+    }
+    this.showErrorPopup(Em.I18n.t('admin.manageJournalNode.warning'));
+    return false;
   },
 
   /**

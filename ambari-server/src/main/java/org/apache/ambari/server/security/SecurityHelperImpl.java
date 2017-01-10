@@ -18,14 +18,15 @@
 
 package org.apache.ambari.server.security;
 
+import java.util.Collection;
+import java.util.Collections;
+
+import org.apache.ambari.server.security.authorization.User;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-
-import java.util.Collection;
-import java.util.Collections;
 
 /**
  * Security related utilities.
@@ -66,6 +67,8 @@ public class SecurityHelperImpl implements SecurityHelper {
     String username;
     if (principal instanceof UserDetails) {
       username = ((UserDetails) principal).getUsername();
+    } else if (principal instanceof User) {
+      username = ((User) principal).getUserName();
     } else {
       username = principal == null ? "" : principal.toString();
     }

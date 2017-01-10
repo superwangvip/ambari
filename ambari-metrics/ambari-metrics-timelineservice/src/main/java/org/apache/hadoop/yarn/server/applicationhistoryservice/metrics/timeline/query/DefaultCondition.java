@@ -16,9 +16,14 @@
  * limitations under the License.
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.metrics2.sink.timeline.TopNConfig;
 import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.PhoenixHBaseAccessor;
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.Precision;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -37,10 +42,13 @@ public class DefaultCondition implements Condition {
   Integer fetchSize;
   String statement;
   Set<String> orderByColumns = new LinkedHashSet<String>();
+  boolean metricNamesNotCondition = false;
+
+  private static final Log LOG = LogFactory.getLog(DefaultCondition.class);
 
   public DefaultCondition(List<String> metricNames, List<String> hostnames, String appId,
-                   String instanceId, Long startTime, Long endTime, Precision precision,
-                   Integer limit, boolean grouped) {
+                          String instanceId, Long startTime, Long endTime, Precision precision,
+                          Integer limit, boolean grouped) {
     this.metricNames = metricNames;
     this.hostnames = hostnames;
     this.appId = appId;
@@ -66,62 +74,11 @@ public class DefaultCondition implements Condition {
 
   public StringBuilder getConditionClause() {
     StringBuilder sb = new StringBuilder();
-    boolean appendConjunction = false;
-    StringBuilder metricsLike = new StringBuilder();
-    StringBuilder metricsIn = new StringBuilder();
 
-    if (getMetricNames() != null) {
-      for (String name : getMetricNames()) {
-        if (name.contains("%")) {
-          if (metricsLike.length() > 1) {
-            metricsLike.append(" OR ");
-          }
-          metricsLike.append("METRIC_NAME LIKE ?");
-        } else {
-          if (metricsIn.length() > 0) {
-            metricsIn.append(", ");
-          }
-          metricsIn.append("?");
-        }
-      }
+    boolean appendConjunction = appendMetricNameClause(sb);
 
-      if (metricsIn.length()>0) {
-        sb.append("(METRIC_NAME IN (");
-        sb.append(metricsIn);
-        sb.append(")");
-        appendConjunction = true;
-      }
+    appendConjunction = appendHostnameClause(sb, appendConjunction);
 
-      if (metricsLike.length() > 0) {
-        if (appendConjunction) {
-          sb.append(" OR ");
-        } else {
-          sb.append("(");
-        }
-        sb.append(metricsLike);
-        appendConjunction = true;
-      }
-
-      if (appendConjunction) {
-        sb.append(")");
-      }
-    }
-
-    if (hostnames != null && getHostnames().size() > 1) {
-      StringBuilder hostnamesCondition = new StringBuilder();
-      for (String hostname: getHostnames()) {
-        if (hostnamesCondition.length() > 0) {
-          hostnamesCondition.append(" ,");
-        } else {
-          hostnamesCondition.append(" HOSTNAME IN (");
-        }
-        hostnamesCondition.append('?');
-      }
-      hostnamesCondition.append(')');
-      appendConjunction = append(sb, appendConjunction, getHostnames(), hostnamesCondition.toString());
-    } else {
-      appendConjunction = append(sb, appendConjunction, getHostnames(), " HOSTNAME = ?");
-    }
     appendConjunction = append(sb, appendConjunction, getAppId(), " APP_ID = ?");
     appendConjunction = append(sb, appendConjunction, getInstanceId(), " INSTANCE_ID = ?");
     appendConjunction = append(sb, appendConjunction, getStartTime(), " SERVER_TIME >= ?");
@@ -158,7 +115,7 @@ public class DefaultCondition implements Condition {
 
   public String getAppId() {
     if (appId != null && !appId.isEmpty()) {
-      if (!(appId.equals("HOST") || appId.equals("FLUME_HANDLER")) ) {
+      if (!(appId.equals("HOST") || appId.equals("FLUME_HANDLER"))) {
         return appId.toLowerCase();
       } else {
         return appId;
@@ -259,6 +216,132 @@ public class DefaultCondition implements Condition {
     return null;
   }
 
+  protected boolean appendMetricNameClause(StringBuilder sb) {
+    boolean appendConjunction = false;
+    List<String> metricsLike = new ArrayList<>();
+    List<String> metricsIn = new ArrayList<>();
+
+    if (getMetricNames() != null) {
+      for (String name : getMetricNames()) {
+        if (name.contains("%")) {
+          metricsLike.add(name);
+        } else {
+          metricsIn.add(name);
+        }
+      }
+
+      // Put a '(' first
+      sb.append("(");
+
+      //IN clause
+      // METRIC_NAME (NOT) IN (?,?,?,?)
+      if (CollectionUtils.isNotEmpty(metricsIn)) {
+        sb.append("METRIC_NAME");
+        if (metricNamesNotCondition) {
+          sb.append(" NOT");
+        }
+        sb.append(" IN (");
+        //Append ?,?,?,?
+        for (int i = 0; i < metricsIn.size(); i++) {
+          sb.append("?");
+          if (i < metricsIn.size() - 1) {
+            sb.append(", ");
+          }
+        }
+        sb.append(")");
+        appendConjunction = true;
+      }
+
+      //Put an OR/AND if both types are present
+      if (CollectionUtils.isNotEmpty(metricsIn) &&
+        CollectionUtils.isNotEmpty(metricsLike)) {
+        if (metricNamesNotCondition) {
+          sb.append(" AND ");
+        } else {
+          sb.append(" OR ");
+        }
+      }
+
+      //LIKE clause
+      // METRIC_NAME (NOT) LIKE ? OR(AND) METRIC_NAME LIKE ?
+      if (CollectionUtils.isNotEmpty(metricsLike)) {
+
+        for (int i = 0; i < metricsLike.size(); i++) {
+          sb.append("METRIC_NAME");
+          if (metricNamesNotCondition) {
+            sb.append(" NOT");
+          }
+          sb.append(" LIKE ");
+          sb.append("?");
+
+          if (i < metricsLike.size() - 1) {
+            if (metricNamesNotCondition) {
+              sb.append(" AND ");
+            } else {
+              sb.append(" OR ");
+            }
+          }
+        }
+        appendConjunction = true;
+      }
+
+      // Finish with a ')'
+      if (appendConjunction) {
+        sb.append(")");
+      }
+
+      metricNames.clear();
+      if (CollectionUtils.isNotEmpty(metricsIn)) {
+        metricNames.addAll(metricsIn);
+      }
+      if (CollectionUtils.isNotEmpty(metricsLike)) {
+        metricNames.addAll(metricsLike);
+      }
+    }
+    return appendConjunction;
+  }
+
+  protected boolean appendHostnameClause(StringBuilder sb, boolean appendConjunction) {
+    boolean hostnameContainsRegex = false;
+    if (hostnames != null) {
+      for (String hostname : hostnames) {
+        if (hostname.contains("%")) {
+          hostnameContainsRegex = true;
+          break;
+        }
+      }
+    }
+
+    StringBuilder hostnamesCondition = new StringBuilder();
+    if (hostnameContainsRegex) {
+      hostnamesCondition.append(" (");
+      for (String hostname : getHostnames()) {
+        if (hostnamesCondition.length() > 2) {
+          hostnamesCondition.append(" OR ");
+        }
+        hostnamesCondition.append("HOSTNAME LIKE ?");
+      }
+      hostnamesCondition.append(")");
+
+      appendConjunction = append(sb, appendConjunction, getHostnames(), hostnamesCondition.toString());
+    } else if (hostnames != null && getHostnames().size() > 1) {
+      for (String hostname : getHostnames()) {
+        if (hostnamesCondition.length() > 0) {
+          hostnamesCondition.append(" ,");
+        } else {
+          hostnamesCondition.append(" HOSTNAME IN (");
+        }
+        hostnamesCondition.append('?');
+      }
+      hostnamesCondition.append(')');
+      appendConjunction = append(sb, appendConjunction, getHostnames(), hostnamesCondition.toString());
+
+    } else {
+      appendConjunction = append(sb, appendConjunction, getHostnames(), " HOSTNAME = ?");
+    }
+    return appendConjunction;
+  }
+
   @Override
   public String toString() {
     return "Condition{" +
@@ -273,5 +356,29 @@ public class DefaultCondition implements Condition {
       ", orderBy=" + orderByColumns +
       ", noLimit=" + noLimit +
       '}';
+  }
+
+  protected static boolean metricNamesHaveWildcard(List<String> metricNames) {
+    for (String name : metricNames) {
+      if (name.contains("%")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  protected static boolean hostNamesHaveWildcard(List<String> hostnames) {
+    if (hostnames == null)
+      return false;
+    for (String name : hostnames) {
+      if (name.contains("%")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public void setMetricNamesNotCondition(boolean metricNamesNotCondition) {
+    this.metricNamesNotCondition = metricNamesNotCondition;
   }
 }

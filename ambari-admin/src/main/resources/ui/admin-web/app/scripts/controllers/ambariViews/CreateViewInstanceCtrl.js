@@ -18,8 +18,13 @@
 'use strict';
 
 angular.module('ambariAdminConsole')
-.controller('CreateViewInstanceCtrl',['$scope', 'View', 'Alert', 'Cluster', '$routeParams', '$location', 'UnsavedDialog', function($scope, View, Alert, Cluster, $routeParams, $location, UnsavedDialog) {
+.controller('CreateViewInstanceCtrl',['$scope', 'View','RemoteCluster' , 'Alert', 'Cluster', '$routeParams', '$location', 'UnsavedDialog', '$translate', function($scope, View, RemoteCluster, Alert, Cluster, $routeParams, $location, UnsavedDialog, $translate) {
+  var $t = $translate.instant;
   $scope.form = {};
+  $scope.constants = {
+    props: $t('views.properties')
+  };
+  $scope.isClone = $routeParams.instanceId ? true : false;
   var targetUrl = '';
 
   function loadMeta(){
@@ -38,7 +43,7 @@ angular.module('ambariAdminConsole')
       });
 
       $scope.clusterConfigurable = viewVersion.ViewVersionInfo.cluster_configurable;
-      $scope.clusterConfigurableErrorMsg = $scope.clusterConfigurable ? "" : "This view cannot use this option";
+      $scope.clusterConfigurableErrorMsg = $scope.clusterConfigurable ? "" : $t('views.alerts.cannotUseOption');
 
       $scope.instance = {
         view_name: viewVersion.ViewVersionInfo.view_name,
@@ -50,12 +55,44 @@ angular.module('ambariAdminConsole')
         icon64_path: '',
         properties: parameters,
         description: '',
-        isLocalCluster: false
+        clusterType: 'NONE'
       };
+
+      //if cloning view instance, then get the instance data and populate settings and properties
+      if($scope.isClone) {
+        View.getInstance($routeParams.viewId, $routeParams.version, $routeParams.instanceId)
+        .then(function(instance) {
+          $scope.instanceClone = instance;
+          $scope.instance.version = instance.ViewInstanceInfo.version;
+          $scope.version =  instance.ViewInstanceInfo.version;
+          $scope.instance.instance_name = instance.ViewInstanceInfo.instance_name + $t('common.copy');
+          $scope.instance.label = instance.ViewInstanceInfo.label + $t('common.copy');
+          $scope.instance.visible = instance.ViewInstanceInfo.visible;
+          $scope.instance.description = instance.ViewInstanceInfo.description;
+          $scope.instance.clusterType=instance.ViewInstanceInfo.cluster_type;
+          
+          initConfigurations(parameters);
+        })
+        .catch(function(data) {
+          Alert.error($t('views.alerts.cannotLoadInstanceInfo'), data.data.message);
+        });
+      }
+
       loadClusters();
+      loadRemoteClusters();
+
     });
   }
 
+   function initConfigurations(parameters) {
+      var configuration = angular.copy($scope.instanceClone.ViewInstanceInfo.properties);
+
+      //iterate through the view parameters and get the values from the instance being cloned
+      for (var i = 0; i < parameters.length; i++) {
+        parameters[i].value = configuration[parameters[i].name];
+        parameters[i].clusterConfig = !!parameters[i].clusterConfig;
+      }
+    }
 
   $scope.$watch(function(scope) {
     return scope.version;
@@ -72,7 +109,7 @@ angular.module('ambariAdminConsole')
           $scope.form.instanceCreateForm[key].validationError = false;
           $scope.form.instanceCreateForm[key].validationMessage = '';
         } catch (e) {
-          console.log('Unable to reset error message for prop:', key);
+          console.log($t('views.alerts.unableToResetErrorMessage', {key: key}));
         }
       });
       $scope.errorKeys = [];
@@ -87,25 +124,52 @@ angular.module('ambariAdminConsole')
   $scope.clusterConfigurable = false;
   $scope.clusterConfigurableErrorMsg = "";
   $scope.clusters = [];
-  $scope.noClusterAvailible = true;
+  $scope.remoteClusters = [];
+  $scope.noLocalClusterAvailible = true;
+  $scope.noRemoteClusterAvailible = true;
   $scope.cluster = null;
+  $scope.data = {};
+  $scope.data.remoteCluster = null;
   $scope.numberOfClusterConfigs = 0;
   $scope.numberOfSettingConfigs = 0;
 
-  function loadClusters () {
-    Cluster.getAllClusters().then(function (clusters) {
-      if(clusters.length >0){
-        clusters.forEach(function(cluster) {
-          $scope.clusters.push(cluster.Clusters.cluster_name)
-        });
-        $scope.noClusterAvailible = false;
-        $scope.instance.isLocalCluster = $scope.clusterConfigurable;
-      }else{
-        $scope.clusters.push("No Clusters");
-      }
-      $scope.cluster = $scope.clusters[0];
-    });
+  function loadClusters() {
+       Cluster.getAllClusters().then(function (clusters) {
+         if(clusters.length >0){
+           clusters.forEach(function(cluster) {
+             $scope.clusters.push({
+              "name" : cluster.Clusters.cluster_name,
+              "id" : cluster.Clusters.cluster_id
+             })
+           });
+           $scope.noLocalClusterAvailible = false;
+           //do not set to default Local Cluster configuration when cloning instance
+           if($scope.clusterConfigurable && !$scope.isClone){
+             $scope.instance.clusterType = "LOCAL_AMBARI";
+           }
+         }else{
+           $scope.clusters.push($t('common.noClusters'));
+         }
+         $scope.cluster = $scope.clusters[0];
+       });
   }
+
+   function loadRemoteClusters() {
+         RemoteCluster.listAll().then(function (clusters) {
+           if(clusters.length >0){
+             clusters.forEach(function(cluster) {
+               $scope.remoteClusters.push({
+                "name" : cluster.ClusterInfo.name,
+                "id" : cluster.ClusterInfo.cluster_id
+               })
+             });
+             $scope.noRemoteClusterAvailible = false;
+           }else{
+             $scope.remoteClusters.push($t('common.noClusters'));
+           }
+           $scope.data.remoteCluster = $scope.remoteClusters[0];
+         });
+   }
 
 
   $scope.versions = [];
@@ -124,10 +188,24 @@ angular.module('ambariAdminConsole')
     $scope.form.instanceCreateForm.submitted = true;
     if($scope.form.instanceCreateForm.$valid){
       $scope.form.instanceCreateForm.isSaving = true;
-      $scope.instance.clusterName = $scope.cluster;
+
+      switch($scope.instance.clusterType) {
+        case 'LOCAL_AMBARI':
+          console.log($scope.cluster);
+          $scope.instance.clusterId = $scope.cluster.id;
+          break;
+        case 'REMOTE_AMBARI':
+          console.log($scope.data.remoteCluster);
+          $scope.instance.clusterId = $scope.data.remoteCluster.id;
+
+          break;
+        default:
+          $scope.instance.clusterId = null;
+      }
+      console.log($scope.instance.clusterId);
       View.createInstance($scope.instance)
         .then(function(data) {
-          Alert.success('Created View Instance ' + $scope.instance.instance_name);
+          Alert.success($t('views.alerts.instanceCreated', {instanceName: $scope.instance.instance_name}));
           $scope.form.instanceCreateForm.$setPristine();
           if( targetUrl ){
             $location.path(targetUrl);
@@ -141,7 +219,7 @@ angular.module('ambariAdminConsole')
           var errorMessage = data.message;
           var showGeneralError = true;
 
-          if (data.status >= 400 && !$scope.instance.isLocalCluster) {
+          if (data.status >= 400 && $scope.instance.clusterType == 'NONE') {
             try {
               var errorObject = JSON.parse(errorMessage);
               errorMessage = errorObject.detail;
@@ -158,10 +236,10 @@ angular.module('ambariAdminConsole')
                 $scope.form.instanceCreateForm.generalValidationError = errorMessage;
               }
             } catch (e) {
-              console.error('Unable to parse error message:', data.message);
+              console.error($t('views.alerts.unableToParseError', {message: data.message}));
             }
           }
-          Alert.error('Cannot create instance', errorMessage);
+          Alert.error($t('views.alerts.cannotCreateInstance'), errorMessage);
           $scope.form.instanceCreateForm.isSaving = false;
         });
       }
@@ -193,5 +271,10 @@ angular.module('ambariAdminConsole')
       event.preventDefault();
     }
   });
+
+
+
+
+
 
 }]);

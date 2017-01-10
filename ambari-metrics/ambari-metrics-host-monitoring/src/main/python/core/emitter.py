@@ -20,13 +20,15 @@ limitations under the License.
 
 import logging
 import threading
-import time
-import urllib2
+
+from security import CachedHTTPSConnection, CachedHTTPConnection
+from blacklisted_set import BlacklistedSet
+from config_reader import ROUND_ROBIN_FAILOVER_STRATEGY
 
 logger = logging.getLogger()
 
 class Emitter(threading.Thread):
-  COLLECTOR_URL = "http://{0}/ws/v1/timeline/metrics"
+  AMS_METRICS_POST_URL = "/ws/v1/timeline/metrics/"
   RETRY_SLEEP_INTERVAL = 5
   MAX_RETRY_COUNT = 3
   """
@@ -36,10 +38,23 @@ class Emitter(threading.Thread):
     threading.Thread.__init__(self)
     logger.debug('Initializing Emitter thread.')
     self.lock = threading.Lock()
-    self.collector_address = config.get_server_address()
     self.send_interval = config.get_send_interval()
+    self.hostname = config.get_hostname_config()
+    self.hostname_hash = self.compute_hash(self.hostname)
     self._stop_handler = stop_handler
     self.application_metric_map = application_metric_map
+    self.collector_port = config.get_server_port()
+    self.all_metrics_collector_hosts = config.get_metrics_collector_hosts()
+    self.is_server_https_enabled = config.is_server_https_enabled()
+
+    if self.is_server_https_enabled:
+      self.ca_certs = config.get_ca_certs()
+
+    # TimedRoundRobinSet
+    if config.get_failover_strategy() == ROUND_ROBIN_FAILOVER_STRATEGY:
+      self.active_collector_hosts = BlacklistedSet(self.all_metrics_collector_hosts, float(config.get_failover_strategy_blacklisted_interval_seconds()))
+    else:
+      raise Exception(-1, "Uknown failover strategy {0}".format(config.get_failover_strategy()))
 
   def run(self):
     logger.info('Running Emitter thread: %s' % threading.currentThread().getName())
@@ -54,9 +69,8 @@ class Emitter(threading.Thread):
         logger.info('Shutting down Emitter thread')
         return
     pass
-  
+
   def submit_metrics(self):
-    retry_count = 0
     # This call will acquire lock on the map and clear contents before returning
     # After configured number of retries the data will not be sent to the
     # collector
@@ -65,36 +79,86 @@ class Emitter(threading.Thread):
       logger.info("Nothing to emit, resume waiting.")
       return
     pass
+    self.push_metrics(json_data)
 
-    response = None
-    while retry_count < self.MAX_RETRY_COUNT:
-      try:
-        response = self.push_metrics(json_data)
-      except Exception, e:
-        logger.warn('Error sending metrics to server. %s' % str(e))
+  def push_metrics(self, data):
+    success = False
+    while self.active_collector_hosts.get_actual_size() > 0:
+      collector_host = self.get_collector_host_shard()
+      success = self.try_with_collector_host(collector_host, data)
+      if success:
+        break
+    pass
+
+    if not success:
+      logger.info('No valid collectors found...')
+      for collector_host in self.active_collector_hosts:
+        success = self.try_with_collector_host(collector_host, data)
       pass
-  
-      if response and response.getcode() == 200:
-        retry_count = self.MAX_RETRY_COUNT
+
+  def try_with_collector_host(self, collector_host, data):
+    headers = {"Content-Type" : "application/json", "Accept" : "*/*"}
+    connection = self.get_connection(collector_host)
+    logger.debug("message to send: %s" % data)
+    retry_count = 0
+    while retry_count < self.MAX_RETRY_COUNT:
+      response = self.get_response_from_submission(connection, data, headers)
+      if response and response.status == 200:
+        return True
       else:
         logger.warn("Retrying after {0} ...".format(self.RETRY_SLEEP_INTERVAL))
         retry_count += 1
         #Wait for the service stop event instead of sleeping blindly
         if 0 == self._stop_handler.wait(self.RETRY_SLEEP_INTERVAL):
-          return
-      pass
+          return True
     pass
-  
-  def push_metrics(self, data):
-    headers = {"Content-Type" : "application/json", "Accept" : "*/*"}
-    server = self.COLLECTOR_URL.format(self.collector_address.strip())
-    logger.info("server: %s" % server)
-    logger.debug("message to sent: %s" % data)
-    req = urllib2.Request(server, data, headers)
-    response = urllib2.urlopen(req, timeout=int(self.send_interval - 10))
-    if response:
-      logger.debug("POST response from server: retcode = {0}".format(response.getcode()))
-      logger.debug(str(response.read()))
-    pass
-    return response
+
+    if retry_count >= self.MAX_RETRY_COUNT:
+      self.active_collector_hosts.blacklist(collector_host)
+      logger.warn("Metric collector host {0} was blacklisted.".format(collector_host))
+      return False
+
+  def get_connection(self, collector_host):
+    timeout = int(self.send_interval - 10)
+    if self.is_server_https_enabled:
+      connection = CachedHTTPSConnection(collector_host,
+                                         self.collector_port,
+                                         timeout=timeout,
+                                         ca_certs=self.ca_certs)
+    else:
+      connection = CachedHTTPConnection(collector_host,
+                                        self.collector_port,
+                                        timeout=timeout)
+    return connection
+
+  def get_response_from_submission(self, connection, data, headers):
+    try:
+      connection.request("POST", self.AMS_METRICS_POST_URL, data, headers)
+      response = connection.getresponse()
+      if response:
+        logger.debug("POST response from server: retcode = {0}, reason = {1}"
+                     .format(response.status, response.reason))
+        logger.debug(str(response.read()))
+      return response
+    except Exception, e:
+      logger.warn('Error sending metrics to server. %s' % str(e))
+      return None
+
+  def get_collector_host_shard(self):
+    size = self.active_collector_hosts.get_actual_size()
+    index = self.hostname_hash % size
+    index = index if index >= 0 else index + size
+    hostname = self.active_collector_hosts.get_item_at_index(index)
+    logger.info('Calculated collector shard based on hostname : %s' % hostname)
+    return hostname
+
+  def compute_hash(self, hostname):
+    hash = 11987
+    length = len(hostname)
+    for i in xrange(0, length - 1):
+      hash = 31*hash + ord(hostname[i])
+    return hash
+
+
+
 

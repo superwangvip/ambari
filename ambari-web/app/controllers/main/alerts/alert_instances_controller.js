@@ -208,11 +208,10 @@ App.MainAlertInstancesController = Em.Controller.extend({
 
       alertsNumberBinding: 'App.router.mainAlertDefinitionsController.unhealthyAlertInstancesCount',
 
-      header: function () {
-        return Em.I18n.t('alerts.fastAccess.popup.header').format(this.get('alertsNumber'));
-      }.property('alertsNumber'),
+      header: Em.computed.i18nFormat('alerts.fastAccess.popup.header', 'alertsNumber'),
 
-      classNames: ['sixty-percent-width-modal', 'alerts-popup'],
+      classNames: ['common-modal-wrapper', 'alerts-popup'],
+      modalDialogClasses: ['modal-lg'],
 
       secondary: Em.I18n.t('alerts.fastAccess.popup.body.showmore'),
 
@@ -244,21 +243,15 @@ App.MainAlertInstancesController = Em.Controller.extend({
          * Number of all critical and warning alert instances
          * @type {Boolean}
          */
-        filteredCount: function () {
-          return App.router.get('mainAlertDefinitionsController.unhealthyAlertInstancesCount');
-        }.property('alertsNumber'),
+        filteredCount: Em.computed.alias('App.router.mainAlertDefinitionsController.unhealthyAlertInstancesCount'),
 
         content: function () {
           return this.get('controller.unhealthyAlertInstances');
         }.property('controller.unhealthyAlertInstances.@each.state'),
 
-        isLoaded: function () {
-          return !!this.get('controller.unhealthyAlertInstances');
-        }.property('controller.unhealthyAlertInstances'),
+        isLoaded: Em.computed.bool('controller.unhealthyAlertInstances'),
 
-        isAlertEmptyList: function () {
-          return !this.get('content.length');
-        }.property('content.length'),
+        isAlertEmptyList: Em.computed.empty('content'),
 
         /**
          * Update list of shown alert instances

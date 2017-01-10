@@ -119,7 +119,7 @@ App.RollingRestartView = Em.View.extend({
    * List of errors is saved to <code>errors</code>
    */
   validate : function() {
-    var displayName = this.get('hostComponentDisplayName');
+    var displayName = pluralize(this.get('hostComponentDisplayName'));
     var componentName = this.get('hostComponentName');
     var totalCount = this.get('restartHostComponents.length');
     var bs = this.get('batchSize');
@@ -160,9 +160,7 @@ App.RollingRestartView = Em.View.extend({
    * Formatted <code>hostComponentName</code>
    * @type {String}
    */
-  hostComponentDisplayName : function() {
-    return App.format.role(this.get('hostComponentName'));
-  }.property('hostComponentName'),
+  hostComponentDisplayName: Em.computed.formatRole('hostComponentName', false),
 
   /**
    * List of all host components
@@ -174,17 +172,14 @@ App.RollingRestartView = Em.View.extend({
    * List of host components without components in out-of-service state
    * @type {Array}
    */
-  nonMaintainanceHostComponents : function() {
-    return this.get('allHostComponents').filterProperty('passiveState', 'OFF')
-  }.property('allHostComponents', 'allHostComponents.@each.passiveState'),
+  nonMaintainanceHostComponents : Em.computed.filterBy('allHostComponents', 'passiveState', 'OFF'),
 
   /**
    * List of host components with host in Maintenance mode
    * @type {Array}
    */
-  componentsWithMaintenanceHost: function() {
-    return this.get('allHostComponents').filterProperty('hostPassiveState', 'ON');
-  }.property('allHostComponents', 'allHostComponents.@each.hostPassiveState'),
+  componentsWithMaintenanceHost: Em.computed.filterBy('allHostComponents', 'hostPassiveState', 'ON'),
+
   /**
    * List of host components without components in out-of-service state
    * If <code>staleConfigsOnly</code> is true, components with <code>staleConfigs</code> = false are also filtered
@@ -213,7 +208,7 @@ App.RollingRestartView = Em.View.extend({
    * @type {String}
    */
   restartMessage : function() {
-    return Em.I18n.t('rollingrestart.dialog.msg.restart').format(this.get('hostComponentDisplayName'))
+    return Em.I18n.t('rollingrestart.dialog.msg.restart').format(pluralize(this.get('hostComponentDisplayName')));
   }.property('hostComponentDisplayName'),
 
   /**
@@ -223,10 +218,7 @@ App.RollingRestartView = Em.View.extend({
     var count = this.get('componentsWithMaintenanceHost.length');
     if (count > 0) {
       var name = this.get('hostComponentDisplayName');
-      if (count > 1) {
-        return Em.I18n.t('rollingrestart.dialog.msg.maintainance.plural').format(count, name)
-      }
-      return Em.I18n.t('rollingrestart.dialog.msg.maintainance').format(count, name)
+      return Em.I18n.t('rollingrestart.dialog.msg.maintainance').format(count, pluralize(name));
     }
     return null;
   }.property('componentsWithMaintenanceHost', 'hostComponentDisplayName'),
@@ -235,13 +227,14 @@ App.RollingRestartView = Em.View.extend({
    * @type {String}
    */
   batchSizeMessage : function() {
-    return Em.I18n.t('rollingrestart.dialog.msg.componentsAtATime').format(this.get('hostComponentDisplayName'));
+    return Em.I18n.t('rollingrestart.dialog.msg.componentsAtATime').format(pluralize(this.get('hostComponentDisplayName')));
   }.property('hostComponentDisplayName'),
 
   /**
    * @type {String}
    */
   staleConfigsOnlyMessage : function() {
-    return Em.I18n.t('rollingrestart.dialog.msg.staleConfigsOnly').format(this.get('hostComponentDisplayName'));
+    return Em.I18n.t('rollingrestart.dialog.msg.staleConfigsOnly').format(pluralize(this.get('hostComponentDisplayName')));
   }.property('hostComponentDisplayName')
+
 });

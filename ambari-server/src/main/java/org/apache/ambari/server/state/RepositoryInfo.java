@@ -20,6 +20,10 @@ package org.apache.ambari.server.state;
 
 import org.apache.ambari.server.controller.RepositoryResponse;
 
+import com.google.common.base.Function;
+import com.google.common.base.Objects;
+import com.google.common.base.Strings;
+
 public class RepositoryInfo {
   private String baseUrl;
   private String osType;
@@ -28,7 +32,8 @@ public class RepositoryInfo {
   private String mirrorsList;
   private String defaultBaseUrl;
   private String latestBaseUrl;
-  private boolean baseSaved = false;
+  private boolean repoSaved = false;
+  private boolean unique = false;
 
   /**
    * @return the baseUrl
@@ -129,17 +134,31 @@ public class RepositoryInfo {
   }
 
   /**
-   * @return if the base url was from a saved value
+   * @return if the base url or mirrors list was from a saved value
    */
-  public boolean isBaseUrlFromSaved() {
-    return baseSaved;
+  public boolean isRepoSaved() {
+    return repoSaved;
   }
 
   /**
-   * Sets if the base url was from a saved value
+   * Sets if the base url or mirrors list was from a saved value
    */
-  public void setBaseUrlFromSaved(boolean saved) {
-    baseSaved = saved;
+  public void setRepoSaved(boolean saved) {
+    repoSaved = saved;
+  }
+
+  /**
+   * @return true if version of HDP that change with each release
+   */
+  public boolean isUnique() {
+    return unique;
+  }
+
+  /**
+   * @param unique set is version of HDP that change with each release
+   */
+  public void setUnique(boolean unique) {
+    this.unique = unique;
   }
 
   @Override
@@ -150,9 +169,30 @@ public class RepositoryInfo {
         + ", baseUrl=" + baseUrl
         + ", repoName=" + repoName
         + ", mirrorsList=" + mirrorsList
+        + ", unique=" + unique
         + " ]";
   }
 
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    RepositoryInfo that = (RepositoryInfo) o;
+    return repoSaved == that.repoSaved &&
+        unique == that.unique &&
+        Objects.equal(baseUrl, that.baseUrl) &&
+        Objects.equal(osType, that.osType) &&
+        Objects.equal(repoId, that.repoId) &&
+        Objects.equal(repoName, that.repoName) &&
+        Objects.equal(mirrorsList, that.mirrorsList) &&
+        Objects.equal(defaultBaseUrl, that.defaultBaseUrl) &&
+        Objects.equal(latestBaseUrl, that.latestBaseUrl);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(baseUrl, osType, repoId, repoName, mirrorsList, defaultBaseUrl, latestBaseUrl, repoSaved, unique);
+  }
 
   public RepositoryResponse convertToResponse()
   {
@@ -160,5 +200,40 @@ public class RepositoryInfo {
         getRepoName(), getMirrorsList(), getDefaultBaseUrl(), getLatestBaseUrl());
   }
 
+  /**
+   * A function that returns the repo name of any RepositoryInfo
+   */
+  public static final Function<RepositoryInfo, String> GET_REPO_NAME_FUNCTION = new Function<RepositoryInfo, String>() {
+    @Override  public String apply(RepositoryInfo input) {
+      return input.repoName;
+    }
+  };
+
+  /**
+   * A function that returns the repoId of any RepositoryInfo
+   */
+  public static final Function<RepositoryInfo, String> GET_REPO_ID_FUNCTION = new Function<RepositoryInfo, String>() {
+    @Override  public String apply(RepositoryInfo input) {
+      return input.repoId;
+    }
+  };
+
+  /**
+   * A function that returns the baseUrl of any RepositoryInfo
+   */
+  public static final Function<RepositoryInfo, String> SAFE_GET_BASE_URL_FUNCTION = new Function<RepositoryInfo, String>() {
+    @Override  public String apply(RepositoryInfo input) {
+      return Strings.nullToEmpty(input.baseUrl);
+    }
+  };
+
+  /**
+   * A function that returns the osType of any RepositoryInfo
+   */
+  public static final Function<RepositoryInfo, String> GET_OSTYPE_FUNCTION = new Function<RepositoryInfo, String>() {
+    @Override  public String apply(RepositoryInfo input) {
+      return input.osType;
+    }
+  };
 
 }

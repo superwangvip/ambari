@@ -34,6 +34,7 @@ import javax.xml.bind.annotation.XmlType;
 import org.apache.ambari.server.stack.HostsType;
 import org.apache.ambari.server.state.UpgradeContext;
 import org.apache.ambari.server.state.stack.UpgradePack.ProcessingComponent;
+import org.apache.ambari.server.state.stack.upgrade.StageWrapper.Type;
 import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,9 +55,12 @@ public class ColocatedGrouping extends Grouping {
   public Batch batch;
 
 
+  /**
+   * {@inheritDoc}
+   */
   @Override
   public StageWrapperBuilder getBuilder() {
-    return new MultiHomedBuilder(batch, performServiceCheck);
+    return new MultiHomedBuilder(this, batch, performServiceCheck);
   }
 
   private static class MultiHomedBuilder extends StageWrapperBuilder {
@@ -69,16 +73,16 @@ public class ColocatedGrouping extends Grouping {
     private Map<String, List<TaskProxy>> finalBatches = new LinkedHashMap<String, List<TaskProxy>>();
 
 
-    private MultiHomedBuilder(Batch batch, boolean serviceCheck) {
+    private MultiHomedBuilder(Grouping grouping, Batch batch, boolean serviceCheck) {
+      super(grouping);
+
       m_batch = batch;
       m_serviceCheck = serviceCheck;
     }
 
     @Override
-    public void add(UpgradeContext ctx, HostsType hostsType, String service,
-        boolean clientOnly, ProcessingComponent pc) {
-
-      boolean forUpgrade = ctx.getDirection().isUpgrade();
+    public void add(UpgradeContext context, HostsType hostsType, String service,
+        boolean clientOnly, ProcessingComponent pc, Map<String, String> params) {
 
       int count = Double.valueOf(Math.ceil(
           (double) m_batch.percent / 100 * hostsType.hosts.size())).intValue();
@@ -98,78 +102,94 @@ public class ColocatedGrouping extends Grouping {
 
         TaskProxy proxy = null;
 
-        List<Task> tasks = resolveTasks(forUpgrade, true, pc);
+        List<Task> tasks = resolveTasks(context, true, pc);
 
         if (null != tasks && tasks.size() > 0) {
+          // Our assumption is that all of the tasks in the StageWrapper are of
+          // the same type.
+          StageWrapper.Type type = tasks.get(0).getStageWrapperType();
+
           proxy = new TaskProxy();
           proxy.clientOnly = clientOnly;
           proxy.message = getStageText("Preparing",
-              ctx.getComponentDisplay(service, pc.name), Collections.singleton(host));
-          proxy.tasks.addAll(TaskWrapperBuilder.getTaskList(service, pc.name, singleHostsType, tasks));
+              context.getComponentDisplay(service, pc.name), Collections.singleton(host));
+          proxy.tasks.addAll(TaskWrapperBuilder.getTaskList(service, pc.name, singleHostsType, tasks, params));
           proxy.service = service;
           proxy.component = pc.name;
+          proxy.type = type;
           targetList.add(proxy);
         }
 
         // !!! FIXME upgrade definition have only one step, and it better be a restart
-        if (null != pc.tasks && 1 == pc.tasks.size()) {
-          Task t = pc.tasks.get(0);
-          if (RestartTask.class.isInstance(t)) {
-            proxy = new TaskProxy();
-            proxy.clientOnly = clientOnly;
-            proxy.tasks.add(new TaskWrapper(service, pc.name, Collections.singleton(host), t));
-            proxy.restart = true;
-            proxy.service = service;
-            proxy.component = pc.name;
-            proxy.message = getStageText("Restarting",
-                ctx.getComponentDisplay(service, pc.name), Collections.singleton(host));
-            targetList.add(proxy);
-          }
+        Task t = resolveTask(context, pc);
+        if (null != t && RestartTask.class.isInstance(t)) {
+          proxy = new TaskProxy();
+          proxy.clientOnly = clientOnly;
+          proxy.tasks.add(new TaskWrapper(service, pc.name, Collections.singleton(host), params, t));
+          proxy.restart = true;
+          proxy.service = service;
+          proxy.component = pc.name;
+          proxy.type = Type.RESTART;
+          proxy.message = getStageText("Restarting",
+              context.getComponentDisplay(service, pc.name), Collections.singleton(host));
+          targetList.add(proxy);
         }
 
-        tasks = resolveTasks(forUpgrade, false, pc);
+        tasks = resolveTasks(context, false, pc);
 
         if (null != tasks && tasks.size() > 0) {
+          // Our assumption is that all of the tasks in the StageWrapper are of
+          // the same type.
+          StageWrapper.Type type = tasks.get(0).getStageWrapperType();
+
           proxy = new TaskProxy();
           proxy.clientOnly = clientOnly;
           proxy.component = pc.name;
           proxy.service = service;
-          proxy.tasks.addAll(TaskWrapperBuilder.getTaskList(service, pc.name, singleHostsType, tasks));
+          proxy.type = type;
+          proxy.tasks.addAll(TaskWrapperBuilder.getTaskList(service, pc.name, singleHostsType, tasks, params));
           proxy.message = getStageText("Completing",
-              ctx.getComponentDisplay(service, pc.name), Collections.singleton(host));
+              context.getComponentDisplay(service, pc.name), Collections.singleton(host));
           targetList.add(proxy);
         }
       }
     }
 
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
-    public List<StageWrapper> build(UpgradeContext ctx) {
-      List<StageWrapper> results = new ArrayList<StageWrapper>();
+    public List<StageWrapper> build(UpgradeContext upgradeContext,
+        List<StageWrapper> stageWrappers) {
+      List<StageWrapper> results = new ArrayList<StageWrapper>(stageWrappers);
 
       if (LOG.isDebugEnabled()) {
         LOG.debug("RU initial: {}", initialBatch);
         LOG.debug("RU final: {}", finalBatches);
       }
 
-      List<StageWrapper> befores = fromProxies(ctx.getDirection(), initialBatch);
+      List<StageWrapper> befores = fromProxies(upgradeContext.getDirection(), initialBatch);
       results.addAll(befores);
 
       if (!befores.isEmpty()) {
 
         ManualTask task = new ManualTask();
         task.summary = m_batch.summary;
-        task.message = m_batch.message;
-        formatFirstBatch(ctx, task, befores);
+        List<String> messages =  new ArrayList<String>();
+        messages.add(m_batch.message);
+        task.messages = messages;
+        formatFirstBatch(upgradeContext, task, befores);
 
         StageWrapper wrapper = new StageWrapper(
             StageWrapper.Type.SERVER_SIDE_ACTION,
-            "Validate Partial " + ctx.getDirection().getText(true),
+            "Validate Partial " + upgradeContext.getDirection().getText(true),
             new TaskWrapper(null, null, Collections.<String>emptySet(), task));
+
         results.add(wrapper);
       }
 
-      results.addAll(fromProxies(ctx.getDirection(), finalBatches));
+      results.addAll(fromProxies(upgradeContext.getDirection(), finalBatches));
 
       return results;
     }
@@ -193,7 +213,7 @@ public class ColocatedGrouping extends Grouping {
 
           if (!t.restart) {
             if (null == wrapper) {
-              wrapper = new StageWrapper(StageWrapper.Type.RU_TASKS, t.message, t.getTasksArray());
+              wrapper = new StageWrapper(t.type, t.message, t.getTasksArray());
             }
           } else {
             execwrappers.add(new StageWrapper(StageWrapper.Type.RESTART, t.message, t.getTasksArray()));
@@ -258,21 +278,27 @@ public class ColocatedGrouping extends Grouping {
         }
       }
 
-      // !!! add the display names to the message, if needed
-      if (task.message.contains("{{components}}")) {
-        StringBuilder sb = new StringBuilder();
+      for(int i = 0; i < task.messages.size(); i++){
+        String message = task.messages.get(i);
+        // !!! add the display names to the message, if needed
+        if (message.contains("{{components}}")) {
+          StringBuilder sb = new StringBuilder();
 
-        List<String> compNames = new ArrayList<String>(names);
+          List<String> compNames = new ArrayList<String>(names);
 
-        if (compNames.size() == 1) {
-          sb.append(compNames.get(0));
-        } else if (names.size() > 1) {
-          String last = compNames.remove(compNames.size() - 1);
-          sb.append(StringUtils.join(compNames, ", "));
-          sb.append(" and ").append(last);
+          if (compNames.size() == 1) {
+            sb.append(compNames.get(0));
+          } else if (names.size() > 1) {
+            String last = compNames.remove(compNames.size() - 1);
+            sb.append(StringUtils.join(compNames, ", "));
+            sb.append(" and ").append(last);
+          }
+
+          message = message.replace("{{components}}", sb.toString());
+
+          //Add the updated message back to the message list.
+          task.messages.set(i, message);
         }
-
-        task.message = task.message.replace("{{components}}", sb.toString());
       }
 
       // !!! build the structured out to attach to the manual task
@@ -305,6 +331,7 @@ public class ColocatedGrouping extends Grouping {
     private String service;
     private String component;
     private String message;
+    private Type type;
     private boolean clientOnly = false;
     private List<TaskWrapper> tasks = new ArrayList<TaskWrapper>();
 

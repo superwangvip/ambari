@@ -18,10 +18,10 @@
 
 package org.apache.ambari.server.controller.predicate;
 
-import org.apache.ambari.server.controller.spi.Resource;
-
 import java.text.NumberFormat;
 import java.text.ParsePosition;
+
+import org.apache.ambari.server.controller.spi.Resource;
 
 /**
  * Predicate that compares a given value to a {@link Resource} property.
@@ -76,7 +76,15 @@ public abstract class ComparisonPredicate<T> extends PropertyPredicate implement
     visitor.acceptComparisonPredicate(this);
   }
 
+  protected int compareValueToIgnoreCase(Object propertyValue) throws ClassCastException{
+    return compareValueTo(propertyValue, true); // case insensitive
+  }
+
   protected int compareValueTo(Object propertyValue) throws ClassCastException{
+    return compareValueTo(propertyValue, false); // case sensitive
+  }
+
+  private int compareValueTo(Object propertyValue, boolean ignoreCase) throws ClassCastException {
     if (doubleValue != null) {
       if (propertyValue instanceof Number) {
         return doubleValue.compareTo(((Number) propertyValue).doubleValue());
@@ -84,12 +92,18 @@ public abstract class ComparisonPredicate<T> extends PropertyPredicate implement
       else if (propertyValue instanceof String) {
         Double doubleFromString = stringToDouble((String) propertyValue);
         if (doubleFromString != null) {
-          return (int) (doubleValue - doubleFromString);
+          return doubleValue.compareTo(doubleFromString);
         }
       }
     }
+
     if (stringValue != null) {
-      return stringValue.compareTo(propertyValue.toString());
+      if (ignoreCase) {
+        return stringValue.compareToIgnoreCase(propertyValue.toString());
+      }
+      else {
+        return stringValue.compareTo(propertyValue.toString());
+      }
     }
 
     return getValue().compareTo((T) propertyValue);
@@ -99,6 +113,7 @@ public abstract class ComparisonPredicate<T> extends PropertyPredicate implement
     if (stringValue == null || stringValue.isEmpty()) {
       return null;
     }
+
     ParsePosition parsePosition = new ParsePosition(0);
     NumberFormat  numberFormat  = NumberFormat.getInstance();
     Number        parsedNumber  = numberFormat.parse(stringValue, parsePosition);

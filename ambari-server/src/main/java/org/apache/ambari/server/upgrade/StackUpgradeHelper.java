@@ -24,8 +24,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import javax.ws.rs.core.UriInfo;
-
 import org.apache.ambari.server.controller.ControllerModule;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.dao.MetainfoDAO;
@@ -71,7 +69,7 @@ public class StackUpgradeHelper {
    * @throws SQLException
    */
   @Transactional
-  private void updateMetaInfo(Map<String, String> data) throws SQLException {
+  void updateMetaInfo(Map<String, String> data) throws SQLException {
     if (data != null && !data.isEmpty()) {
       for (Map.Entry<String, String> entry : data.entrySet()) {
         MetainfoEntity metainfoEntity = metainfoDAO.findByKey(entry.getKey());
@@ -101,6 +99,7 @@ public class StackUpgradeHelper {
     
     String repoUrl = stackInfo.remove("repo_url");
     String repoUrlOs = stackInfo.remove("repo_url_os");
+    String mirrorList = stackInfo.remove("mirrors_list");
     
     Iterator<Map.Entry<String, String>> stackIdEntry = stackInfo.entrySet().iterator();
     Map.Entry<String, String> stackEntry = stackIdEntry.next();
@@ -114,7 +113,7 @@ public class StackUpgradeHelper {
     stackUpgradeUtil.updateStackDetails(stackName, stackVersion);
     
     if (null != repoUrl) {
-      stackUpgradeUtil.updateLocalRepo(stackName, stackVersion, repoUrl, repoUrlOs);  
+      stackUpgradeUtil.updateLocalRepo(stackName, stackVersion, repoUrl, repoUrlOs, mirrorList);
     }
 
     dbAccessor.updateTable("hostcomponentstate", "current_state", "INSTALLED", "where current_state = 'UPGRADING'");
@@ -152,7 +151,7 @@ public class StackUpgradeHelper {
 
       
       stackUpgradeHelper.startPersistenceService();
-      Map values = gson.fromJson(valueMap, Map.class);
+      Map<String, String> values = gson.<Map<String, String>>fromJson(valueMap, Map.class);
 
       if (action.equals(STACK_ID_UPDATE_ACTION)) {
         stackUpgradeHelper.updateStackVersion(values);

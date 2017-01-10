@@ -28,7 +28,8 @@ module.exports = App.WizardRoute.extend({
       App.router.set('mainServiceItemController.content', App.Service.find().findProperty('serviceName', 'YARN'));
       App.router.get('updateController').set('isWorking', false);
       var popup = App.ModalPopup.show({
-        classNames: ['full-width-modal'],
+        classNames: ['wizard-modal-wrapper'],
+        modalDialogClasses: ['modal-xlg'],
         header: Em.I18n.t('admin.rm_highAvailability.wizard.header'),
         bodyClass: App.RMHighAvailabilityWizardView.extend({
           controller: rMHighAvailabilityWizardController
@@ -39,42 +40,17 @@ module.exports = App.WizardRoute.extend({
 
         onClose: function () {
           var rMHighAvailabilityWizardController = router.get('rMHighAvailabilityWizardController'),
-              currStep = rMHighAvailabilityWizardController.get('currentStep'),
-              self = this;
-
+              currStep = rMHighAvailabilityWizardController.get('currentStep');
           if (parseInt(currStep) === 4) {
             App.showConfirmationPopup(function () {
-              router.get('updateController').set('isWorking', true);
-              rMHighAvailabilityWizardController.finish();
-              App.clusterStatus.setClusterStatus({
-                clusterName: App.router.getClusterName(),
-                clusterState: 'DEFAULT',
-                localdb: App.db.data
-              }, {
-                alwaysCallback: function () {
-                  self.hide();
-                  router.transitionTo('main.services.index');
-                  location.reload();
-                }
-              });
+              rMHighAvailabilityWizardController.resetOnClose(rMHighAvailabilityWizardController, 'main.services.index');
             }, Em.I18n.t('admin.rm_highAvailability.closePopup'));
           } else {
-            router.get('updateController').set('isWorking', true);
-            rMHighAvailabilityWizardController.finish();
-            App.clusterStatus.setClusterStatus({
-              clusterName: App.router.getClusterName(),
-              clusterState: 'DEFAULT',
-              localdb: App.db.data
-            }, {
-              alwaysCallback: function () {
-                self.hide();
-                router.transitionTo('main.services.index');
-                location.reload();
-              }
-            });
+            rMHighAvailabilityWizardController.resetOnClose(rMHighAvailabilityWizardController, 'main.services.index');
           }
         },
         didInsertElement: function () {
+          this._super();
           this.fitHeight();
         }
       });
@@ -92,6 +68,7 @@ module.exports = App.WizardRoute.extend({
         }
       }
       Em.run.next(function () {
+        App.router.get('wizardWatcherController').setUser(rMHighAvailabilityWizardController.get('name'));
         router.transitionTo('step' + rMHighAvailabilityWizardController.get('currentStep'));
       });
     });
@@ -192,16 +169,7 @@ module.exports = App.WizardRoute.extend({
     },
     next: function (router) {
       var controller = router.get('rMHighAvailabilityWizardController');
-      controller.finish();
-      App.clusterStatus.setClusterStatus({
-        clusterName: controller.get('content.cluster.name'),
-        clusterState: 'DEFAULT',
-        localdb: App.db.data
-      }, {alwaysCallback: function () {
-        controller.get('popup').hide();
-        router.transitionTo('main.services.index');
-        location.reload();
-      }});
+      controller.resetOnClose(controller, 'main.services.index');
     }
   })
 

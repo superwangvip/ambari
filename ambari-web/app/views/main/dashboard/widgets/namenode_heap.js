@@ -17,24 +17,19 @@
  */
 
 var App = require('app');
-var numberUtils = require('utils/number_utils');
 
 App.NameNodeHeapPieChartView = App.PieChartDashboardWidgetView.extend({
 
-  title: Em.I18n.t('dashboard.widgets.NameNodeHeap'),
-  id: '1',
-
-  model_type: 'hdfs',
   modelFieldMax: 'jvmMemoryHeapMax',
   modelFieldUsed: 'jvmMemoryHeapUsed',
   widgetHtmlId: 'widget-nn-heap',
 
   getUsed: function() {
-    return (this.get('model').get(this.get('modelFieldUsed')) / (1024 * 1024)) || 0;
+    return this.get('model').get(this.get('modelFieldUsed')) / (1024 * 1024) || 0;
   },
 
   getMax: function() {
-    return (this.get('model').get(this.get('modelFieldMax')) / (1024 * 1024)) || 0;
+    return this.get('model').get(this.get('modelFieldMax')) / (1024 * 1024) || 0;
   },
 
   didInsertElement: function() {

@@ -18,13 +18,6 @@
 
 package org.apache.ambari.server.stack;
 
-import org.apache.ambari.server.api.services.AmbariMetaInfo;
-import org.apache.ambari.server.metadata.ActionMetadata;
-import org.apache.ambari.server.orm.dao.MetainfoDAO;
-import org.apache.ambari.server.orm.entities.MetainfoEntity;
-import org.apache.ambari.server.state.stack.LatestRepoCallable;
-import org.apache.ambari.server.state.stack.OsFamily;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -32,6 +25,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
+
+import org.apache.ambari.server.api.services.AmbariMetaInfo;
+import org.apache.ambari.server.metadata.ActionMetadata;
+import org.apache.ambari.server.orm.dao.MetainfoDAO;
+import org.apache.ambari.server.orm.entities.MetainfoEntity;
+import org.apache.ambari.server.state.stack.LatestRepoCallable;
+import org.apache.ambari.server.state.stack.OsFamily;
 
 /**
  * Provides external functionality to the Stack framework.
@@ -57,10 +57,6 @@ public class StackContext {
    */
   private LatestRepoQueryExecutor repoUpdateExecutor = new LatestRepoQueryExecutor();
 
-  /**
-   * Repository XML base url property name
-   */
-  private static final String REPOSITORY_XML_PROPERTY_BASEURL = "baseurl";
 
 
   /**
@@ -98,10 +94,18 @@ public class StackContext {
    */
   public String getUpdatedRepoUrl(String stackName, String stackVersion, String osType, String repoId) {
     String key = AmbariMetaInfo.generateRepoMetaKey(stackName, stackVersion,
-            osType, repoId, REPOSITORY_XML_PROPERTY_BASEURL);
+        osType, repoId, AmbariMetaInfo.REPOSITORY_XML_PROPERTY_BASEURL);
     MetainfoEntity entity = metaInfoDAO.findByKey(key);
     return entity != null ? entity.getMetainfoValue() : null;
   }
+
+  public String getUpdatedMirrorsList(String stackName, String stackVersion, String osType, String repoId) {
+    String key = AmbariMetaInfo.generateRepoMetaKey(stackName, stackVersion,
+        osType, repoId, AmbariMetaInfo.REPOSITORY_XML_PROPERTY_MIRRORSLIST);
+    MetainfoEntity entity = metaInfoDAO.findByKey(key);
+    return entity != null ? entity.getMetainfoValue() : null;
+  }
+
 
   /**
    * Register a task to obtain the latest repo url from an external location.

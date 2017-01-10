@@ -17,6 +17,8 @@
  */
 package org.apache.ambari.server.orm.entities;
 
+import java.util.Collection;
+
 import javax.persistence.Basic;
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
@@ -33,7 +35,6 @@ import javax.persistence.NamedQuery;
 import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.TableGenerator;
-import java.util.Collection;
 
 @Entity
 @Table(name = "topology_hostgroup")
@@ -51,8 +52,6 @@ public class TopologyHostGroupEntity {
   private Long id;
 
   @Column(name = "name", nullable = false, updatable = false)
-  @Basic(fetch = FetchType.LAZY)
-  @Lob
   private String name;
 
   @Column(name = "group_properties")

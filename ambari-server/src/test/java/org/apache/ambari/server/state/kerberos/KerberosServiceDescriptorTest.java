@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -17,21 +17,27 @@
  */
 package org.apache.ambari.server.state.kerberos;
 
-import junit.framework.Assert;
-import org.apache.ambari.server.AmbariException;
-import org.junit.Test;
-
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
+import org.apache.ambari.server.AmbariException;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+
+import com.google.gson.Gson;
+
+import junit.framework.Assert;
+
+@Category({ category.KerberosTest.class})
 public class KerberosServiceDescriptorTest {
   public static final String JSON_VALUE =
       "{" +
@@ -98,33 +104,35 @@ public class KerberosServiceDescriptorTest {
           "]" +
           "}";
 
-  public static final Map<String, Object> MAP_VALUE =
-      new HashMap<String, Object>() {
-        {
-          put("name", "A_DIFFERENT_SERVICE_NAME");
-          put(KerberosDescriptorType.IDENTITY.getDescriptorPluralName(), new ArrayList<Object>() {{
-            add(KerberosIdentityDescriptorTest.MAP_VALUE);
-          }});
-          put(KerberosDescriptorType.COMPONENT.getDescriptorPluralName(), new ArrayList<Object>() {{
-            add(KerberosComponentDescriptorTest.MAP_VALUE);
-          }});
-          put(KerberosDescriptorType.CONFIGURATION.getDescriptorPluralName(), new ArrayList<Map<String, Object>>() {{
-            add(new HashMap<String, Object>() {
-              {
-                put("service-site", new HashMap<String, String>() {
-                  {
-                    put("service.property1", "red");
-                    put("service.property", "green");
-                  }
-                });
-              }
-            });
-          }});
-          put(KerberosDescriptorType.AUTH_TO_LOCAL_PROPERTY.getDescriptorPluralName(), new ArrayList<String>() {{
-            add("service.name.rules2");
-          }});
-        }
-      };
+  public static final Map<String, Object> MAP_VALUE;
+
+  static {
+    Map<String, Object> identitiesMap = new TreeMap<String, Object>();
+    identitiesMap.put((String) KerberosIdentityDescriptorTest.MAP_VALUE.get("name"), KerberosIdentityDescriptorTest.MAP_VALUE);
+
+    Map<String, Object> componentsMap = new TreeMap<String, Object>();
+    componentsMap.put((String) KerberosComponentDescriptorTest.MAP_VALUE.get("name"), KerberosComponentDescriptorTest.MAP_VALUE);
+
+    Map<String, Object> serviceSiteProperties = new TreeMap<String, Object>();
+    serviceSiteProperties.put("service.property1", "red");
+    serviceSiteProperties.put("service.property", "green");
+
+    Map<String, Map<String, Object>> serviceSiteMap = new TreeMap<String, Map<String, Object>>();
+    serviceSiteMap.put("service-site", serviceSiteProperties);
+
+    TreeMap<String, Map<String, Map<String, Object>>> configurationsMap = new TreeMap<String, Map<String, Map<String, Object>>>();
+    configurationsMap.put("service-site", serviceSiteMap);
+
+    Collection<String> authToLocalRules = new ArrayList<String>();
+    authToLocalRules.add("service.name.rules2");
+
+    MAP_VALUE = new TreeMap<String, Object>();
+    MAP_VALUE.put("name", "A_DIFFERENT_SERVICE_NAME");
+    MAP_VALUE.put(AbstractKerberosDescriptor.Type.IDENTITY.getDescriptorPluralName(), identitiesMap.values());
+    MAP_VALUE.put(AbstractKerberosDescriptor.Type.COMPONENT.getDescriptorPluralName(), componentsMap.values());
+    MAP_VALUE.put(AbstractKerberosDescriptor.Type.CONFIGURATION.getDescriptorPluralName(), configurationsMap.values());
+    MAP_VALUE.put(AbstractKerberosDescriptor.Type.AUTH_TO_LOCAL_PROPERTY.getDescriptorPluralName(), authToLocalRules);
+  }
 
   private static final KerberosServiceDescriptorFactory KERBEROS_SERVICE_DESCRIPTOR_FACTORY = new KerberosServiceDescriptorFactory();
 
@@ -356,9 +364,10 @@ public class KerberosServiceDescriptorTest {
 
   @Test
   public void testToMap() throws AmbariException {
+    Gson gson = new Gson();
     KerberosServiceDescriptor descriptor = createFromMap();
     Assert.assertNotNull(descriptor);
-    Assert.assertEquals(MAP_VALUE, descriptor.toMap());
+    Assert.assertEquals(gson.toJson(MAP_VALUE), gson.toJson(descriptor.toMap()));
   }
 
   @Test
@@ -374,4 +383,41 @@ public class KerberosServiceDescriptorTest {
     validateUpdatedData(serviceDescriptor);
   }
 
+  /**
+   * Test a JSON object in which only only a Service and configs are defined, but no Components.
+   *
+   * @throws AmbariException
+   */
+  @Test
+  public void testJSONWithOnlyServiceNameAndConfigurations() throws AmbariException {
+    String JSON_VALUE_ONLY_NAME_AND_CONFIGS =
+        "{" +
+            "  \"name\": \"SERVICE_NAME\"," +
+            "  \"configurations\": [" +
+            "    {" +
+            "      \"service-site\": {" +
+            "        \"service.property1\": \"value1\"," +
+            "        \"service.property2\": \"value2\"" +
+            "      }" +
+            "    }" +
+            "  ]" +
+            "}";
+
+    TreeMap<String, Object> CHANGE_NAME = new TreeMap<String, Object>() {{
+      put("name", "A_DIFFERENT_SERVICE_NAME");
+    }};
+
+    KerberosServiceDescriptor serviceDescriptor = KERBEROS_SERVICE_DESCRIPTOR_FACTORY.createInstance("SERVICE_NAME", JSON_VALUE_ONLY_NAME_AND_CONFIGS);
+    KerberosServiceDescriptor updatedServiceDescriptor = new KerberosServiceDescriptor(CHANGE_NAME);
+
+    Assert.assertNotNull(serviceDescriptor);
+    Assert.assertNotNull(updatedServiceDescriptor);
+
+    // Update
+    serviceDescriptor.update(updatedServiceDescriptor);
+
+    // Validate
+    Assert.assertNotNull(serviceDescriptor);
+    Assert.assertEquals("A_DIFFERENT_SERVICE_NAME", serviceDescriptor.getName());
+  }
 }

@@ -34,7 +34,7 @@ from ambari_agent.Facter import FacterLinux
 class TestRegistration(TestCase):
 
   @patch("subprocess.Popen")
-  @patch.object(Hardware, "_chk_mount", new = MagicMock(return_value=True))
+  @patch.object(Hardware, "_chk_writable_mount", new = MagicMock(return_value=True))
   @patch.object(FacterLinux, "facterInfo", new = MagicMock(return_value={}))
   @patch.object(FacterLinux, "__init__", new = MagicMock(return_value = None))
   @patch("ambari_commons.firewall.run_os_command")
@@ -51,7 +51,6 @@ class TestRegistration(TestCase):
     register = Register(config)
     reference_version = '2.1.0'
     data = register.build(reference_version, 1)
-    #print ("Register: " + pprint.pformat(data))
     self.assertEquals(len(data['hardwareProfile']) > 0, True, "hardwareProfile should contain content")
     self.assertEquals(data['hostname'] != "", True, "hostname should not be empty")
     self.assertEquals(data['publicHostname'] != "", True, "publicHostname should not be empty")

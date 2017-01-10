@@ -18,12 +18,14 @@
 
 package org.apache.ambari.server.view.validation;
 
-import junit.framework.Assert;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.apache.ambari.view.validation.ValidationResult;
 import org.junit.Test;
 
-import java.util.HashMap;
-import java.util.Map;
+import junit.framework.Assert;
 
 /**
  * InstanceValidationResultImpl tests.
@@ -53,7 +55,7 @@ public class InstanceValidationResultImplTest {
   @Test
   public void testToJson() throws Exception {
     ValidationResult result = new ValidationResultImpl(true, "detail");
-    Map<String, ValidationResult> propertyResults = new HashMap<String, ValidationResult>();
+    Map<String, ValidationResult> propertyResults = new LinkedHashMap<>();
 
     propertyResults.put("foo", new ValidationResultImpl(true, "foo detail"));
     propertyResults.put("bar", new ValidationResultImpl(false, "bar detail"));

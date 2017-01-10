@@ -20,8 +20,6 @@ package org.apache.ambari.server.state.stack.upgrade;
 import java.util.ArrayList;
 import java.util.List;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.state.RepositoryInfo;
 import org.junit.Before;
 import org.junit.Test;
@@ -30,6 +28,8 @@ import com.google.gson.Gson;
 import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+
+import junit.framework.Assert;
 
 /**
  * Tests the {@link RepositoryVersionHelper} class
@@ -57,9 +57,10 @@ public class RepositoryVersionHelperTest {
     repository.setBaseUrl("baseurl");
     repository.setOsType("os");
     repository.setRepoId("repoId");
+    repository.setUnique(true);
     repositories.add(repository);
 
     final String serialized = helper.serializeOperatingSystems(repositories);
-    Assert.assertEquals("[{\"repositories\":[{\"Repositories/base_url\":\"baseurl\",\"Repositories/repo_id\":\"repoId\"}],\"OperatingSystems/os_type\":\"os\"}]", serialized);
+    Assert.assertEquals("[{\"repositories\":[{\"Repositories/base_url\":\"baseurl\",\"Repositories/repo_id\":\"repoId\",\"Repositories/unique\":true}],\"OperatingSystems/os_type\":\"os\"}]", serialized);
   }
 }

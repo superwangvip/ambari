@@ -18,15 +18,15 @@
 
 package org.apache.ambari.server.controller;
 
-import org.apache.ambari.server.state.CustomCommandDefinition;
-import org.apache.ambari.server.state.ServiceInfo;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import org.apache.ambari.server.state.CustomCommandDefinition;
+import org.apache.ambari.server.state.ServiceInfo;
 
 public class StackServiceResponse {
 
@@ -38,6 +38,7 @@ public class StackServiceResponse {
   private String userName;
   private String comments;
   private String serviceVersion;
+  private ServiceInfo.Selection selection;
   private boolean serviceCheckSupported;
   private List<String> customCommands;
 
@@ -47,12 +48,26 @@ public class StackServiceResponse {
 
   private List<String> requiredServices;
 
+  private Map<String, String> serviceProperties;
+
   /**
    * A File pointing to the service-level Kerberos descriptor file
    *
    * This may be null if a relevant file is not available.
    */
   private File kerberosDescriptorFile;
+
+  /**
+   * Indicates if the stack definition says this service supports
+   * credential store. If not specified, this will be false.
+   */
+  private boolean credentialStoreSupported;
+
+  /**
+   * Indicates if the stack definition says this service is enabled
+   * for credential store use. If not specified, this will be false.
+   */
+  private boolean credentialStoreEnabled;
 
   /**
    * Constructor.
@@ -71,6 +86,7 @@ public class StackServiceResponse {
     excludedConfigTypes = service.getExcludedConfigTypes();
     requiredServices = service.getRequiredServices();
     serviceCheckSupported = null != service.getCommandScript();
+    selection = service.getSelection();
 
     // the custom command names defined at the service (not component) level
     List<CustomCommandDefinition> definitions = service.getCustomCommands();
@@ -84,6 +100,20 @@ public class StackServiceResponse {
     }
 
     kerberosDescriptorFile = service.getKerberosDescriptorFile();
+
+    serviceProperties = service.getServiceProperties();
+
+    credentialStoreSupported = service.isCredentialStoreSupported();
+
+    credentialStoreEnabled = service.isCredentialStoreEnabled();
+  }
+
+  public ServiceInfo.Selection getSelection() {
+    return selection;
+  }
+
+  public void setSelection(ServiceInfo.Selection selection) {
+    this.selection = selection;
   }
 
   public String getStackName() {
@@ -109,16 +139,16 @@ public class StackServiceResponse {
   public void setServiceName(String serviceName) {
     this.serviceName = serviceName;
   }
-  
+
   public String getServiceType() {
-	return serviceType;
+    return serviceType;
   }
 
   public void setServiceType(String serviceType) {
-	this.serviceType = serviceType;
+    this.serviceType = serviceType;
   }
 
-public String getServiceDisplayName() {
+  public String getServiceDisplayName() {
     return serviceDisplayName;
   }
 
@@ -157,7 +187,7 @@ public String getServiceDisplayName() {
   public Set<String> getExcludedConfigTypes() {
     return excludedConfigTypes;
   }
-  
+
   public List<String> getRequiredServices() {
     return requiredServices;
   }
@@ -206,5 +236,49 @@ public String getServiceDisplayName() {
    */
   public List<String> getCustomCommands() {
     return customCommands;
+  }
+
+  /**
+   * Get the service properties of this service.
+   * @return the properties or an empty map (never {@code null}).
+   */
+  public Map<String, String> getServiceProperties() {
+    return serviceProperties;
+  }
+
+  /**
+   * Get whether credential store is supported by the service
+   *
+   * @return true or false.
+   */
+  public boolean isCredentialStoreSupported() {
+    return credentialStoreSupported;
+  }
+
+  /**
+   * Set credential store supported value
+   *
+   * @param credentialStoreSupported
+   */
+  public void setCredentialStoreSupported(boolean credentialStoreSupported) {
+    this.credentialStoreSupported = credentialStoreSupported;
+  }
+
+  /**
+   * Get whether credential store use is enabled
+   *
+   * @return true or false
+   */
+  public boolean isCredentialStoreEnabled() {
+    return credentialStoreEnabled;
+  }
+
+  /**
+   * Set credential store enabled value.
+   *
+   * @param credentialStoreEnabled
+   */
+  public void setCredentialStoreEnabled(boolean credentialStoreEnabled) {
+    this.credentialStoreEnabled = credentialStoreEnabled;
   }
 }

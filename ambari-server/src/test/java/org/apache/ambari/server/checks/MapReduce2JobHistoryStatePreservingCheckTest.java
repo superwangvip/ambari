@@ -17,7 +17,9 @@
  */
 package org.apache.ambari.server.checks;
 
-import com.google.inject.Provider;
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
 import org.apache.ambari.server.orm.entities.ClusterVersionEntity;
@@ -35,8 +37,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import java.util.HashMap;
-import java.util.Map;
+import com.google.inject.Provider;
 
 /**
  * Tests for {@link org.apache.ambari.server.checks.MapReduce2JobHistoryStatePreservingCheckTest}
@@ -59,8 +60,6 @@ public class MapReduce2JobHistoryStatePreservingCheckTest {
       }
     };
     Configuration config = Mockito.mock(Configuration.class);
-    Mockito.when(config.getRollingUpgradeMinStack()).thenReturn("HDP-2.2");
-    Mockito.when(config.getRollingUpgradeMaxStack()).thenReturn("");
     m_check.config = config;
   }
 
@@ -90,18 +89,6 @@ public class MapReduce2JobHistoryStatePreservingCheckTest {
     // MAPREDUCE2 installed
     services.put("MAPREDUCE2", Mockito.mock(Service.class));
     Assert.assertTrue(m_check.isApplicable(request));
-
-    // Should not be supported for any upgrade from version less than 2.3.0.0
-    request.setTargetStackId(new StackId("HDP", "2.2.0.1"));
-    Assert.assertFalse(m_check.isApplicable(request));
-
-    request.setSourceStackId(new StackId("HDP", "2.2.0.1"));
-    request.setTargetStackId(new StackId("HDP", "2.3.0.0"));
-    Assert.assertFalse(m_check.isApplicable(request));
-
-    request.setSourceStackId(new StackId("HDP", "2.2.0.1"));
-    request.setTargetStackId(new StackId("HDP", "2.2.1.0"));
-    Assert.assertFalse(m_check.isApplicable(request));
   }
 
   @Test

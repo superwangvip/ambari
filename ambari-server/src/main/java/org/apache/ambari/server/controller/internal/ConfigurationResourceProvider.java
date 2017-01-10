@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -19,6 +19,7 @@
 package org.apache.ambari.server.controller.internal;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -40,6 +41,8 @@ import org.apache.ambari.server.controller.spi.ResourceAlreadyExistsException;
 import org.apache.ambari.server.controller.spi.SystemException;
 import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.apache.ambari.server.security.authorization.RoleAuthorization;
 
 /**
  * Resource provider for configuration resources.
@@ -100,8 +103,13 @@ public class ConfigurationResourceProvider extends
    * @param managementController  the associated management controller
    */
   ConfigurationResourceProvider(AmbariManagementController managementController) {
-
     super(PROPERTY_IDS, KEY_PROPERTY_IDS, managementController);
+
+    // creating configs requires authorizations based on the type of changes being performed, therefore
+    // checks need to be performed inline.
+    // update and delete are not supported for configs
+
+    setRequiredGetAuthorizations(EnumSet.of(RoleAuthorization.CLUSTER_VIEW_CONFIGS));
   }
 
 
@@ -147,7 +155,7 @@ public class ConfigurationResourceProvider extends
 
       createResources(new Command<Void>() {
         @Override
-        public Void invoke() throws AmbariException {
+        public Void invoke() throws AmbariException, AuthorizationException {
           getManagementController().createConfiguration(configRequest);
           return null;
         }
@@ -158,7 +166,7 @@ public class ConfigurationResourceProvider extends
   }
 
   @Override
-  public Set<Resource> getResources(Request request, Predicate predicate)
+  public Set<Resource> getResourcesAuthorized(Request request, Predicate predicate)
     throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
 
     final Set<ConfigurationRequest> requests = new HashSet<ConfigurationRequest>();
@@ -219,7 +227,7 @@ public class ConfigurationResourceProvider extends
    * Throws an exception, as Configurations cannot be deleted.
    */
   @Override
-  public RequestStatus deleteResources(Predicate predicate) throws SystemException,
+  public RequestStatus deleteResources(Request request, Predicate predicate) throws SystemException,
       UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     throw new UnsupportedOperationException("Cannot delete a Configuration resource.");
   }

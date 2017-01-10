@@ -17,7 +17,6 @@
  */
 
 var App = require('app');
-var configPropertyHelper = require('utils/configs/config_property_helper');
 
 require('models/configs/objects/service_config_category');
 require('models/configs/objects/service_config_property');
@@ -55,56 +54,6 @@ var serviceConfigProperty,
     })
   ],
 
-  components = [
-    {
-      name: 'NameNode',
-      master: true
-    },
-    {
-      name: 'SNameNode',
-      master: true
-    },
-    {
-      name: 'JobTracker',
-      master: true
-    },
-    {
-      name: 'HBase Master',
-      master: true
-    },
-    {
-      name: 'Oozie Master',
-      master: true
-    },
-    {
-      name: 'Hive Metastore',
-      master: true
-    },
-    {
-      name: 'WebHCat Server',
-      master: true
-    },
-    {
-      name: 'ZooKeeper Server',
-      master: true
-    },
-    {
-      name: 'Ganglia',
-      master: true
-    },
-    {
-      name: 'DataNode',
-      slave: true
-    },
-    {
-      name: 'TaskTracker',
-      slave: true
-    },
-    {
-      name: 'RegionServer',
-      slave: true
-    }
-  ],
   overridableFalseData = [
     {
       isOverridable: false
@@ -114,37 +63,20 @@ var serviceConfigProperty,
       overrides: configsData[0].overrides
     },
     {
-      displayType: 'masterHost'
+      displayType: 'componentHost'
     }
   ],
   overridableTrueData = [
     {
       isOverridable: true,
       isEditable: true
-    },    {
+    },
+    {
       isOverridable: true,
       overrides: []
     },
     {
       isOverridable: true
-    }
-  ],
-  overriddenFalseData = [
-    {
-      overrides: null,
-      isOriginalSCP: true
-    },
-    {
-      overrides: [],
-      isOriginalSCP: true
-    }
-  ],
-  overriddenTrueData = [
-    {
-      overrides: configsData[0].overrides
-    },
-    {
-      isOriginalSCP: false
     }
   ],
   removableFalseData = [
@@ -185,8 +117,18 @@ var serviceConfigProperty,
     },
     {
       initial: {
-        id: 'puppet var',
         value: '',
+        savedValue: 'default',
+        recommendedValue: 'recommended'
+      },
+      result: {
+        value: '',
+        recommendedValue: 'recommended'
+      }
+    },
+    {
+      initial: {
+        value: null,
         savedValue: 'default',
         recommendedValue: 'recommended'
       },
@@ -212,173 +154,79 @@ var serviceConfigProperty,
     isEditable: true,
     value: 'value',
     savedValue: 'default'
-  },
-  types = ['masterHost', 'slaveHosts', 'masterHosts', 'slaveHost', 'radio button'],
-  classCases = [
-    {
-      initial: {
-        displayType: 'checkbox'
-      },
-      viewClass: App.ServiceConfigCheckbox
-    },
-    {
-      initial: {
-        displayType: 'checkbox',
-        dependentConfigPattern: 'somPattern'
-      },
-      viewClass: App.ServiceConfigCheckboxWithDependencies
-    },
-    {
-      initial: {
-        displayType: 'password'
-      },
-      viewClass: App.ServiceConfigPasswordField
-    },
-    {
-      initial: {
-        displayType: 'combobox'
-      },
-      viewClass: App.ServiceConfigComboBox
-    },
-    {
-      initial: {
-        displayType: 'radio button'
-      },
-      viewClass: App.ServiceConfigRadioButtons
-    },
-    {
-      initial: {
-        displayType: 'directories'
-      },
-      viewClass: App.ServiceConfigTextArea
-    },
-    {
-      initial: {
-        displayType: 'content'
-      },
-      viewClass: App.ServiceConfigTextAreaContent
+  };
 
-    },
-    {
-      initial: {
-        displayType: 'multiLine'
-      },
-      viewClass: App.ServiceConfigTextArea
-    },
-    {
-      initial: {
-        displayType: 'custom'
-      },
-      viewClass: App.ServiceConfigBigTextArea
-    },
-    {
-      initial: {
-        displayType: 'masterHost'
-      },
-      viewClass: App.ServiceConfigMasterHostView
-    },
-    {
-      initial: {
-        displayType: 'masterHosts'
-      },
-      viewClass: App.ServiceConfigMasterHostsView
-    },
-    {
-      initial: {
-        displayType: 'slaveHosts'
-      },
-      viewClass: App.ServiceConfigSlaveHostsView
-    },
-    {
-      initial: {
-        unit: true,
-        displayType: 'type'
-      },
-      viewClass: App.ServiceConfigTextFieldWithUnit
-    },
-    {
-      initial: {
-        unit: false,
-        displayType: 'type'
-      },
-      viewClass: App.ServiceConfigTextField
-    },
-    {
-      initial: {
-        unit: false,
-        displayType: 'supportTextConnection'
-      },
-      viewClass: App.checkConnectionView
-    }
-  ];
+
+function getProperty() {
+  return App.ServiceConfigProperty.create();
+}
 
 describe('App.ServiceConfigProperty', function () {
 
   beforeEach(function () {
-    serviceConfigProperty = App.ServiceConfigProperty.create();
+    serviceConfigProperty = getProperty();
   });
 
-  describe('#overrideErrorTrigger', function () {
-    it('should be an increment', function () {
-      serviceConfigProperty.set('overrides', configsData[0].overrides);
-      expect(serviceConfigProperty.get('overrideErrorTrigger')).to.equal(1);
-      serviceConfigProperty.set('overrides', []);
-      expect(serviceConfigProperty.get('overrideErrorTrigger')).to.equal(2);
+  App.TestAliases.testAsComputedAnd(getProperty(), 'hideFinalIcon', ['!isFinal', 'isNotEditable']);
+
+  App.TestAliases.testAsComputedAnd(getProperty(), 'isActive', ['isVisible', '!hiddenBySubSection', '!hiddenBySection']);
+
+  describe('#placeholder', function () {
+      [
+        {
+          placeholderText: 'foo',
+          savedValue: ''
+        },
+        {
+          placeholderText: '',
+          savedValue: 'foo'
+        },
+        {
+          placeholderText: 'foo',
+          savedValue: 'bar'
+        }
+      ].forEach(function (item) {
+        it('should equal foo, placeholder = ' + JSON.stringify(item.placeholderText), function() {
+          serviceConfigProperty.set('isEditable', true);
+          serviceConfigProperty.set('placeholderText', item.placeholderText);
+          serviceConfigProperty.set('savedValue', item.savedValue);
+          expect(serviceConfigProperty.get('placeholder')).to.equal('foo');
+        });
+    });
+    it('should equal null', function() {
+      serviceConfigProperty.set('isEditable', false);
+      serviceConfigProperty.set('placeholderText', 'foo');
+      serviceConfigProperty.set('savedValue', 'bar');
+      expect(serviceConfigProperty.get('placeholder')).to.equal(null);
     });
   });
-
   describe('#isPropertyOverridable', function () {
     overridableFalseData.forEach(function (item) {
       it('should be false', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
+        serviceConfigProperty.setProperties(item);
         expect(serviceConfigProperty.get('isPropertyOverridable')).to.be.false;
       });
     });
     overridableTrueData.forEach(function (item) {
       it('should be true', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
+        serviceConfigProperty.setProperties(item);
         expect(serviceConfigProperty.get('isPropertyOverridable')).to.be.true;
       });
     });
   });
 
-  describe('#isOverridden', function () {
-    overriddenFalseData.forEach(function (item) {
-      it('should be false', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
-        expect(serviceConfigProperty.get('isOverridden')).to.be.false;
-      });
-    });
-    overriddenTrueData.forEach(function (item) {
-      it('should be true', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
-        expect(serviceConfigProperty.get('isOverridden')).to.be.true;
-      });
-    });
-  });
+  App.TestAliases.testAsComputedOr(getProperty(), 'isOverridden', ['overrides.length', '!isOriginalSCP']);
 
   describe('#isRemovable', function () {
     removableFalseData.forEach(function (item) {
       it('should be false', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
+        serviceConfigProperty.setProperties(item);
         expect(serviceConfigProperty.get('isRemovable')).to.be.false;
       });
     });
     removableTrueData.forEach(function (item) {
       it('should be true', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
+        serviceConfigProperty.setProperties(item);
         expect(serviceConfigProperty.get('isRemovable')).to.be.true;
       });
     });
@@ -386,10 +234,14 @@ describe('App.ServiceConfigProperty', function () {
 
   describe('#init', function () {
     initPropertyData.forEach(function (item) {
-      it('should set initial data', function () {
-        serviceConfigPropertyInit = App.ServiceConfigProperty.create(item.initial);
+      describe('should set initial data for ' + JSON.stringify(item), function () {
+        beforeEach(function () {
+          serviceConfigPropertyInit = App.ServiceConfigProperty.create(item.initial);
+        });
         Em.keys(item.result).forEach(function (prop) {
-          expect(serviceConfigPropertyInit.get(prop)).to.equal(item.result[prop]);
+          it(prop, function () {
+            expect(serviceConfigPropertyInit.get(prop)).to.equal(item.result[prop]);
+          });
         });
       });
     });
@@ -398,9 +250,7 @@ describe('App.ServiceConfigProperty', function () {
   describe('#isNotDefaultValue', function () {
     notDefaultFalseData.forEach(function (item) {
       it('should be false', function () {
-        Em.keys(item).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item[prop]);
-        });
+        serviceConfigProperty.setProperties(item);
         expect(serviceConfigProperty.get('isNotDefaultValue')).to.be.false;
       });
     });
@@ -412,18 +262,7 @@ describe('App.ServiceConfigProperty', function () {
     });
   });
 
-  describe('#cantBeUndone', function () {
-    types.forEach(function (item) {
-      it('should be true', function () {
-        serviceConfigProperty.set('displayType', item);
-        expect(serviceConfigProperty.get('cantBeUndone')).to.be.true;
-      });
-    });
-    it('should be false', function () {
-      serviceConfigProperty.set('displayType', 'type');
-      expect(serviceConfigProperty.get('cantBeUndone')).to.be.false;
-    });
-  });
+  App.TestAliases.testAsComputedExistsIn(getProperty(), 'cantBeUndone', 'displayType', ['componentHost', 'componentHosts', 'radio button']);
 
   describe('#isValid', function () {
     it('should be true', function () {
@@ -436,84 +275,39 @@ describe('App.ServiceConfigProperty', function () {
     });
   });
 
-  describe('#viewClass', function () {
-    classCases.forEach(function (item) {
-      it ('should be ' + item.viewClass, function () {
-        Em.keys(item.initial).forEach(function (prop) {
-          serviceConfigProperty.set(prop, item.initial[prop]);
-        });
-        expect(serviceConfigProperty.get('viewClass')).to.eql(item.viewClass);
-      });
-    });
-  });
-
-  describe('#validate', function () {
-    it('not required', function () {
-      serviceConfigProperty.setProperties({
-        isRequired: false,
-        value: ''
-      });
-      expect(serviceConfigProperty.get('errorMessage')).to.be.empty;
-      expect(serviceConfigProperty.get('error')).to.be.false;
-    });
-    it('should validate', function () {
-      serviceConfigProperty.setProperties({
-        isRequired: true,
-        value: 'value'
-      });
-      expect(serviceConfigProperty.get('errorMessage')).to.be.empty;
-      expect(serviceConfigProperty.get('error')).to.be.false;
-    });
-    it('should fail', function () {
-      serviceConfigProperty.setProperties({
-        isRequired: true,
-        value: 'value'
-      });
-      serviceConfigProperty.set('value', '');
-      expect(serviceConfigProperty.get('errorMessage')).to.equal('This is required');
-      expect(serviceConfigProperty.get('error')).to.be.true;
-    });
-  });
-
-  describe('#undoAvailable', function () {
-
-    Em.A([
-      {
-        cantBeUndone: true,
-        isNotDefaultValue: true,
-        e: false
-      },
-      {
-        cantBeUndone: false,
-        isNotDefaultValue: true,
-        e: true
-      },
-      {
-        cantBeUndone: true,
-        isNotDefaultValue: false,
-        e: false
-      },
-      {
-        cantBeUndone: false,
-        isNotDefaultValue: false,
-        e: false
-      }
-    ]).forEach(function (test) {
-      it('', function () {
-        serviceConfigProperty.reopen({
-          cantBeUndone: test.cantBeUndone,
-          isNotDefaultValue: test.isNotDefaultValue
-        });
-        expect(serviceConfigProperty.get('undoAvailable')).to.equal(test.e);
-      });
-    });
-
-  });
-
   describe('#overrideIsFinalValues', function () {
     it('should be defined as empty array', function () {
       expect(serviceConfigProperty.get('overrideIsFinalValues')).to.eql([]);
     });
-  })
+  });
+
+  describe('custom validation for `ranger_admin_password`', function () {
+
+    beforeEach(function () {
+      this.config = App.ServiceConfigProperty.create({
+        name: 'ranger_admin_password',
+        displayType: 'password'
+      });
+    });
+
+    it('value less than 9 symbols is invalid', function () {
+      this.config.set('value', 12345678);
+      this.config.set('retypedPassword', 12345678);
+      expect(this.config.get('isValid')).to.be.false;
+      expect(this.config.get('errorMessage')).to.be.equal(Em.I18n.t('errorMessage.config.password.length').format(9));
+    });
+
+    it('value with 9 symbols is valid', function () {
+      this.config.set('value', 123456789);
+      this.config.set('retypedPassword', 123456789);
+      expect(this.config.get('isValid')).to.be.true;
+      expect(this.config.get('errorMessage')).to.be.equal('');
+    });
+
+  });
+
+  App.TestAliases.testAsComputedOr(getProperty(), 'hasIssues', ['error', 'warn', 'overridesWithIssues.length']);
+
+  App.TestAliases.testAsComputedFilterBy(getProperty(), 'overridesWithIssues', 'overrides', 'hasIssues', true);
 
 });

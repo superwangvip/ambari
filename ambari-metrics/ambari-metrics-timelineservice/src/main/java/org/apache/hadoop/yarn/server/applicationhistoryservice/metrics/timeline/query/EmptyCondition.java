@@ -17,7 +17,7 @@
  */
 package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.query;
 
-import org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline.Precision;
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
 
 import java.util.List;
 
@@ -27,6 +27,7 @@ import java.util.List;
 public class EmptyCondition implements Condition {
   String statement;
   boolean doUpdate = false;
+  boolean metricNamesNotCondition = false;
 
   @Override
   public boolean isEmpty() {
@@ -135,5 +136,18 @@ public class EmptyCondition implements Condition {
   @Override
   public boolean doUpdate() {
     return doUpdate;
+  }
+
+  @Override
+  public String toString() {
+    return "EmptyCondition{ " +
+      " statement = " + this.getStatement() +
+      " doUpdate = " + this.doUpdate() +
+      " }";
+  }
+
+  @Override
+  public void setMetricNamesNotCondition(boolean metricNamesNotCondition) {
+    this.metricNamesNotCondition = metricNamesNotCondition;
   }
 }

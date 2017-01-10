@@ -42,6 +42,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -50,6 +51,7 @@ import java.util.Map;
 
 import javax.persistence.EntityManager;
 
+import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.AmbariManagementController;
@@ -65,11 +67,9 @@ import org.apache.ambari.server.orm.dao.StackDAO;
 import org.apache.ambari.server.orm.entities.ClusterEntity;
 import org.apache.ambari.server.orm.entities.ClusterServiceEntity;
 import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntity;
-import org.apache.ambari.server.orm.entities.HostComponentDesiredStateEntityPK;
 import org.apache.ambari.server.orm.entities.HostComponentStateEntity;
 import org.apache.ambari.server.orm.entities.HostEntity;
 import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntity;
-import org.apache.ambari.server.orm.entities.ServiceComponentDesiredStateEntityPK;
 import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
@@ -81,8 +81,10 @@ import org.apache.ambari.server.state.RepositoryInfo;
 import org.apache.ambari.server.state.SecurityState;
 import org.apache.ambari.server.state.SecurityType;
 import org.apache.ambari.server.state.StackId;
+import org.apache.ambari.server.state.StackInfo;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.easymock.Capture;
+import org.easymock.EasyMock;
 import org.easymock.EasyMockSupport;
 import org.junit.After;
 import org.junit.Assert;
@@ -137,34 +139,34 @@ public class UpgradeCatalog200Test {
 
     expect(configuration.getDatabaseUrl()).andReturn(Configuration.JDBC_IN_MEMORY_URL).anyTimes();
 
-    Capture<DBAccessor.DBColumnInfo> alertDefinitionIgnoreColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> alertDefinitionDescriptionColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> alertTargetGlobalColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> hostComponentStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> hostComponentVersionColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> clustersSecurityTypeColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> hostComponentStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> hostComponentDesiredStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> hostRoleCommandRetryColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> stageSkippableColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
+    Capture<DBAccessor.DBColumnInfo> alertDefinitionIgnoreColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> alertDefinitionDescriptionColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> alertTargetGlobalColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> hostComponentStateColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> hostComponentVersionColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> clustersSecurityTypeColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> hostComponentStateSecurityStateColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> hostComponentDesiredStateSecurityStateColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> hostRoleCommandRetryColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> stageSkippableColumnCapture = EasyMock.newCapture();
 
-    Capture<DBAccessor.DBColumnInfo> viewparameterLabelColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> viewparameterPlaceholderColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> viewparameterDefaultValueColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
+    Capture<DBAccessor.DBColumnInfo> viewparameterLabelColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> viewparameterPlaceholderColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> viewparameterDefaultValueColumnCapture = EasyMock.newCapture();
 
-    Capture<DBAccessor.DBColumnInfo> serviceDesiredStateSecurityStateColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<List<DBAccessor.DBColumnInfo>> clusterVersionCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<List<DBAccessor.DBColumnInfo>> hostVersionCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<DBAccessor.DBColumnInfo> valueColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<DBAccessor.DBColumnInfo> dataValueColumnCapture = new Capture<DBAccessor.DBColumnInfo>();
-    Capture<List<DBAccessor.DBColumnInfo>> alertTargetStatesCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<List<DBAccessor.DBColumnInfo>> artifactCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<List<DBAccessor.DBColumnInfo>> kerberosPrincipalCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<List<DBAccessor.DBColumnInfo>> kerberosPrincipalHostCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
+    Capture<DBAccessor.DBColumnInfo> serviceDesiredStateSecurityStateColumnCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> clusterVersionCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> hostVersionCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> valueColumnCapture = EasyMock.newCapture();
+    Capture<DBAccessor.DBColumnInfo> dataValueColumnCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> alertTargetStatesCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> artifactCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> kerberosPrincipalCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> kerberosPrincipalHostCapture = EasyMock.newCapture();
 
-    Capture<List<DBAccessor.DBColumnInfo>> upgradeCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<List<DBAccessor.DBColumnInfo>> upgradeGroupCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
-    Capture<List<DBAccessor.DBColumnInfo>> upgradeItemCapture = new Capture<List<DBAccessor.DBColumnInfo>>();
+    Capture<List<DBAccessor.DBColumnInfo>> upgradeCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> upgradeGroupCapture = EasyMock.newCapture();
+    Capture<List<DBAccessor.DBColumnInfo>> upgradeItemCapture = EasyMock.newCapture();
 
     // Alert Definition
     dbAccessor.addColumn(eq("alert_definition"),
@@ -362,6 +364,7 @@ public class UpgradeCatalog200Test {
     Method addNewConfigurationsFromXml = AbstractUpgradeCatalog.class.getDeclaredMethod
         ("addNewConfigurationsFromXml");
     Method updateTezConfiguration = UpgradeCatalog200.class.getDeclaredMethod("updateTezConfiguration");
+    Method updateFlumeEnvConfig = UpgradeCatalog200.class.getDeclaredMethod("updateFlumeEnvConfig");
     Method updateClusterEnvConfiguration = UpgradeCatalog200.class.getDeclaredMethod("updateClusterEnvConfiguration");
     Method updateConfigurationProperties = AbstractUpgradeCatalog.class.getDeclaredMethod
             ("updateConfigurationProperties", String.class, Map.class, boolean.class, boolean.class);
@@ -372,6 +375,7 @@ public class UpgradeCatalog200Test {
         .addMockedMethod(updateHiveDatabaseType)
         .addMockedMethod(addNewConfigurationsFromXml)
         .addMockedMethod(updateTezConfiguration)
+        .addMockedMethod(updateFlumeEnvConfig)
         .addMockedMethod(updateConfigurationProperties)
         .addMockedMethod(updateClusterEnvConfiguration)
         .addMockedMethod(persistHDPRepo)
@@ -386,6 +390,9 @@ public class UpgradeCatalog200Test {
     expectLastCall().once();
 
     upgradeCatalog.updateTezConfiguration();
+    expectLastCall().once();
+
+    upgradeCatalog.updateFlumeEnvConfig();
     expectLastCall().once();
 
     upgradeCatalog.updateConfigurationProperties("hive-site",
@@ -406,10 +413,51 @@ public class UpgradeCatalog200Test {
   }
 
   @Test
+  public void testUpdateFlumeEnvConfig() throws AmbariException {
+    EasyMockSupport easyMockSupport = new EasyMockSupport();
+    final AmbariManagementController mockAmbariManagementController = easyMockSupport.createNiceMock(AmbariManagementController.class);
+    final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
+    final Cluster mockClusterExpected = easyMockSupport.createNiceMock(Cluster.class);
+    final Map<String, String> propertiesFlumeEnv = new HashMap<String, String>() {
+      {
+        put("content", "test");
+      }
+    };
+
+    final Config mockFlumeEnv = easyMockSupport.createNiceMock(Config.class);
+    expect(mockFlumeEnv.getProperties()).andReturn(propertiesFlumeEnv).once();
+
+    final Injector mockInjector = Guice.createInjector(new AbstractModule() {
+      @Override
+      protected void configure() {
+        bind(AmbariManagementController.class).toInstance(mockAmbariManagementController);
+        bind(Clusters.class).toInstance(mockClusters);
+        bind(EntityManager.class).toInstance(entityManager);
+
+        bind(DBAccessor.class).toInstance(createNiceMock(DBAccessor.class));
+        bind(OsFamily.class).toInstance(createNiceMock(OsFamily.class));
+      }
+    });
+
+    expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
+    expect(mockClusters.getClusters()).andReturn(new HashMap<String, Cluster>() {{
+      put("normal", mockClusterExpected);
+    }}).atLeastOnce();
+
+    expect(mockClusterExpected.getDesiredConfigByType("flume-env")).andReturn(mockFlumeEnv).atLeastOnce();
+    expect(mockFlumeEnv.getProperties()).andReturn(propertiesFlumeEnv).atLeastOnce();
+
+    easyMockSupport.replayAll();
+    mockInjector.getInstance(UpgradeCatalog200.class).updateFlumeEnvConfig();
+    easyMockSupport.verifyAll();
+  }
+
+  @Test
   public void testPersistHDPRepo() throws Exception {
     EasyMockSupport easyMockSupport = new EasyMockSupport();
     final AmbariManagementController  mockAmbariManagementController = easyMockSupport.createStrictMock(AmbariManagementController.class);
-    final AmbariMetaInfo mockAmbariMetaInfo = easyMockSupport.createStrictMock(AmbariMetaInfo.class);
+    final AmbariMetaInfo mockAmbariMetaInfo = easyMockSupport.createNiceMock(AmbariMetaInfo.class);
+    final StackInfo mockStackInfo = easyMockSupport.createNiceMock(StackInfo.class);
     final Clusters mockClusters = easyMockSupport.createStrictMock(Clusters.class);
     final Cluster mockCluster = easyMockSupport.createStrictMock(Cluster.class);
     final Map<String, Cluster> clusterMap = new HashMap<String, Cluster>();
@@ -418,7 +466,7 @@ public class UpgradeCatalog200Test {
     HashSet<OperatingSystemInfo> osiSet = new HashSet<OperatingSystemInfo>();
     osiSet.add(osi);
     StackId stackId = new StackId("HDP","2.2");
-    RepositoryInfo mockRepositoryInfo = easyMockSupport.createStrictMock(RepositoryInfo.class);
+    final RepositoryInfo mockRepositoryInfo = easyMockSupport.createNiceMock(RepositoryInfo.class);
 
     final Injector mockInjector = Guice.createInjector(new AbstractModule() {
       @Override
@@ -435,15 +483,42 @@ public class UpgradeCatalog200Test {
     expect(mockAmbariManagementController.getClusters()).andReturn(mockClusters).once();
     expect(mockClusters.getClusters()).andReturn(clusterMap).once();
     expect(mockCluster.getCurrentStackVersion()).andReturn(stackId).once();
+    expect(mockCluster.getClusterName()).andReturn("cc").anyTimes();
     expect(mockAmbariMetaInfo.getOperatingSystems("HDP", "2.2")).andReturn(osiSet).once();
     expect(mockAmbariMetaInfo.getRepository("HDP", "2.2", "redhat6", "HDP-2.2")).andReturn(mockRepositoryInfo).once();
+    expect(mockAmbariMetaInfo.getStack("HDP", "2.2")).andReturn(mockStackInfo);
+    expect(mockStackInfo.getRepositories()).andReturn(new ArrayList<RepositoryInfo>() {{
+      add(mockRepositoryInfo);
+    }});
     expect(mockRepositoryInfo.getDefaultBaseUrl()).andReturn("http://baseurl").once();
-    mockAmbariMetaInfo.updateRepoBaseURL("HDP", "2.2", "redhat6", "HDP-2.2", "http://baseurl");
+    mockAmbariMetaInfo.updateRepo("HDP", "2.2", "redhat6", "HDP-2.2", "http://baseurl", null);
     expectLastCall().once();
 
     easyMockSupport.replayAll();
     mockInjector.getInstance(UpgradeCatalog200.class).persistHDPRepo();
     easyMockSupport.verifyAll();
+  }
+
+  @Test
+  public void testRepositoryTable() {
+    final RepositoryInfo repositoryInfo1 = new RepositoryInfo();
+    repositoryInfo1.setOsType("redhat6");
+    repositoryInfo1.setRepoId("HDP-2.2");
+    repositoryInfo1.setBaseUrl("http://public-repo-1.hortonworks.com/HDP/centos6/2.x/updates/2.2.6.0");
+
+    final RepositoryInfo repositoryInfo2 = new RepositoryInfo();
+    repositoryInfo2.setOsType("suse11");
+    repositoryInfo2.setRepoId("HDP-UTILS-1.1.0.20");
+    repositoryInfo2.setBaseUrl("http://public-repo-1.hortonworks.com/HDP-UTILS-1.1.0.20/repos/suse11sp3");
+
+    List<RepositoryInfo> repos = new ArrayList<RepositoryInfo>() {{
+      add(repositoryInfo1);
+      add(repositoryInfo2);
+    }};
+    String output = UpgradeCatalog200.repositoryTable(repos);
+    assertEquals("  redhat6 |            HDP-2.2 | http://public-repo-1.hortonworks.com/HDP/centos6/2.x/updates/2.2.6.0 \n" +
+                 "   suse11 | HDP-UTILS-1.1.0.20 | http://public-repo-1.hortonworks.com/HDP-UTILS-1.1.0.20/repos/suse11sp3 \n",
+      output);
   }
 
   @Test
@@ -563,19 +638,17 @@ public class UpgradeCatalog200Test {
     upgradeCatalogHelper.addComponent(injector, clusterEntity,
         clusterServiceEntityNagios, hostEntity, "NAGIOS_SERVER", stackEntity);
 
-    ServiceComponentDesiredStateEntityPK pkNagiosServer = new ServiceComponentDesiredStateEntityPK();
-    pkNagiosServer.setComponentName("NAGIOS_SERVER");
-    pkNagiosServer.setClusterId(clusterEntity.getClusterId());
-    pkNagiosServer.setServiceName("NAGIOS");
-    ServiceComponentDesiredStateEntity serviceComponentDesiredStateEntity = serviceComponentDesiredStateDAO.findByPK(pkNagiosServer);
+    ServiceComponentDesiredStateEntity serviceComponentDesiredStateEntity = serviceComponentDesiredStateDAO.findByName(
+        clusterEntity.getClusterId(), "NAGIOS", "NAGIOS_SERVER");
+
     assertNotNull(serviceComponentDesiredStateEntity);
 
-    HostComponentDesiredStateEntityPK hcDesiredStateEntityPk = new HostComponentDesiredStateEntityPK();
-    hcDesiredStateEntityPk.setServiceName("NAGIOS");
-    hcDesiredStateEntityPk.setClusterId(clusterEntity.getClusterId());
-    hcDesiredStateEntityPk.setComponentName("NAGIOS_SERVER");
-    hcDesiredStateEntityPk.setHostId(hostEntity.getHostId());
-    HostComponentDesiredStateEntity hcDesiredStateEntity = hostComponentDesiredStateDAO.findByPK(hcDesiredStateEntityPk);
+    HostComponentDesiredStateEntity hcDesiredStateEntity = hostComponentDesiredStateDAO.findByIndex(
+      clusterEntity.getClusterId(),
+      "NAGIOS",
+      "NAGIOS_SERVER",
+      hostEntity.getHostId()
+    );
     assertNotNull(hcDesiredStateEntity);
 
     HostComponentStateEntity hcStateEntity = hostComponentStateDAO.findByIndex(
@@ -732,7 +805,7 @@ public class UpgradeCatalog200Test {
   public void testGetSourceVersion() {
     final DBAccessor dbAccessor = createNiceMock(DBAccessor.class);
     UpgradeCatalog upgradeCatalog = getUpgradeCatalog(dbAccessor);
-    Assert.assertEquals("1.7.0", upgradeCatalog.getSourceVersion());
+    Assert.assertEquals(null, upgradeCatalog.getSourceVersion());
   }
 
   @Test

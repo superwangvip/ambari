@@ -17,11 +17,11 @@
  */
 package org.apache.ambari.server.security.authorization;
 
-import org.apache.commons.lang.StringUtils;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
+import org.apache.commons.lang.StringUtils;
 
 /**
  * Describes LDAP Server connection parameters
@@ -50,13 +50,21 @@ public class LdapServerProperties {
   private String userBase;
   private String userObjectClass;
   private String usernameAttribute;
+  private boolean forceUsernameToLowercase = false;
   private String userSearchBase = "";
 
-  private String groupSearchFilter;
-  private static final String userSearchFilter = "({attribute}={0})";
+  private String syncGroupMemberReplacePattern = "";
+  private String syncUserMemberReplacePattern = "";
 
+  private String groupSearchFilter;
+  private String userSearchFilter;
+  private String alternateUserSearchFilter; // alternate user search filter to be used when users use their alternate login id (e.g. User Principal Name)
+
+  private String syncUserMemberFilter = "";
+  private String syncGroupMemberFilter = "";
   //LDAP pagination properties
   private boolean paginationEnabled = true;
+  private String adminGroupMappingMemberAttr = ""; // custom group search filter for admin mappings
 
   public List<String> getLdapUrls() {
     String protocol = useSsl ? "ldaps://" : "ldap://";
@@ -137,8 +145,17 @@ public class LdapServerProperties {
     this.userSearchBase = userSearchBase;
   }
 
-  public String getUserSearchFilter() {
-    return userSearchFilter.replace("{attribute}", usernameAttribute);
+  /**
+   * Returns the LDAP filter to search users by.
+   * @param useAlternateUserSearchFilter if true than return LDAP filter that expects user name in
+   *                                  User Principal Name format to filter users constructed from {@value org.apache.ambari.server.configuration.Configuration#LDAP_ALT_USER_SEARCH_FILTER_KEY}.
+   *                                  Otherwise the filter is constructed from {@value org.apache.ambari.server.configuration.Configuration#LDAP_USER_SEARCH_FILTER_KEY}
+   * @return the LDAP filter string
+   */
+  public String getUserSearchFilter(boolean useAlternateUserSearchFilter) {
+    String filter = useAlternateUserSearchFilter ? alternateUserSearchFilter : userSearchFilter;
+
+    return resolveUserSearchFilterPlaceHolders(filter);
   }
 
   public String getUsernameAttribute() {
@@ -147,6 +164,28 @@ public class LdapServerProperties {
 
   public void setUsernameAttribute(String usernameAttribute) {
     this.usernameAttribute = usernameAttribute;
+  }
+
+  /**
+   * Sets whether the username retrieved from the LDAP server during authentication is to be forced
+   * to all lowercase characters before assigning to the authenticated user.
+   *
+   * @param forceUsernameToLowercase true to force the username to be lowercase; false to leave as
+   *                                 it was when retrieved from the LDAP server
+   */
+  public void setForceUsernameToLowercase(boolean forceUsernameToLowercase) {
+    this.forceUsernameToLowercase = forceUsernameToLowercase;
+  }
+
+  /**
+   * Gets whether the username retrieved from the LDAP server during authentication is to be forced
+   * to all lowercase characters before assigning to the authenticated user.
+   *
+   * @return true to force the username to be lowercase; false to leave as it was when retrieved from
+   * the LDAP server
+   */
+  public boolean isForceUsernameToLowercase() {
+    return forceUsernameToLowercase;
   }
 
   public String getGroupBase() {
@@ -197,6 +236,15 @@ public class LdapServerProperties {
     this.groupSearchFilter = groupSearchFilter;
   }
 
+
+  public void setUserSearchFilter(String userSearchFilter) {
+    this.userSearchFilter = userSearchFilter;
+  }
+
+  public void setAlternateUserSearchFilter(String alternateUserSearchFilter) {
+    this.alternateUserSearchFilter = alternateUserSearchFilter;
+  }
+
   public boolean isGroupMappingEnabled() {
     return groupMappingEnabled;
   }
@@ -245,6 +293,46 @@ public class LdapServerProperties {
     this.paginationEnabled = paginationEnabled;
   }
 
+  public String getSyncGroupMemberReplacePattern() {
+    return syncGroupMemberReplacePattern;
+  }
+
+  public void setSyncGroupMemberReplacePattern(String syncGroupMemberReplacePattern) {
+    this.syncGroupMemberReplacePattern = syncGroupMemberReplacePattern;
+  }
+
+  public String getSyncUserMemberReplacePattern() {
+    return syncUserMemberReplacePattern;
+  }
+
+  public void setSyncUserMemberReplacePattern(String syncUserMemberReplacePattern) {
+    this.syncUserMemberReplacePattern = syncUserMemberReplacePattern;
+  }
+
+  public String getSyncUserMemberFilter() {
+    return syncUserMemberFilter;
+  }
+
+  public void setSyncUserMemberFilter(String syncUserMemberFilter) {
+    this.syncUserMemberFilter = syncUserMemberFilter;
+  }
+
+  public String getSyncGroupMemberFilter() {
+    return syncGroupMemberFilter;
+  }
+
+  public void setSyncGroupMemberFilter(String syncGroupMemberFilter) {
+    this.syncGroupMemberFilter = syncGroupMemberFilter;
+  }
+
+  public String getAdminGroupMappingMemberAttr() {
+    return adminGroupMappingMemberAttr;
+  }
+
+  public void setAdminGroupMappingMemberAttr(String adminGroupMappingMemberAttr) {
+    this.adminGroupMappingMemberAttr = adminGroupMappingMemberAttr;
+  }
+
   @Override
   public boolean equals(Object obj) {
     if (this == obj) return true;
@@ -266,6 +354,8 @@ public class LdapServerProperties {
       return false;
     if (usernameAttribute != null ? !usernameAttribute.equals(that.usernameAttribute) : that.usernameAttribute != null)
       return false;
+    if (forceUsernameToLowercase != that.forceUsernameToLowercase)
+      return false;
     if (groupBase != null ? !groupBase.equals(that.groupBase) :
         that.groupBase != null) return false;
     if (groupObjectClass != null ? !groupObjectClass.equals(that.groupObjectClass) :
@@ -280,11 +370,24 @@ public class LdapServerProperties {
         that.groupSearchFilter) : that.groupSearchFilter != null) return false;
     if (dnAttribute != null ? !dnAttribute.equals(
         that.dnAttribute) : that.dnAttribute != null) return false;
+    if (syncGroupMemberReplacePattern != null ? !syncGroupMemberReplacePattern.equals(
+      that.syncGroupMemberReplacePattern) : that.syncGroupMemberReplacePattern != null) return false;
+    if (syncUserMemberReplacePattern != null ? !syncUserMemberReplacePattern.equals(
+      that.syncUserMemberReplacePattern) : that.syncUserMemberReplacePattern != null) return false;
+    if (syncUserMemberFilter != null ? !syncUserMemberFilter.equals(
+      that.syncUserMemberFilter) : that.syncUserMemberFilter != null) return false;
+    if (syncGroupMemberFilter != null ? !syncGroupMemberFilter.equals(
+      that.syncGroupMemberFilter) : that.syncGroupMemberFilter != null) return false;
     if (referralMethod != null ? !referralMethod.equals(that.referralMethod) : that.referralMethod != null) return false;
 
     if (groupMappingEnabled != that.isGroupMappingEnabled()) return false;
 
     if (paginationEnabled != that.isPaginationEnabled()) return false;
+
+    if (userSearchFilter != null ? !userSearchFilter.equals(that.userSearchFilter) : that.userSearchFilter != null) return false;
+    if (alternateUserSearchFilter != null ? !alternateUserSearchFilter.equals(that.alternateUserSearchFilter) : that.alternateUserSearchFilter != null) return false;
+    if (adminGroupMappingMemberAttr != null ? !adminGroupMappingMemberAttr.equals(that.adminGroupMappingMemberAttr) : that.adminGroupMappingMemberAttr != null) return false;
+
 
     return true;
   }
@@ -301,6 +404,7 @@ public class LdapServerProperties {
     result = 31 * result + (userBase != null ? userBase.hashCode() : 0);
     result = 31 * result + (userObjectClass != null ? userObjectClass.hashCode() : 0);
     result = 31 * result + (usernameAttribute != null ? usernameAttribute.hashCode() : 0);
+    result = 31 * result + (forceUsernameToLowercase ? 1 : 0);
     result = 31 * result + (groupBase != null ? groupBase.hashCode() : 0);
     result = 31 * result + (groupObjectClass != null ? groupObjectClass.hashCode() : 0);
     result = 31 * result + (groupMembershipAttr != null ? groupMembershipAttr.hashCode() : 0);
@@ -308,8 +412,25 @@ public class LdapServerProperties {
     result = 31 * result + (adminGroupMappingRules != null ? adminGroupMappingRules.hashCode() : 0);
     result = 31 * result + (groupSearchFilter != null ? groupSearchFilter.hashCode() : 0);
     result = 31 * result + (dnAttribute != null ? dnAttribute.hashCode() : 0);
+    result = 31 * result + (syncUserMemberReplacePattern != null ? syncUserMemberReplacePattern.hashCode() : 0);
+    result = 31 * result + (syncGroupMemberReplacePattern != null ? syncGroupMemberReplacePattern.hashCode() : 0);
+    result = 31 * result + (syncUserMemberFilter != null ? syncUserMemberFilter.hashCode() : 0);
+    result = 31 * result + (syncGroupMemberFilter != null ? syncGroupMemberFilter.hashCode() : 0);
     result = 31 * result + (referralMethod != null ? referralMethod.hashCode() : 0);
+    result = 31 * result + (userSearchFilter != null ? userSearchFilter.hashCode() : 0);
+    result = 31 * result + (alternateUserSearchFilter != null ? alternateUserSearchFilter.hashCode() : 0);
+    result = 31 * result + (adminGroupMappingMemberAttr != null ? adminGroupMappingMemberAttr.hashCode() : 0);
     return result;
   }
 
+  /**
+   * Resolves known placeholders found within the given ldap user search ldap filter
+   * @param filter
+   * @return returns the filter with the resolved placeholders.
+   */
+  protected String resolveUserSearchFilterPlaceHolders(String filter) {
+    return filter
+      .replace("{usernameAttribute}", usernameAttribute)
+      .replace("{userObjectClass}", userObjectClass);
+  }
 }

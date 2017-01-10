@@ -19,8 +19,8 @@
 var App = require('app');
 
 App.ProgressBarView = Em.View.extend({
-  template: Ember.Handlebars.compile('<div class="bar" {{bindAttr style="view.progressWidth"}}></div>'),
-  classNameBindings: ['generalClass', 'barClass'],
+  template: Ember.Handlebars.compile('<div {{bindAttr class="barClass :progress-bar" style="view.progressWidth"}}></div>'),
+  classNameBindings: ['generalClass'],
 
   /**
    * @type {number}
@@ -43,9 +43,7 @@ App.ProgressBarView = Em.View.extend({
    * string format: width:<number>%;
    * @type {string}
    */
-  progressWidth: function () {
-    return "width:" + this.get('progress') + "%;";
-  }.property('progress'),
+  progressWidth: Em.computed.format('width:{0}%;', 'progress'),
 
   /**
    * @type {string}
@@ -53,18 +51,20 @@ App.ProgressBarView = Em.View.extend({
   barClass: function () {
     switch (this.get('status')) {
       case 'FAILED':
-        return 'progress-danger';
+        return 'progress-bar-danger';
       case 'ABORTED':
       case 'TIMED_OUT':
-        return 'progress-warning';
+        return 'progress-bar-warning';
       case 'COMPLETED':
-        return 'progress-success';
+        return 'progress-bar-success';
+      case 'SUSPENDED':
+        return 'progress-bar-info';
       case 'QUEUED':
       case 'PENDING':
       case 'IN_PROGRESS':
-        return 'progress-info active progress-striped';
+        return 'progress-bar-info active progress-bar-striped';
       default:
-        return 'progress-info'
+        return 'progress-bar-info'
     }
   }.property('status')
 });

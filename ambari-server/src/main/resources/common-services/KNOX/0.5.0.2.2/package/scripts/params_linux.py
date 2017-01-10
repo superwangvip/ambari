@@ -18,26 +18,68 @@ limitations under the License.
 Ambari Agent
 
 """
-from resource_management import *
+import status_params
+
+from resource_management.core.logger import Logger
+
 import ambari_simplejson as json # simplejson is much faster comparing to Python 2.6 json module and has the same functions set.
 from resource_management.libraries.functions import format
-from resource_management.libraries.functions.version import format_hdp_stack_version
+from resource_management.libraries.functions.version import format_stack_version
 from resource_management.libraries.functions.default import default
 from resource_management.libraries.functions.get_port_from_url import get_port_from_url
+from resource_management.libraries.functions.get_stack_version import get_stack_version
 from resource_management.libraries.functions import get_kinit_path
 from resource_management.libraries.script.script import Script
 from status_params import *
+from resource_management.libraries.resources.hdfs_resource import HdfsResource
+from resource_management.libraries.functions import stack_select, conf_select
+from resource_management.libraries.functions.get_not_managed_resources import get_not_managed_resources
+from resource_management.libraries.functions.stack_features import check_stack_feature
+from resource_management.libraries.functions.stack_features import get_stack_feature_version
+from resource_management.libraries.functions.constants import StackFeature
+from resource_management.libraries.functions import is_empty
 
 # server configurations
 config = Script.get_config()
+stack_root = Script.get_stack_root()
 
 tmp_dir = Script.get_tmp_dir()
-stack_name = default("/hostLevelParams/stack_name", None)
+stack_name = status_params.stack_name
 upgrade_direction = default("/commandParams/upgrade_direction", None)
 version = default("/commandParams/version", None)
+# E.g., 2.3.2.0
+version_formatted = format_stack_version(version)
 
-knox_master_secret_path = '/var/lib/knox/data/security/master'
-knox_cert_store_path = '/var/lib/knox/data/security/keystores/gateway.jks'
+# E.g., 2.3
+stack_version_unformatted = config['hostLevelParams']['stack_version']
+stack_version_formatted = format_stack_version(stack_version_unformatted)
+
+# get the correct version to use for checking stack features
+version_for_stack_feature_checks = get_stack_feature_version(config)
+
+stack_supports_ranger_kerberos = check_stack_feature(StackFeature.RANGER_KERBEROS_SUPPORT, version_for_stack_feature_checks)
+stack_supports_ranger_audit_db = check_stack_feature(StackFeature.RANGER_AUDIT_DB_SUPPORT, version_for_stack_feature_checks)
+
+# This is the version whose state is CURRENT. During an RU, this is the source version.
+# DO NOT format it since we need the build number too.
+upgrade_from_version = default("/hostLevelParams/current_version", None)
+
+# server configurations
+# Default value used in HDP 2.3.0.0 and earlier.
+knox_data_dir = '/var/lib/knox/data'
+
+# Important, it has to be strictly greater than 2.3.0.0!!!
+Logger.info(format("Stack version to use is {version_formatted}"))
+if version_formatted and check_stack_feature(StackFeature.KNOX_VERSIONED_DATA_DIR, version_formatted):
+  # This is the current version. In the case of a Rolling Upgrade, it will be the newer version.
+  # In the case of a Downgrade, it will be the version downgrading to.
+  # This is always going to be a symlink to /var/lib/knox/data_${version}
+  knox_data_dir = format('{stack_root}/{version}/knox/data')
+  Logger.info(format("Detected stack with version {version}, will use knox_data_dir = {knox_data_dir}"))
+
+
+knox_master_secret_path = format('{knox_data_dir}/security/master')
+knox_cert_store_path = format('{knox_data_dir}/security/keystores/gateway.jks')
 knox_user = default("/configurations/knox-env/knox_user", "knox")
 
 # server configurations
@@ -51,24 +93,25 @@ ldap_bin = '/usr/lib/knox/bin/ldap.sh'
 knox_client_bin = '/usr/lib/knox/bin/knoxcli.sh'
 
 # HDP 2.2+ parameters
-if Script.is_hdp_stack_greater_or_equal("2.2"):
-  knox_bin = '/usr/hdp/current/knox-server/bin/gateway.sh'
-  knox_conf_dir = '/usr/hdp/current/knox-server/conf'
-  ldap_bin = '/usr/hdp/current/knox-server/bin/ldap.sh'
-  knox_client_bin = '/usr/hdp/current/knox-server/bin/knoxcli.sh'
-
-  knox_master_secret_path = '/usr/hdp/current/knox-server/data/security/master'
-  knox_cert_store_path = '/usr/hdp/current/knox-server/data/security/keystores/gateway.jks'
-  knox_data_dir = '/usr/hdp/current/knox-server/data/'
+if stack_version_formatted and check_stack_feature(StackFeature.ROLLING_UPGRADE, stack_version_formatted):
+  knox_bin = format('{stack_root}/current/knox-server/bin/gateway.sh')
+  knox_conf_dir = format('{stack_root}/current/knox-server/conf')
+  ldap_bin = format('{stack_root}/current/knox-server/bin/ldap.sh')
+  knox_client_bin = format('{stack_root}/current/knox-server/bin/knoxcli.sh')
+  knox_master_secret_path = format('{stack_root}/current/knox-server/data/security/master')
+  knox_cert_store_path = format('{stack_root}/current/knox-server/data/security/keystores/gateway.jks')
+  knox_data_dir = format('{stack_root}/current/knox-server/data/')
 
 knox_group = default("/configurations/knox-env/knox_group", "knox")
 mode = 0644
 
-stack_version_unformatted = str(config['hostLevelParams']['stack_version'])
-hdp_stack_version = format_hdp_stack_version(stack_version_unformatted)
+stack_version_unformatted = config['hostLevelParams']['stack_version']
+stack_version_formatted = format_stack_version(stack_version_unformatted)
 
 dfs_ha_enabled = False
-dfs_ha_nameservices = default("/configurations/hdfs-site/dfs.nameservices", None)
+dfs_ha_nameservices = default('/configurations/hdfs-site/dfs.internal.nameservices', None)
+if dfs_ha_nameservices is None:
+  dfs_ha_nameservices = default('/configurations/hdfs-site/dfs.nameservices', None)
 dfs_ha_namenode_ids = default(format("/configurations/hdfs-site/dfs.ha.namenodes.{dfs_ha_nameservices}"), None)
 
 namenode_rpc = None
@@ -81,11 +124,18 @@ if dfs_ha_namenode_ids:
 if dfs_ha_enabled:
   for nn_id in dfs_ha_namemodes_ids_list:
     nn_host = config['configurations']['hdfs-site'][format('dfs.namenode.rpc-address.{dfs_ha_nameservices}.{nn_id}')]
-    if hostname in nn_host:
+    if hostname.lower() in nn_host.lower():
       namenode_id = nn_id
       namenode_rpc = nn_host
     # With HA enabled namenode_address is recomputed
   namenode_address = format('hdfs://{dfs_ha_nameservices}')
+
+namenode_port_map = {}
+if dfs_ha_enabled:
+    for nn_id in dfs_ha_namemodes_ids_list:
+        nn_host = config['configurations']['hdfs-site'][format('dfs.namenode.http-address.{dfs_ha_nameservices}.{nn_id}')]
+        nn_host_parts = nn_host.split(':')
+        namenode_port_map[nn_host_parts[0]] = nn_host_parts[1]
 
 
 namenode_hosts = default("/clusterHostInfo/namenode_host", None)
@@ -109,7 +159,6 @@ if has_namenode:
 
 webhdfs_service_urls = ""
 
-
 def buildUrlElement(protocol, hdfs_host, port, servicePath) :
   openTag = "<url>"
   closeTag = "</url>"
@@ -120,11 +169,12 @@ def buildUrlElement(protocol, hdfs_host, port, servicePath) :
   else:
     return openTag + proto + hdfs_host + ":" + port + servicePath + closeTag + newLine
 
-if type(namenode_hosts) is list:
-    for host in namenode_hosts:
-      webhdfs_service_urls += buildUrlElement("http", host, namenode_http_port, "/webhdfs")
+namenode_host_keys = namenode_port_map.keys();
+if len(namenode_host_keys) > 0:
+    for host in namenode_host_keys:
+      webhdfs_service_urls += buildUrlElement("http", host, namenode_port_map[host], "/webhdfs")
 else:
-  webhdfs_service_urls = buildUrlElement("http", namenode_hosts, namenode_http_port, "/webhdfs")
+  webhdfs_service_urls = buildUrlElement("http", namenode_host, namenode_http_port, "/webhdfs")
 
 
 rm_hosts = default("/clusterHostInfo/rm_host", None)
@@ -179,7 +229,13 @@ if has_oozie:
   oozie_server_port = get_port_from_url(config['configurations']['oozie-site']['oozie.base.url'])
 
 # Knox managed properties
-knox_managed_pid_symlink= "/usr/hdp/current/knox-server/pids"
+knox_managed_pid_symlink= format('{stack_root}/current/knox-server/pids')
+
+#knox log4j
+knox_gateway_log_maxfilesize = default('/configurations/gateway-log4j/knox_gateway_log_maxfilesize',256)
+knox_gateway_log_maxbackupindex = default('/configurations/gateway-log4j/knox_gateway_log_maxbackupindex',20)
+knox_ldap_log_maxfilesize = default('/configurations/ldap-log4j/knox_ldap_log_maxfilesize',256)
+knox_ldap_log_maxbackupindex = default('/configurations/ldap-log4j/knox_ldap_log_maxbackupindex',20)
 
 # server configurations
 knox_master_secret = config['configurations']['knox-env']['knox_master_secret']
@@ -187,6 +243,8 @@ knox_host_name = config['clusterHostInfo']['knox_gateway_hosts'][0]
 knox_host_name_in_cluster = config['hostname']
 knox_host_port = config['configurations']['gateway-site']['gateway.port']
 topology_template = config['configurations']['topology']['content']
+admin_topology_template = config['configurations']['admin-topology']['content']
+knoxsso_topology_template = config['configurations']['knoxsso-topology']['content']
 gateway_log4j = config['configurations']['gateway-log4j']['content']
 ldap_log4j = config['configurations']['ldap-log4j']['content']
 users_ldif = config['configurations']['users-ldif']['content']
@@ -210,11 +268,15 @@ ambari_server_hostname = config['clusterHostInfo']['ambari_server_host'][0]
 
 # ranger knox properties
 policymgr_mgr_url = config['configurations']['admin-properties']['policymgr_external_url']
-sql_connector_jar = config['configurations']['admin-properties']['SQL_CONNECTOR_JAR']
-xa_audit_db_name = config['configurations']['admin-properties']['audit_db_name']
-xa_audit_db_user = config['configurations']['admin-properties']['audit_db_user']
+if 'admin-properties' in config['configurations'] and 'policymgr_external_url' in config['configurations']['admin-properties'] and policymgr_mgr_url.endswith('/'):
+  policymgr_mgr_url = policymgr_mgr_url.rstrip('/')
+xa_audit_db_name = default('/configurations/admin-properties/audit_db_name', 'ranger_audits')
+xa_audit_db_user = default('/configurations/admin-properties/audit_db_user', 'rangerlogger')
 xa_db_host = config['configurations']['admin-properties']['db_host']
 repo_name = str(config['clusterName']) + '_knox'
+repo_name_value = config['configurations']['ranger-knox-security']['ranger.plugin.knox.service.name']
+if not is_empty(repo_name_value) and repo_name_value != "{{repo_name}}":
+  repo_name = repo_name_value
 
 knox_home = config['configurations']['ranger-knox-plugin-properties']['KNOX_HOME']
 common_name_for_certificate = config['configurations']['ranger-knox-plugin-properties']['common.name.for.certificate']
@@ -230,40 +292,49 @@ jdk_location = config['hostLevelParams']['jdk_location']
 java_share_dir = '/usr/share/java'
 if has_ranger_admin:
   enable_ranger_knox = (config['configurations']['ranger-knox-plugin-properties']['ranger-knox-plugin-enabled'].lower() == 'yes')
-  xa_audit_db_password = unicode(config['configurations']['admin-properties']['audit_db_password'])
+  xa_audit_db_password = ''
+  if not is_empty(config['configurations']['admin-properties']['audit_db_password']) and stack_supports_ranger_audit_db:
+    xa_audit_db_password = unicode(config['configurations']['admin-properties']['audit_db_password'])
   repo_config_password = unicode(config['configurations']['ranger-knox-plugin-properties']['REPOSITORY_CONFIG_PASSWORD'])
   xa_audit_db_flavor = (config['configurations']['admin-properties']['DB_FLAVOR']).lower()
+  previous_jdbc_jar_name= None
 
-  if xa_audit_db_flavor == 'mysql':
-    jdbc_symlink_name = "mysql-jdbc-driver.jar"
-    jdbc_jar_name = "mysql-connector-java.jar"
-    audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
-    jdbc_driver = "com.mysql.jdbc.Driver"
-  elif xa_audit_db_flavor == 'oracle':
-    jdbc_jar_name = "ojdbc6.jar"
-    jdbc_symlink_name = "oracle-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
-    jdbc_driver = "oracle.jdbc.OracleDriver"
-  elif xa_audit_db_flavor == 'postgres':
-    jdbc_jar_name = "postgresql.jar"
-    jdbc_symlink_name = "postgres-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
-    jdbc_driver = "org.postgresql.Driver"
-  elif xa_audit_db_flavor == 'mssql':
-    jdbc_jar_name = "sqljdbc4.jar"
-    jdbc_symlink_name = "mssql-jdbc-driver.jar"
-    audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
-    jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
-  elif xa_audit_db_flavor == 'sqla':
-    jdbc_jar_name = "sajdbc4.jar"
-    jdbc_symlink_name = "sqlanywhere-jdbc-driver.tar.gz"
-    audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
-    jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
+  if stack_supports_ranger_audit_db:
+    if xa_audit_db_flavor == 'mysql':
+      jdbc_jar_name = default("/hostLevelParams/custom_mysql_jdbc_name", None)
+      previous_jdbc_jar_name = default("/hostLevelParams/previous_custom_mysql_jdbc_name", None)
+      audit_jdbc_url = format('jdbc:mysql://{xa_db_host}/{xa_audit_db_name}')
+      jdbc_driver = "com.mysql.jdbc.Driver"
+    elif xa_audit_db_flavor == 'oracle':
+      jdbc_jar_name = default("/hostLevelParams/custom_oracle_jdbc_name", None)
+      previous_jdbc_jar_name = default("/hostLevelParams/previous_custom_oracle_jdbc_name", None)
+      colon_count = xa_db_host.count(':')
+      if colon_count == 2 or colon_count == 0:
+        audit_jdbc_url = format('jdbc:oracle:thin:@{xa_db_host}')
+      else:
+        audit_jdbc_url = format('jdbc:oracle:thin:@//{xa_db_host}')
+      jdbc_driver = "oracle.jdbc.OracleDriver"
+    elif xa_audit_db_flavor == 'postgres':
+      jdbc_jar_name = default("/hostLevelParams/custom_postgres_jdbc_name", None)
+      previous_jdbc_jar_name = default("/hostLevelParams/previous_custom_postgres_jdbc_name", None)
+      audit_jdbc_url = format('jdbc:postgresql://{xa_db_host}/{xa_audit_db_name}')
+      jdbc_driver = "org.postgresql.Driver"
+    elif xa_audit_db_flavor == 'mssql':
+      jdbc_jar_name = default("/hostLevelParams/custom_mssql_jdbc_name", None)
+      previous_jdbc_jar_name = default("/hostLevelParams/previous_custom_mssql_jdbc_name", None)
+      audit_jdbc_url = format('jdbc:sqlserver://{xa_db_host};databaseName={xa_audit_db_name}')
+      jdbc_driver = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+    elif xa_audit_db_flavor == 'sqla':
+      jdbc_jar_name = default("/hostLevelParams/custom_sqlanywhere_jdbc_name", None)
+      previous_jdbc_jar_name = default("/hostLevelParams/previous_custom_sqlanywhere_jdbc_name", None)
+      audit_jdbc_url = format('jdbc:sqlanywhere:database={xa_audit_db_name};host={xa_db_host}')
+      jdbc_driver = "sap.jdbc4.sqlanywhere.IDriver"
 
-  downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}")
-
-  driver_curl_source = format("{jdk_location}/{jdbc_symlink_name}")
-  driver_curl_target = format("/usr/hdp/current/knox-server/ext/{jdbc_jar_name}")
+  downloaded_custom_connector = format("{tmp_dir}/{jdbc_jar_name}") if stack_supports_ranger_audit_db else None
+  driver_curl_source = format("{jdk_location}/{jdbc_jar_name}") if stack_supports_ranger_audit_db else None
+  driver_curl_target = format("{stack_root}/current/knox-server/ext/{jdbc_jar_name}") if stack_supports_ranger_audit_db else None
+  previous_jdbc_jar = format("{stack_root}/current/knox-server/ext/{previous_jdbc_jar_name}") if stack_supports_ranger_audit_db else None
+  sql_connector_jar = ''
 
   knox_ranger_plugin_config = {
     'username': repo_config_username,
@@ -280,9 +351,29 @@ if has_ranger_admin:
     'repositoryType': 'knox',
     'assetType': '5',
     }
-  
+
+  if stack_supports_ranger_kerberos and security_enabled:
+    knox_ranger_plugin_config['policy.download.auth.users'] = knox_user
+    knox_ranger_plugin_config['tag.download.auth.users'] = knox_user
+
+  if stack_supports_ranger_kerberos:
+    knox_ranger_plugin_config['ambari.service.check.user'] = policy_user
+
+    knox_ranger_plugin_repo = {
+      'isEnabled': 'true',
+      'configs': knox_ranger_plugin_config,
+      'description': 'knox repo',
+      'name': repo_name,
+      'type': 'knox'
+    }
+
+
+
+  xa_audit_db_is_enabled = False
   ranger_audit_solr_urls = config['configurations']['ranger-admin-site']['ranger.audit.solr.urls']
-  xa_audit_db_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.destination.db'] if xml_configurations_supported else None
+  if xml_configurations_supported and stack_supports_ranger_audit_db:
+    xa_audit_db_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.destination.db']
+  xa_audit_hdfs_is_enabled = config['configurations']['ranger-knox-audit']['xasecure.audit.destination.hdfs'] if xml_configurations_supported else None
   ssl_keystore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.keystore.password']) if xml_configurations_supported else None
   ssl_truststore_password = unicode(config['configurations']['ranger-knox-policymgr-ssl']['xasecure.policymgr.clientssl.truststore.password']) if xml_configurations_supported else None
   credential_file = format('/etc/ranger/{repo_name}/cred.jceks') if xml_configurations_supported else None
@@ -290,3 +381,53 @@ if has_ranger_admin:
   #For SQLA explicitly disable audit to DB for Ranger
   if xa_audit_db_flavor == 'sqla':
     xa_audit_db_is_enabled = False
+
+hdfs_user = config['configurations']['hadoop-env']['hdfs_user'] if has_namenode else None
+hdfs_user_keytab = config['configurations']['hadoop-env']['hdfs_user_keytab'] if has_namenode else None
+hdfs_principal_name = config['configurations']['hadoop-env']['hdfs_principal_name'] if has_namenode else None
+hdfs_site = config['configurations']['hdfs-site'] if has_namenode else None
+default_fs = config['configurations']['core-site']['fs.defaultFS'] if has_namenode else None
+hadoop_bin_dir = stack_select.get_hadoop_dir("bin") if has_namenode else None
+hadoop_conf_dir = conf_select.get_hadoop_conf_dir() if has_namenode else None
+
+import functools
+#create partial functions with common arguments for every HdfsResource call
+#to create/delete hdfs directory/file/copyfromlocal we need to call params.HdfsResource in code
+HdfsResource = functools.partial(
+  HdfsResource,
+  user=hdfs_user,
+  hdfs_resource_ignore_file = "/var/lib/ambari-agent/data/.hdfs_resource_ignore",
+  security_enabled = security_enabled,
+  keytab = hdfs_user_keytab,
+  kinit_path_local = kinit_path_local,
+  hadoop_bin_dir = hadoop_bin_dir,
+  hadoop_conf_dir = hadoop_conf_dir,
+  principal_name = hdfs_principal_name,
+  hdfs_site = hdfs_site,
+  default_fs = default_fs,
+  immutable_paths = get_not_managed_resources()
+)
+
+druid_coordinator_urls = ""
+if "druid-coordinator" in config['configurations']:
+  port = config['configurations']['druid-coordinator']['druid.port']
+  for host in config['clusterHostInfo']['druid_coordinator_hosts']:
+    druid_coordinator_urls += buildUrlElement("http", host, port, "")
+
+druid_overlord_urls = ""
+if "druid-overlord" in config['configurations']:
+  port = config['configurations']['druid-overlord']['druid.port']
+  for host in config['clusterHostInfo']['druid_overlord_hosts']:
+    druid_overlord_urls += buildUrlElement("http", host, port, "")
+
+druid_broker_urls = ""
+if "druid-broker" in config['configurations']:
+  port = config['configurations']['druid-broker']['druid.port']
+  for host in config['clusterHostInfo']['druid_broker_hosts']:
+    druid_broker_urls += buildUrlElement("http", host, port, "")
+
+druid_router_urls = ""
+if "druid-router" in config['configurations']:
+  port = config['configurations']['druid-router']['druid.port']
+  for host in config['clusterHostInfo']['druid_router_hosts']:
+    druid_router_urls += buildUrlElement("http", host, port, "")

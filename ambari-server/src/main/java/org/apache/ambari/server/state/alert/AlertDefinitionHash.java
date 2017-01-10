@@ -22,7 +22,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -30,9 +29,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.ClusterNotFoundException;
 import org.apache.ambari.server.agent.ActionQueue;
 import org.apache.ambari.server.agent.AgentCommand.AgentCommandType;
 import org.apache.ambari.server.agent.AlertDefinitionCommand;
@@ -118,7 +119,8 @@ public class AlertDefinitionHash {
    * The hashes for all hosts for any cluster. The key is the hostname and the
    * value is a map between cluster name and hash.
    */
-  private Map<String, Map<String, String>> m_hashes = new HashMap<String, Map<String, String>>();
+  private ConcurrentMap<String, ConcurrentMap<String, String>> m_hashes =
+      new ConcurrentHashMap<String, ConcurrentMap<String, String>>();
 
   /**
    * Gets a unique hash value reprssenting all of the alert definitions that
@@ -137,10 +139,13 @@ public class AlertDefinitionHash {
    * @return the unique hash or {@value #NULL_MD5_HASH} if none.
    */
   public String getHash(String clusterName, String hostName) {
-    Map<String, String> clusterMapping = m_hashes.get(hostName);
+    ConcurrentMap<String, String> clusterMapping = m_hashes.get(hostName);
     if (null == clusterMapping) {
       clusterMapping = new ConcurrentHashMap<String, String>();
-      m_hashes.put(hostName, clusterMapping);
+      ConcurrentMap<String, String> temp = m_hashes.putIfAbsent(hostName, clusterMapping);
+      if (temp != null) {
+        clusterMapping = temp;
+      }
     }
 
     String hash = clusterMapping.get(hostName);
@@ -433,6 +438,39 @@ public class AlertDefinitionHash {
   }
 
   /**
+   * Enqueue {@link AlertDefinitionCommand}s for every host in the cluster so
+   * that they will receive a payload of alert definitions that they should be
+   * running.
+   * <p/>
+   * This method is typically called after {@link #invalidateAll()} has caused a
+   * cache invalidation of all alert definitions.
+   *
+   * @param clusterId
+   *          the ID of the cluster.
+   * @param hosts
+   *          the hosts to push {@link AlertDefinitionCommand}s for.
+   */
+  public void enqueueAgentCommands(long clusterId) {
+    String clusterName = null;
+    Collection<String> hostNames;
+
+    try {
+      Cluster cluster = m_clusters.get().getClusterById(clusterId);
+      clusterName = cluster.getClusterName();
+      Collection<Host> hosts = cluster.getHosts();
+
+      hostNames = new ArrayList<>(hosts.size());
+      for (Host host : hosts) {
+        hostNames.add(host.getHostName());
+      }
+
+      enqueueAgentCommands(clusterName, hostNames);
+    } catch (AmbariException ae) {
+      LOG.error("Unable to lookup cluster for alert definition commands", ae);
+    }
+  }
+
+  /**
    * Enqueue {@link AlertDefinitionCommand}s for every host specified so that
    * they will receive a payload of alert definitions that they should be
    * running.
@@ -441,8 +479,8 @@ public class AlertDefinitionHash {
    * {@link #invalidateHosts(AlertDefinitionEntity)} has caused a cache
    * invalidation of the alert definition hash.
    *
-   * @param clusterName
-   *          the name of the cluster (not {@code null}).
+   * @param clusterId
+   *          the ID of the cluster.
    * @param hosts
    *          the hosts to push {@link AlertDefinitionCommand}s for.
    */
@@ -596,8 +634,7 @@ public class AlertDefinitionHash {
     try {
       Cluster cluster = m_clusters.get().getCluster(clusterName);
       if (null == cluster) {
-        LOG.warn("Unable to get alert definitions for the missing cluster {}",
-            clusterName);
+
 
         return Collections.emptySet();
       }
@@ -642,7 +679,13 @@ public class AlertDefinitionHash {
 
       // add any alerts not bound to a service (host level alerts)
       definitions.addAll(m_definitionDao.findAgentScoped(clusterId));
-    } catch (AmbariException ambariException) {
+    }
+    catch (ClusterNotFoundException clusterNotFound) {
+      LOG.warn("Unable to get alert definitions for the missing cluster {}",
+        clusterName);
+      return Collections.emptySet();
+    }
+    catch (AmbariException ambariException) {
       LOG.error("Unable to get alert definitions", ambariException);
       return Collections.emptySet();
     }

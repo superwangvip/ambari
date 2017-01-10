@@ -18,10 +18,10 @@
 
 package org.apache.ambari.server.orm.entities;
 
-import org.junit.Test;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
+
+import org.junit.Test;
 
 /**
  * HostGroupComponentEntity unit tests.
@@ -55,4 +55,12 @@ public class HostGroupComponentEntityTest {
     entity.setBlueprintName("foo");
     assertEquals("foo", entity.getBlueprintName());
   }
+
+  @Test
+  public void testSetGetProvisionAction() {
+    HostGroupComponentEntity entity = new HostGroupComponentEntity();
+    entity.setProvisionAction("INSTALL_ONLY");
+    assertEquals("INSTALL_ONLY", entity.getProvisionAction());
+  }
+
 }

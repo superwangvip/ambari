@@ -18,11 +18,12 @@
 
 package org.apache.ambari.server.view;
 
-import org.apache.ambari.server.controller.AmbariManagementController;
-import org.apache.ambari.server.controller.AmbariSessionManager;
-import org.apache.ambari.server.controller.internal.URLStreamProvider;
-import org.junit.Assert;
-import org.junit.Test;
+import static org.easymock.EasyMock.aryEq;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.eq;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -32,12 +33,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.easymock.EasyMock.aryEq;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.eq;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.verify;
+import org.apache.ambari.server.controller.AmbariManagementController;
+import org.apache.ambari.server.controller.AmbariSessionManager;
+import org.apache.ambari.server.controller.internal.URLStreamProvider;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class ViewAmbariStreamProviderTest {
 
@@ -69,7 +69,7 @@ public class ViewAmbariStreamProviderTest {
 
     ViewAmbariStreamProvider viewAmbariStreamProvider = new ViewAmbariStreamProvider(streamProvider, sessionManager, controller);
 
-    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", "params", headers, true));
+    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", "params", headers));
 
     verify(streamProvider, sessionManager, urlConnection, inputStream);
   }
@@ -104,7 +104,7 @@ public class ViewAmbariStreamProviderTest {
 
     ViewAmbariStreamProvider viewAmbariStreamProvider = new ViewAmbariStreamProvider(streamProvider, sessionManager, controller);
 
-    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", body, headers, true));
+    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", body, headers));
 
     verify(streamProvider, sessionManager, urlConnection, inputStream);
   }
@@ -139,7 +139,7 @@ public class ViewAmbariStreamProviderTest {
 
     ViewAmbariStreamProvider viewAmbariStreamProvider = new ViewAmbariStreamProvider(streamProvider, sessionManager, controller);
 
-    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", body, headers, true));
+    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", body, headers));
 
     verify(streamProvider, sessionManager, urlConnection, inputStream);
   }
@@ -174,7 +174,7 @@ public class ViewAmbariStreamProviderTest {
 
     ViewAmbariStreamProvider viewAmbariStreamProvider = new ViewAmbariStreamProvider(streamProvider, sessionManager, controller);
 
-    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", body, headers, true));
+    Assert.assertEquals(inputStream, viewAmbariStreamProvider.readFrom("spec", "requestMethod", body, headers));
 
     verify(streamProvider, sessionManager, urlConnection, inputStream);
   }

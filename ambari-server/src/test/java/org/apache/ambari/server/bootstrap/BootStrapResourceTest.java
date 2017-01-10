@@ -19,16 +19,14 @@
 package org.apache.ambari.server.bootstrap;
 
 import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.util.ArrayList;
 
 import javax.ws.rs.core.MediaType;
-
-import junit.framework.Assert;
 
 import org.apache.ambari.server.api.rest.BootStrapResource;
 import org.apache.ambari.server.bootstrap.BSResponse.BSRunStat;
@@ -47,6 +45,8 @@ import com.sun.jersey.api.client.WebResource;
 import com.sun.jersey.spi.container.servlet.ServletContainer;
 import com.sun.jersey.test.framework.JerseyTest;
 import com.sun.jersey.test.framework.WebAppDescriptor;
+
+import junit.framework.Assert;
 
 /**
  *  Testing bootstrap API.
@@ -78,6 +78,17 @@ public class BootStrapResourceTest extends JerseyTest {
   public void setUp() throws Exception {
     super.setUp();
     injector = Guice.createInjector(new MockModule());
+  }
+
+  @Override
+  protected int getPort(int defaultPort) {
+    // Find a free port
+    try (ServerSocket socket = new ServerSocket(0)) {
+      return socket.getLocalPort();
+    } catch (IOException e) {
+      // Ignore
+    }
+    return defaultPort;
   }
 
   protected JSONObject createDummySshInfo() throws JSONException {

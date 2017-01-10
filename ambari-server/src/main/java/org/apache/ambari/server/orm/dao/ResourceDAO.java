@@ -18,16 +18,19 @@
 
 package org.apache.ambari.server.orm.dao;
 
+import java.util.List;
+
+import javax.persistence.EntityManager;
+import javax.persistence.NoResultException;
+import javax.persistence.TypedQuery;
+
+import org.apache.ambari.server.orm.RequiresSession;
+import org.apache.ambari.server.orm.entities.ResourceEntity;
+
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 import com.google.inject.Singleton;
 import com.google.inject.persist.Transactional;
-import org.apache.ambari.server.orm.RequiresSession;
-import org.apache.ambari.server.orm.entities.ResourceEntity;
-
-import javax.persistence.EntityManager;
-import javax.persistence.TypedQuery;
-import java.util.List;
 
 /**
  * Admin resource Data Access Object.
@@ -52,6 +55,26 @@ public class ResourceDAO {
   @RequiresSession
   public ResourceEntity findById(Long id) {
     return entityManagerProvider.get().find(ResourceEntity.class, id);
+  }
+
+  /**
+   * Find a resource with the given resource type id.
+   *
+   * @param id  type id
+   *
+   * @return  a matching resource or null
+   */
+  @RequiresSession
+  public ResourceEntity findByResourceTypeId(Integer id) {
+    TypedQuery<ResourceEntity> query = entityManagerProvider.get().createQuery(
+        "SELECT resource FROM ResourceEntity resource WHERE resource.resourceType.id =:resourceTypeId",
+        ResourceEntity.class);
+    query.setParameter("resourceTypeId", id);
+    try {
+      return query.getSingleResult();
+    } catch (NoResultException e) {
+      return null;
+    }
   }
 
   /**

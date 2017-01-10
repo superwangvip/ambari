@@ -17,10 +17,10 @@
  */
 package org.apache.ambari.server.checks;
 
+import java.util.Arrays;
+
 import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.ServiceNotFoundException;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
-import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
 import org.apache.commons.lang.BooleanUtils;
@@ -31,7 +31,7 @@ import com.google.inject.Singleton;
  * Checks that YARN has work-preserving restart enabled.
  */
 @Singleton
-@UpgradeCheck(group = UpgradeCheckGroup.DEFAULT, order = 1.0f)
+@UpgradeCheck(group = UpgradeCheckGroup.DEFAULT, order = 17.1f)
 public class ServicesYarnWorkPreservingCheck extends AbstractCheckDescriptor {
 
   /**
@@ -46,17 +46,7 @@ public class ServicesYarnWorkPreservingCheck extends AbstractCheckDescriptor {
    */
   @Override
   public boolean isApplicable(PrereqCheckRequest request) throws AmbariException {
-    if (!super.isApplicable(request)) {
-      return false;
-    }
-
-    final Cluster cluster = clustersProvider.get().getCluster(request.getClusterName());
-    try {
-      cluster.getService("YARN");
-    } catch (ServiceNotFoundException ex) {
-      return false;
-    }
-    return true;
+    return super.isApplicable(request, Arrays.asList("YARN"), true);
   }
 
   /**

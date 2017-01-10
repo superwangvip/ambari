@@ -32,9 +32,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import com.google.inject.persist.UnitOfWork;
 import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.AlertNoticeRequest;
 import org.apache.ambari.server.controller.internal.AlertNoticeResourceProvider;
 import org.apache.ambari.server.controller.internal.PageRequestImpl;
@@ -66,12 +64,12 @@ import org.apache.ambari.server.state.alert.SourceType;
 import org.apache.ambari.server.utils.EventBusSynchronizer;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
+import com.google.inject.persist.UnitOfWork;
 
 /**
  * Tests {@link AlertDispatchDAO}.
@@ -102,6 +100,7 @@ public class AlertDispatchDAOTest {
     m_injector.getInstance(GuiceJpaInitializer.class);
     m_injector.getInstance(UnitOfWork.class).begin();
 
+
     m_dao = m_injector.getInstance(AlertDispatchDAO.class);
     m_alertsDao = m_injector.getInstance(AlertsDAO.class);
     m_definitionDao = m_injector.getInstance(AlertDefinitionDAO.class);
@@ -112,15 +111,27 @@ public class AlertDispatchDAOTest {
     m_clusters = m_injector.getInstance(Clusters.class);
     m_alertHelper = m_injector.getInstance(AlertDaoHelper.class);
 
+
     // !!! need a synchronous op for testing
     EventBusSynchronizer.synchronizeAmbariEventPublisher(m_injector);
 
     m_cluster = m_clusters.getClusterById(m_helper.createCluster());
     m_helper.initializeClusterWithStack(m_cluster);
+  }
 
-    Set<AlertTargetEntity> targets = createTargets();
+  /**
+   * @throws Exception
+   */
+  @After
+  public void teardown() throws Exception {
+    m_injector.getInstance(UnitOfWork.class).end();
+    m_injector.getInstance(PersistService.class).stop();
+  }
 
-    for (int i = 0; i < 10; i++) {
+  private void initTestData() throws Exception {
+    Set<AlertTargetEntity> targets = createTargets(1);
+
+    for (int i = 0; i < 2; i++) {
       AlertGroupEntity group = new AlertGroupEntity();
       group.setDefault(false);
       group.setGroupName("Group Name " + i);
@@ -134,67 +145,26 @@ public class AlertDispatchDAOTest {
   }
 
   /**
-   * @throws Exception
-   */
-  @After
-  public void teardown() throws Exception {
-    m_injector.getInstance(UnitOfWork.class).end();
-    m_injector.getInstance(PersistService.class).stop();
-    m_injector = null;
-  }
-
-  /**
    *
    */
   @Test
-  public void testFindAllTargets() throws Exception {
+  public void testFindTargets() throws Exception {
+    initTestData();
+    // find all targets
     List<AlertTargetEntity> targets = m_dao.findAllTargets();
     assertNotNull(targets);
-    assertEquals(5, targets.size());
-  }
+    assertEquals(1, targets.size());
 
-  /**
-   * @throws Exception
-   */
-  public void testFindTargetsByIds() throws Exception {
-    List<AlertTargetEntity> targets = m_dao.findAllTargets();
-    assertNotNull(targets);
-    assertEquals(5, targets.size());
-
+    // find by ids
     List<Long> ids = new ArrayList<Long>();
     ids.add(targets.get(0).getTargetId());
-    ids.add(targets.get(1).getTargetId());
     ids.add(99999L);
 
     targets = m_dao.findTargetsById(ids);
-    assertEquals(2, targets.size());
-  }
+    assertEquals(1, targets.size());
 
-  /**
-   *
-   */
-  @Test
-  public void testFindAllGlobalTargets() throws Exception {
-    List<AlertTargetEntity> targets = m_dao.findAllGlobalTargets();
-    assertNotNull(targets);
-    assertEquals(0, targets.size());
-
-    m_helper.createGlobalAlertTarget();
-    m_helper.createGlobalAlertTarget();
-    m_helper.createGlobalAlertTarget();
-
-    targets = m_dao.findAllGlobalTargets();
-    assertEquals(3, targets.size());
-  }
-
-  /**
-   *
-   */
-  @Test
-  public void testFindTargetByName() throws Exception {
-    List<AlertTargetEntity> targets = m_dao.findAllTargets();
-    assertNotNull(targets);
-    AlertTargetEntity target = targets.get(3);
+    //find by name
+    AlertTargetEntity target = targets.get(0);
 
     AlertTargetEntity actual = m_dao.findTargetByName(target.getTargetName());
     assertEquals(target, actual);
@@ -204,36 +174,43 @@ public class AlertDispatchDAOTest {
    *
    */
   @Test
-  public void testFindAllGroups() throws Exception {
-    List<AlertGroupEntity> groups = m_dao.findAllGroups();
-    assertNotNull(groups);
-    assertEquals(10, groups.size());
+  public void testCreateAndFindAllGlobalTargets() throws Exception {
+    List<AlertTargetEntity> targets = m_dao.findAllGlobalTargets();
+    assertNotNull(targets);
+    assertEquals(0, targets.size());
+
+    AlertTargetEntity target  = m_helper.createGlobalAlertTarget();
+    m_helper.createGlobalAlertTarget();
+    m_helper.createGlobalAlertTarget();
+
+    targets = m_dao.findAllGlobalTargets();
+    assertTrue(target.isGlobal());
+    assertEquals(3, targets.size());
+
+    m_dao.findTargetByName(target.getTargetName());
+    assertTrue( target.isGlobal() );
   }
 
   /**
    *
    */
   @Test
-  public void testFindGroupByName() throws Exception {
+  public void testFindGroups() throws Exception {
+    initTestData();
+    // find all
     List<AlertGroupEntity> groups = m_dao.findAllGroups();
     assertNotNull(groups);
-    AlertGroupEntity group = groups.get(3);
+    assertEquals(2, groups.size());
+
+    //find by name
+    AlertGroupEntity group = groups.get(1);
 
     AlertGroupEntity actual = m_dao.findGroupByName(group.getClusterId(),
-        group.getGroupName());
+            group.getGroupName());
 
     assertEquals(group, actual);
-  }
 
-  /**
-   * @throws Exception
-   */
-  @Test
-  public void testFindGroupsByIds() throws Exception {
-    List<AlertGroupEntity> groups = m_dao.findAllGroups();
-    assertNotNull(groups);
-    assertEquals(10, groups.size());
-
+    //find by id
     List<Long> ids = new ArrayList<Long>();
     ids.add(groups.get(0).getGroupId());
     ids.add(groups.get(1).getGroupId());
@@ -241,13 +218,28 @@ public class AlertDispatchDAOTest {
 
     groups = m_dao.findGroupsById(ids);
     assertEquals(2, groups.size());
+
+    // find default group
+    for (AlertGroupEntity alertGroupEntity : groups) {
+      assertFalse(alertGroupEntity.isDefault());
+    }
+
+    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
+            m_componentFactory, m_schFactory, HOSTNAME);
+
+    AlertGroupEntity hdfsGroup = m_dao.findDefaultServiceGroup(
+            cluster.getClusterId(), "HDFS");
+
+    assertNotNull(hdfsGroup);
+    assertTrue(hdfsGroup.isDefault());
   }
 
   /**
    *
    */
   @Test
-  public void testCreateGroup() throws Exception {
+  public void testCreateUpdateRemoveGroup() throws Exception {
+    // create group
     AlertTargetEntity target = m_helper.createAlertTarget();
     Set<AlertTargetEntity> targets = new HashSet<AlertTargetEntity>();
     targets.add(target);
@@ -261,51 +253,47 @@ public class AlertDispatchDAOTest {
     assertEquals(group.isDefault(), actual.isDefault());
     assertEquals(group.getAlertTargets(), actual.getAlertTargets());
     assertEquals(group.getAlertDefinitions(), actual.getAlertDefinitions());
-  }
 
-  /**
-   *
-   */
-  @Test
-  public void testGroupDefinitions() throws Exception {
-    List<AlertDefinitionEntity> definitions = createDefinitions();
+    // update group
+    AlertGroupEntity group1 = m_helper.createAlertGroup(
+            m_cluster.getClusterId(), null);
 
-    AlertGroupEntity group = m_helper.createAlertGroup(
-        m_cluster.getClusterId(), null);
+    String groupName = group1.getGroupName();
 
-    group = m_dao.findGroupById(group.getGroupId());
-    assertNotNull(group);
+    group1 = m_dao.findGroupById(group1.getGroupId());
+    group1.setGroupName(groupName + "FOO");
+    group1.setDefault(true);
 
-    for (AlertDefinitionEntity definition : definitions) {
-      group.addAlertDefinition(definition);
-    }
+    m_dao.merge(group1);
+    group = m_dao.findGroupById(group1.getGroupId());
 
+    assertEquals(groupName + "FOO", group1.getGroupName());
+    assertEquals(true, group1.isDefault());
+    assertEquals(0, group1.getAlertDefinitions().size());
+    assertEquals(0, group1.getAlertTargets().size());
+
+    group1.addAlertTarget(target);
     m_dao.merge(group);
 
-    group = m_dao.findGroupByName(group.getGroupName());
-    assertEquals(definitions.size(), group.getAlertDefinitions().size());
+    group1 = m_dao.findGroupById(group1.getGroupId());
+    assertEquals(targets, group1.getAlertTargets());
 
-    for (AlertDefinitionEntity definition : definitions) {
-      assertTrue(group.getAlertDefinitions().contains(definition));
-    }
+    // delete group
+    m_dao.remove(group);
+    group = m_dao.findGroupById(group.getGroupId());
+    assertNull(group);
 
-    m_definitionDao.refresh(definitions.get(0));
-    m_definitionDao.remove(definitions.get(0));
-    definitions.remove(0);
-
-    group = m_dao.findGroupByName(group.getGroupName());
-    assertEquals(definitions.size(), group.getAlertDefinitions().size());
-
-    for (AlertDefinitionEntity definition : definitions) {
-      assertTrue(group.getAlertDefinitions().contains(definition));
-    }
+    target = m_dao.findTargetById(target.getTargetId());
+    assertNotNull(target);
+    assertEquals(1, m_dao.findAllTargets().size());
   }
 
   /**
    *
    */
   @Test
-  public void testCreateTarget() throws Exception {
+  public void testCreateAndRemoveTarget() throws Exception {
+    // create target
     int targetCount = m_dao.findAllTargets().size();
 
     AlertTargetEntity target = m_helper.createAlertTarget();
@@ -331,18 +319,13 @@ public class AlertDispatchDAOTest {
     assertEquals(group, actualGroup);
 
     assertEquals(targetCount + 1, m_dao.findAllTargets().size());
-  }
 
-  /**
-   *
-   */
-  @Test
-  public void testCreateGlobalTarget() throws Exception {
-    AlertTargetEntity target = m_helper.createGlobalAlertTarget();
-    assertTrue( target.isGlobal() );
+    // remove target
+    m_dao.remove(target);
 
-    target = m_dao.findTargetByName(target.getTargetName());
-    assertTrue( target.isGlobal() );
+    target = m_dao.findTargetById(target.getTargetId());
+    assertNull(target);
+
   }
 
   /**
@@ -399,57 +382,6 @@ public class AlertDispatchDAOTest {
 
     assertTrue(groupTarget1.isGlobal());
     assertTrue(groupTarget2.isGlobal());
-  }
-
-  /**
-   *
-   */
-  @Test
-  public void testDeleteGroup() throws Exception {
-    int targetCount = m_dao.findAllTargets().size();
-
-    AlertGroupEntity group = m_helper.createAlertGroup(
-        m_cluster.getClusterId(), null);
-    AlertTargetEntity target = m_helper.createAlertTarget();
-    assertEquals(targetCount + 1, m_dao.findAllTargets().size());
-
-    group = m_dao.findGroupById(group.getGroupId());
-    assertNotNull(group);
-    assertNotNull(group.getAlertTargets());
-    assertEquals(0, group.getAlertTargets().size());
-
-    group.addAlertTarget(target);
-    m_dao.merge(group);
-
-    group = m_dao.findGroupById(group.getGroupId());
-    assertNotNull(group);
-    assertNotNull(group.getAlertTargets());
-    assertEquals(1, group.getAlertTargets().size());
-
-    m_dao.remove(group);
-    group = m_dao.findGroupById(group.getGroupId());
-    assertNull(group);
-
-    target = m_dao.findTargetById(target.getTargetId());
-    assertNotNull(target);
-    assertEquals(targetCount + 1, m_dao.findAllTargets().size());
-  }
-
-  /**
-   *
-   */
-  @Test
-  public void testDeleteTarget() throws Exception {
-    AlertTargetEntity target = m_helper.createAlertTarget();
-    target = m_dao.findTargetById(target.getTargetId());
-    assertTrue(target.getAlertStates().size() > 0);
-
-    assertNotNull(target);
-
-    m_dao.remove(target);
-
-    target = m_dao.findTargetById(target.getTargetId());
-    assertNull(target);
   }
 
   /**
@@ -520,39 +452,6 @@ public class AlertDispatchDAOTest {
   }
 
   /**
-   *
-   */
-  @Test
-  public void testUpdateGroup() throws Exception {
-    AlertTargetEntity target = m_helper.createAlertTarget();
-    Set<AlertTargetEntity> targets = new HashSet<AlertTargetEntity>();
-    targets.add(target);
-
-    String groupName = "Group Name " + System.currentTimeMillis();
-
-    AlertGroupEntity group = m_helper.createAlertGroup(
-        m_cluster.getClusterId(), null);
-
-    group = m_dao.findGroupById(group.getGroupId());
-    group.setGroupName(groupName + "FOO");
-    group.setDefault(true);
-
-    m_dao.merge(group);
-    group = m_dao.findGroupById(group.getGroupId());
-
-    assertEquals(groupName + "FOO", group.getGroupName());
-    assertEquals(true, group.isDefault());
-    assertEquals(0, group.getAlertDefinitions().size());
-    assertEquals(0, group.getAlertTargets().size());
-
-    group.addAlertTarget(target);
-    m_dao.merge(group);
-
-    group = m_dao.findGroupById(group.getGroupId());
-    assertEquals(targets, group.getAlertTargets());
-  }
-
-  /**
    * Tests finding groups by a definition ID that they are associatd with.
    *
    * @throws Exception
@@ -592,6 +491,7 @@ public class AlertDispatchDAOTest {
    */
   @Test
   public void testFindTargetsViaGroupsByDefinition() throws Exception {
+    initTestData();
     List<AlertDefinitionEntity> definitions = createDefinitions();
     AlertGroupEntity group = m_helper.createAlertGroup(
         m_cluster.getClusterId(), null);
@@ -661,10 +561,11 @@ public class AlertDispatchDAOTest {
    */
   @Test
   public void testAlertNoticePredicate() throws Exception {
-    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
-        m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.addHost(m_clusters, m_cluster, HOSTNAME);
+    m_helper.installHdfsService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.installYarnService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
 
-    m_alertHelper.populateData(cluster);
+    m_alertHelper.populateData(m_cluster);
 
     Predicate clusterPredicate = null;
     Predicate hdfsPredicate = null;
@@ -739,10 +640,11 @@ public class AlertDispatchDAOTest {
    */
   @Test
   public void testAlertNoticePagination() throws Exception {
-    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
-        m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.addHost(m_clusters, m_cluster, HOSTNAME);
+    m_helper.installHdfsService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.installYarnService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
 
-    m_alertHelper.populateData(cluster);
+    m_alertHelper.populateData(m_cluster);
 
     AlertNoticeRequest request = new AlertNoticeRequest();
     request.Pagination = null;
@@ -780,10 +682,11 @@ public class AlertDispatchDAOTest {
    */
   @Test
   public void testAlertNoticeSorting() throws Exception {
-    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
-        m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.addHost(m_clusters, m_cluster, HOSTNAME);
+    m_helper.installHdfsService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.installYarnService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
 
-    m_alertHelper.populateData(cluster);
+    m_alertHelper.populateData(m_cluster);
 
     List<SortRequestProperty> sortProperties = new ArrayList<SortRequestProperty>();
     SortRequest sortRequest = new SortRequestImpl(sortProperties);
@@ -839,55 +742,25 @@ public class AlertDispatchDAOTest {
   }
 
   /**
-   *
-   */
-  @Test
-  public void testFindDefaultGroup() throws Exception {
-    List<AlertGroupEntity> groups = m_dao.findAllGroups();
-    assertNotNull(groups);
-    assertEquals(10, groups.size());
-
-    for (AlertGroupEntity group : groups) {
-      assertFalse(group.isDefault());
-    }
-
-    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
-        m_componentFactory, m_schFactory, HOSTNAME);
-
-    AlertGroupEntity hdfsGroup = m_dao.findDefaultServiceGroup(
-        cluster.getClusterId(), "HDFS");
-
-    assertNotNull(hdfsGroup);
-    assertTrue(hdfsGroup.isDefault());
-  }
-
-  /**
    * Tests that when creating a new {@link AlertDefinitionEntity}, if the group
    * for its service does not exist, then it will be created.
    */
   @Test
   public void testDefaultGroupAutomaticCreation() throws Exception {
-    List<AlertGroupEntity> groups = m_dao.findAllGroups();
-    assertNotNull(groups);
-    assertEquals(10, groups.size());
-
-    for (AlertGroupEntity group : groups) {
-      assertFalse(group.isDefault());
-    }
-
-    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
-        m_componentFactory, m_schFactory, HOSTNAME);
+    m_helper.addHost(m_clusters, m_cluster, HOSTNAME);
+    m_helper.installHdfsService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
+    //m_helper.installYarnService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
 
     AlertGroupEntity hdfsGroup = m_dao.findDefaultServiceGroup(
-        cluster.getClusterId(), "HDFS");
+            m_cluster.getClusterId(), "HDFS");
 
     // remove the HDFS default group
     m_dao.remove(hdfsGroup);
-    hdfsGroup = m_dao.findDefaultServiceGroup(cluster.getClusterId(), "HDFS");
+    hdfsGroup = m_dao.findDefaultServiceGroup(m_cluster.getClusterId(), "HDFS");
     assertNull(hdfsGroup);
 
     AlertDefinitionEntity datanodeProcess = new AlertDefinitionEntity();
-    datanodeProcess.setClusterId(cluster.getClusterId());
+    datanodeProcess.setClusterId(m_cluster.getClusterId());
     datanodeProcess.setDefinitionName("datanode_process");
     datanodeProcess.setServiceName("HDFS");
     datanodeProcess.setComponentName("DATANODE");
@@ -899,7 +772,7 @@ public class AlertDispatchDAOTest {
     m_definitionDao.create(datanodeProcess);
 
     // the group should be created and should be default
-    hdfsGroup = m_dao.findDefaultServiceGroup(cluster.getClusterId(), "HDFS");
+    hdfsGroup = m_dao.findDefaultServiceGroup(m_cluster.getClusterId(), "HDFS");
     assertNotNull(hdfsGroup);
     assertTrue(hdfsGroup.isDefault());
   }
@@ -911,22 +784,16 @@ public class AlertDispatchDAOTest {
    */
   @Test(expected = AmbariException.class)
   public void testDefaultGroupInvalidServiceNoCreation() throws Exception {
-    List<AlertGroupEntity> groups = m_dao.findAllGroups();
-    assertNotNull(groups);
-    assertEquals(10, groups.size());
+    initTestData();
+    m_helper.addHost(m_clusters, m_cluster, HOSTNAME);
+    m_helper.installHdfsService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
+    //m_helper.installYarnService(m_cluster, m_serviceFactory, m_componentFactory, m_schFactory, HOSTNAME);
 
-    for (AlertGroupEntity group : groups) {
-      assertFalse(group.isDefault());
-    }
-
-    Cluster cluster = m_helper.buildNewCluster(m_clusters, m_serviceFactory,
-        m_componentFactory, m_schFactory, HOSTNAME);
-
-    assertEquals(12, m_dao.findAllGroups().size());
+    assertEquals(3, m_dao.findAllGroups().size());
 
     // create a definition with an invalid service
     AlertDefinitionEntity datanodeProcess = new AlertDefinitionEntity();
-    datanodeProcess.setClusterId(cluster.getClusterId());
+    datanodeProcess.setClusterId(m_cluster.getClusterId());
     datanodeProcess.setDefinitionName("datanode_process");
     datanodeProcess.setServiceName("INVALID");
     datanodeProcess.setComponentName("DATANODE");
@@ -940,7 +807,7 @@ public class AlertDispatchDAOTest {
       m_definitionDao.create(datanodeProcess);
     } finally {
       // assert no group was added
-      assertEquals(12, m_dao.findAllGroups().size());
+      assertEquals(3, m_dao.findAllGroups().size());
     }
   }
 
@@ -956,7 +823,9 @@ public class AlertDispatchDAOTest {
     m_helper.installYarnService(m_cluster, m_serviceFactory,
         m_componentFactory, m_schFactory, HOSTNAME);
 
-    for (int i = 0; i < 8; i++) {
+    List<AlertDefinitionEntity> alertDefinitionEntities = new ArrayList<>();
+
+    for (int i = 0; i < 2; i++) {
       AlertDefinitionEntity definition = new AlertDefinitionEntity();
       definition.setDefinitionName("Alert Definition " + i);
       definition.setServiceName("YARN");
@@ -968,20 +837,19 @@ public class AlertDispatchDAOTest {
       definition.setSource("{\"type\" : \"SCRIPT\"}");
       definition.setSourceType(SourceType.SCRIPT);
       m_definitionDao.create(definition);
+      alertDefinitionEntities.add(definition);
     }
 
-    List<AlertDefinitionEntity> alertDefinitions = m_definitionDao.findAll();
-    assertEquals(8, alertDefinitions.size());
-    return alertDefinitions;
+    return alertDefinitionEntities;
   }
 
   /**
    * @return
    * @throws Exception
    */
-  private Set<AlertTargetEntity> createTargets() throws Exception {
+  private Set<AlertTargetEntity> createTargets(int numberOfTargets) throws Exception {
     Set<AlertTargetEntity> targets = new HashSet<AlertTargetEntity>();
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < numberOfTargets; i++) {
       AlertTargetEntity target = new AlertTargetEntity();
       target.setDescription("Target Description " + i);
       target.setNotificationType("EMAIL");
@@ -992,5 +860,86 @@ public class AlertDispatchDAOTest {
     }
 
     return targets;
+  }
+
+  /**
+   *
+   */
+  @Test
+  public void testGroupDefinitions() throws Exception {
+    List<AlertDefinitionEntity> definitions = createDefinitions();
+
+    AlertGroupEntity group = m_helper.createAlertGroup(
+            m_cluster.getClusterId(), null);
+
+    group = m_dao.findGroupById(group.getGroupId());
+    assertNotNull(group);
+
+    for (AlertDefinitionEntity definition : definitions) {
+      group.addAlertDefinition(definition);
+    }
+
+    m_dao.merge(group);
+
+    group = m_dao.findGroupByName(group.getGroupName());
+    assertEquals(definitions.size(), group.getAlertDefinitions().size());
+
+    for (AlertDefinitionEntity definition : definitions) {
+      assertTrue(group.getAlertDefinitions().contains(definition));
+    }
+
+    m_definitionDao.refresh(definitions.get(0));
+    m_definitionDao.remove(definitions.get(0));
+    definitions.remove(0);
+
+    group = m_dao.findGroupByName(group.getGroupName());
+    assertEquals(definitions.size(), group.getAlertDefinitions().size());
+
+    for (AlertDefinitionEntity definition : definitions) {
+      assertTrue(group.getAlertDefinitions().contains(definition));
+    }
+  }
+
+  /**
+   * Tests that updating JPA associations concurrently doesn't lead to Concu
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testConcurrentGroupModification() throws Exception {
+    createDefinitions();
+
+    AlertGroupEntity group = m_helper.createAlertGroup(m_cluster.getClusterId(), null);
+    final Set<AlertTargetEntity> targets = createTargets(100);
+
+    group.setAlertTargets(targets);
+    group = m_dao.merge(group);
+
+    final class AlertGroupWriterThread extends Thread {
+      private AlertGroupEntity group;
+
+      /**
+       * {@inheritDoc}
+       */
+      @Override
+      public void run() {
+        for (int i = 0; i < 1000; i++) {
+          group.setAlertTargets(new HashSet<>(targets));
+        }
+      }
+    }
+
+    List<Thread> threads = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      AlertGroupWriterThread thread = new AlertGroupWriterThread();
+      threads.add(thread);
+
+      thread.group = group;
+      thread.start();
+    }
+
+    for (Thread thread : threads) {
+      thread.join();
+    }
   }
 }

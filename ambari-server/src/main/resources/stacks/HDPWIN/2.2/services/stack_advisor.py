@@ -17,11 +17,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+# Python Imports
 import math
 import os
 import re
 import sys
 from urlparse import urlparse
+
+# Local Imports
+from resource_management.core.logger import Logger
 
 def getSiteProperties(configurations, siteName):
   siteConfig = configurations.get(siteName)
@@ -51,6 +55,56 @@ def isSecurePort(port):
     return False
 
 class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
+
+  def __init__(self):
+    super(HDPWIN22StackAdvisor, self).__init__()
+    Logger.initialize_logger()
+
+    self.modifyMastersWithMultipleInstances()
+    self.modifyCardinalitiesDict()
+    self.modifyHeapSizeProperties()
+    self.modifyNotValuableComponents()
+    self.modifyComponentsNotPreferableOnServer()
+
+  def modifyMastersWithMultipleInstances(self):
+    """
+    Modify the set of masters with multiple instances.
+    Must be overriden in child class.
+    """
+    self.mastersWithMultipleInstances |= set(['METRICS_COLLECTOR'])
+
+  def modifyCardinalitiesDict(self):
+    """
+    Modify the dictionary of cardinalities.
+    Must be overriden in child class.
+    """
+    self.cardinalitiesDict.update(
+      {
+        'METRICS_COLLECTOR': {"min": 1}
+      }
+    )
+
+  def modifyHeapSizeProperties(self):
+    """
+    Modify the dictionary of heap size properties.
+    Must be overriden in child class.
+    """
+    # Nothing to do
+    pass
+
+  def modifyNotValuableComponents(self):
+    """
+    Modify the set of components whose host assignment is based on other services.
+    Must be overriden in child class.
+    """
+    self.notValuableComponents |= set(['METRICS_MONITOR'])
+
+  def modifyComponentsNotPreferableOnServer(self):
+    """
+    Modify the set of components that are not preferable on the server.
+    Must be overriden in child class.
+    """
+    self.notPreferableOnServerComponents |= set(['METRICS_COLLECTOR'])
 
   def getServiceConfigurationRecommenderDict(self):
     parentRecommendConfDict = super(HDPWIN22StackAdvisor, self).getServiceConfigurationRecommenderDict()
@@ -260,6 +314,8 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
   def recommendHIVEConfigurations(self, configurations, clusterData, services, hosts):
     super(HDPWIN22StackAdvisor, self).recommendHiveConfigurations(configurations, clusterData, services, hosts)
 
+    hiveSiteProperties = getSiteProperties(services['configurations'], 'hive-site')
+    hiveEnvProperties = getSiteProperties(services['configurations'], 'hive-env')
     putHiveServerProperty = self.putProperty(configurations, "hiveserver2-site", services)
     putHiveEnvProperty = self.putProperty(configurations, "hive-env", services)
     putHiveSiteProperty = self.putProperty(configurations, "hive-site", services)
@@ -360,14 +416,11 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
     putHiveSiteProperty("hive.exec.reducers.bytes.per.reducer", "67108864")
 
     # CBO
-    putHiveEnvProperty("cost_based_optimizer", "On")
-    if str(configurations["hive-env"]["properties"]["cost_based_optimizer"]).lower() == "on":
-      putHiveSiteProperty("hive.cbo.enable", "true")
-    else:
-      putHiveSiteProperty("hive.cbo.enable", "false")
-    hive_cbo_enable = configurations["hive-site"]["properties"]["hive.cbo.enable"]
-    putHiveSiteProperty("hive.stats.fetch.partition.stats", hive_cbo_enable)
-    putHiveSiteProperty("hive.stats.fetch.column.stats", hive_cbo_enable)
+    if "hive-site" in services["configurations"] and "hive.cbo.enable" in services["configurations"]["hive-site"]["properties"]:
+      hive_cbo_enable = services["configurations"]["hive-site"]["properties"]["hive.cbo.enable"]
+      putHiveSiteProperty("hive.stats.fetch.partition.stats", hive_cbo_enable)
+      putHiveSiteProperty("hive.stats.fetch.column.stats", hive_cbo_enable)
+
     putHiveSiteProperty("hive.compute.query.using.stats", "true")
 
     # Interactive Query
@@ -376,17 +429,34 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
     putHiveSiteProperty("hive.server2.enable.doAs", "true")
 
     yarn_queues = "default"
-    if "capacity-scheduler" in configurations and \
-      "yarn.scheduler.capacity.root.queues" in configurations["capacity-scheduler"]["properties"]:
-      yarn_queues = str(configurations["capacity-scheduler"]["properties"]["yarn.scheduler.capacity.root.queues"])
-    putHiveSiteProperty("hive.server2.tez.default.queues", yarn_queues)
-
+    capacitySchedulerProperties = {}
+    if "capacity-scheduler" in services['configurations'] and "capacity-scheduler" in services['configurations']["capacity-scheduler"]["properties"]:
+      properties = str(services['configurations']["capacity-scheduler"]["properties"]["capacity-scheduler"]).split('\n')
+      for property in properties:
+        key,sep,value = property.partition("=")
+        capacitySchedulerProperties[key] = value
+    if "yarn.scheduler.capacity.root.queues" in capacitySchedulerProperties:
+      yarn_queues = str(capacitySchedulerProperties["yarn.scheduler.capacity.root.queues"])
     # Interactive Queues property attributes
     putHiveServerPropertyAttribute = self.putPropertyAttribute(configurations, "hiveserver2-site")
-    entries = []
-    for queue in yarn_queues.split(","):
-      entries.append({"label": str(queue) + " queue", "value": queue})
-    putHiveSitePropertyAttribute("hive.server2.tez.default.queues", "entries", entries)
+    toProcessQueues = yarn_queues.split(",")
+    leafQueueNames = set() # Remove duplicates
+    while len(toProcessQueues) > 0:
+      queue = toProcessQueues.pop()
+      queueKey = "yarn.scheduler.capacity.root." + queue + ".queues"
+      if queueKey in capacitySchedulerProperties:
+        # This is a parent queue - need to add children
+        subQueues = capacitySchedulerProperties[queueKey].split(",")
+        for subQueue in subQueues:
+          toProcessQueues.append(queue + "." + subQueue)
+      else:
+        # This is a leaf queue
+        queueName = queue.split(".")[-1] # Fully qualified queue name does not work, we should use only leaf name
+        leafQueueNames.add(queueName)
+    leafQueues = [{"label": str(queueName) + " queue", "value": queueName} for queueName in leafQueueNames]
+    leafQueues = sorted(leafQueues, key=lambda q:q['value'])
+    putHiveSitePropertyAttribute("hive.server2.tez.default.queues", "entries", leafQueues)
+    putHiveSiteProperty("hive.server2.tez.default.queues", ",".join([leafQueue['value'] for leafQueue in leafQueues]))
 
     # Security
     putHiveEnvProperty("hive_security_authorization", "None")
@@ -468,6 +538,17 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
     #Webhcat uses by default PYTHON_CMD, which is not standard for Ambari. Substitute it with the actual path.
     python_binary = os.environ['PYTHON_EXE'] if 'PYTHON_EXE' in os.environ else sys.executable
     putWebhcatSiteProperty("templeton.python", python_binary)
+
+    # javax.jdo.option.ConnectionURL recommendations
+    if hiveEnvProperties and self.checkSiteProperties(hiveEnvProperties, 'hive_database', 'hive_database_type'):
+      putHiveEnvProperty('hive_database_type', self.getDBTypeAlias(hiveEnvProperties['hive_database']))
+    if hiveEnvProperties and hiveSiteProperties and self.checkSiteProperties(hiveSiteProperties, 'javax.jdo.option.ConnectionDriverName') and self.checkSiteProperties(hiveEnvProperties, 'hive_database'):
+      putHiveSiteProperty('javax.jdo.option.ConnectionDriverName', self.getDBDriver(hiveEnvProperties['hive_database']))
+    if hiveSiteProperties and hiveEnvProperties and self.checkSiteProperties(hiveSiteProperties, 'ambari.hive.db.schema.name', 'javax.jdo.option.ConnectionURL') and self.checkSiteProperties(hiveEnvProperties, 'hive_database'):
+      hiveMSHost = self.getHostWithComponent('HIVE', 'HIVE_METASTORE', services, hosts)
+      if hiveMSHost is not None:
+        dbConnection = self.getDBConnectionString(hiveEnvProperties['hive_database']).format(hiveMSHost['Hosts']['host_name'], hiveSiteProperties['ambari.hive.db.schema.name'])
+        putHiveSiteProperty('javax.jdo.option.ConnectionURL', dbConnection)
 
 
   def recommendHBASEConfigurations(self, configurations, clusterData, services, hosts):
@@ -677,7 +758,7 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
                         {"config-name": 'namenode_opt_newsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_opt_newsize')},
                         {"config-name": 'namenode_opt_maxnewsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'namenode_opt_maxnewsize')}]
     return self.toConfigurationValidationProblems(validationItems, "hadoop-env")
-  
+
   def validateHDFSConfigurations(self, properties, recommendedDefaults, configurations, services, hosts):
     # We can not access property hadoop.security.authentication from the
     # other config (core-site). That's why we are using another heuristics here
@@ -719,7 +800,7 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
           validationItems.append({"config-name" : address_property, "item" :
             self.getErrorItem(address_property + " does not contain a valid host:port authority: " + value)})
 
-    #Adding Ranger Plugin logic here 
+    #Adding Ranger Plugin logic here
     ranger_plugin_properties = getSiteProperties(configurations, "ranger-hdfs-plugin-properties")
     ranger_plugin_enabled = ranger_plugin_properties['ranger-hdfs-plugin-enabled'] if ranger_plugin_properties else 'no'
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
@@ -818,8 +899,8 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
   def validateHiveServer2Configurations(self, properties, recommendedDefaults, configurations, services, hosts):
     super(HDPWIN22StackAdvisor, self).validateHiveConfigurations(properties, recommendedDefaults, configurations, services, hosts)
     hive_server2 = properties
-    validationItems = [] 
-    #Adding Ranger Plugin logic here 
+    validationItems = []
+    #Adding Ranger Plugin logic here
     ranger_plugin_properties = getSiteProperties(configurations, "ranger-hive-plugin-properties")
     ranger_plugin_enabled = ranger_plugin_properties['ranger-hdfs-plugin-enabled'] if ranger_plugin_properties else 'no'
     servicesList = [service["StackServices"]["service_name"] for service in services["services"]]
@@ -933,7 +1014,7 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
                               "item": self.getWarnItem(
                               "{0} and {1} sum should not exceed {2}".format(prop_name1, prop_name2, props_max_sum))})
 
-    #Adding Ranger Plugin logic here 
+    #Adding Ranger Plugin logic here
     ranger_plugin_properties = getSiteProperties(configurations, "ranger-hbase-plugin-properties")
     ranger_plugin_enabled = ranger_plugin_properties['ranger-hdfs-plugin-enabled'] if ranger_plugin_properties else 'no'
     prop_name = 'hbase.security.authorization'
@@ -987,7 +1068,7 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
                               "item": self.getWarnItem(
                                 "If bucketcache ioengine is enabled, {0} should be set".format(prop_name3))})
 
-    # Validate hbase.security.authentication. 
+    # Validate hbase.security.authentication.
     # Kerberos works only when security enabled.
     if "hbase.security.authentication" in properties:
       hbase_security_kerberos = properties["hbase.security.authentication"].lower() == "kerberos"
@@ -1029,30 +1110,31 @@ class HDPWIN22StackAdvisor(HDPWIN21StackAdvisor):
                               "item": self.getWarnItem("CPU Isolation should only be enabled if security is enabled")})
     return self.toConfigurationValidationProblems(validationItems, "yarn-env")
 
-  def getMastersWithMultipleInstances(self):
-    result = super(HDPWIN22StackAdvisor, self).getMastersWithMultipleInstances()
-    result.extend(['METRICS_COLLECTOR'])
-    return result
+  def getDBDriver(self, databaseType):
+    driverDict = {
+      'EXISTING MSSQL SERVER DATABASE WITH SQL AUTHENTICATION': 'com.microsoft.sqlserver.jdbc.SQLServerDriver',
+      'EXISTING MSSQL SERVER DATABASE WITH INTEGRATED AUTHENTICATION': 'com.microsoft.sqlserver.jdbc.SQLServerDriver',
+    }
+    return driverDict.get(databaseType.upper())
 
-  def getNotValuableComponents(self):
-    result = super(HDPWIN22StackAdvisor, self).getNotValuableComponents()
-    result.extend(['METRICS_MONITOR'])
-    return result
+  def getDBConnectionString(self, databaseType):
+    driverDict = {
+      'EXISTING MSSQL SERVER DATABASE WITH SQL AUTHENTICATION': 'jdbc:sqlserver://{0};databaseName={1}',
+      'EXISTING MSSQL SERVER DATABASE WITH INTEGRATED AUTHENTICATION': 'jdbc:sqlserver://{0};databaseName={1};integratedSecurity=true',
+    }
+    return driverDict.get(databaseType.upper())
 
-  def getNotPreferableOnServerComponents(self):
-    result = super(HDPWIN22StackAdvisor, self).getNotPreferableOnServerComponents()
-    result.extend(['METRICS_COLLECTOR'])
-    return result
-
-  def getCardinalitiesDict(self):
-    result = super(HDPWIN22StackAdvisor, self).getCardinalitiesDict()
-    result['METRICS_COLLECTOR'] = {"min": 1}
-    return result
+  def getDBTypeAlias(self, databaseType):
+    driverDict = {
+      'EXISTING MSSQL SERVER DATABASE WITH SQL AUTHENTICATION': 'mssql',
+      'EXISTING MSSQL SERVER DATABASE WITH INTEGRATED AUTHENTICATION': 'mssql2',
+    }
+    return driverDict.get(databaseType.upper())
 
   def getAffectedConfigs(self, services):
     affectedConfigs = super(HDPWIN22StackAdvisor, self).getAffectedConfigs(services)
 
-    # There are configs that are not defined in the stack but added/removed by 
+    # There are configs that are not defined in the stack but added/removed by
     # stack-advisor. Here we add such configs in order to clear the config
     # filtering down in base class
     configsList = [affectedConfig["type"] + "/" + affectedConfig["name"] for affectedConfig in affectedConfigs]

@@ -17,10 +17,11 @@
  */
 package org.apache.ambari.server.controller.metrics.timeline.cache;
 
-import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
-
 import java.util.Date;
-import java.util.Map;
+
+import org.apache.hadoop.metrics2.sink.timeline.Precision;
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
 
 /**
  * Wrapper object for metrics returned from AMS that includes the query time
@@ -29,15 +30,18 @@ import java.util.Map;
 public class TimelineMetricsCacheValue {
   private Long startTime;
   private Long endTime;
-  private Map<String, TimelineMetric> timelineMetrics;
+  // Same metrics could be requested across hosts
+  private TimelineMetrics timelineMetrics = new TimelineMetrics();
+  private Precision precision;
 
-  public TimelineMetricsCacheValue(Long startTime, Long endTime, Map<String, TimelineMetric> timelineMetrics) {
+  public TimelineMetricsCacheValue(Long startTime, Long endTime, TimelineMetrics timelineMetrics, Precision precision) {
     this.startTime = startTime;
     this.endTime = endTime;
     this.timelineMetrics = timelineMetrics;
+    this.precision = precision;
   }
 
-  public Map<String, TimelineMetric> getTimelineMetrics() {
+  public TimelineMetrics getTimelineMetrics() {
     return timelineMetrics;
   }
 
@@ -45,7 +49,7 @@ public class TimelineMetricsCacheValue {
    * Map of metricName to metric values. Works on the assumption that metric
    * name is unique
    */
-  public void setTimelineMetrics(Map<String, TimelineMetric> timelineMetrics) {
+  public void setTimelineMetrics(TimelineMetrics timelineMetrics) {
     this.timelineMetrics = timelineMetrics;
   }
 
@@ -76,19 +80,30 @@ public class TimelineMetricsCacheValue {
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder("TimelineMetricsCacheValue {" +
-      "metricNames = " + timelineMetrics.keySet() +
       ", startTime = " + new Date(getMillisecondsTime(startTime)) +
       ", endTime = " + new Date(getMillisecondsTime(endTime)) +
+      ", precision = " + precision +
       ", timelineMetrics =");
 
-    for (TimelineMetric metric : timelineMetrics.values()) {
+    for (TimelineMetric metric : timelineMetrics.getMetrics()) {
       sb.append(" { ");
       sb.append(metric.getMetricName());
+      sb.append(", ");
+      sb.append(metric.getHostName());
       sb.append(" # ");
       sb.append(metric.getMetricValues().size());
       sb.append(" }");
     }
+
     sb.append("}");
     return sb.toString();
+  }
+
+  public Precision getPrecision() {
+    return precision;
+  }
+
+  public void setPrecision(Precision precision) {
+    this.precision = precision;
   }
 }

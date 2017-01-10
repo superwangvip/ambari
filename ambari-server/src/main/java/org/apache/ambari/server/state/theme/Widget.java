@@ -19,11 +19,12 @@
 package org.apache.ambari.server.state.theme;
 
 
+import java.util.List;
+import java.util.Map;
+
 import org.codehaus.jackson.annotate.JsonIgnoreProperties;
 import org.codehaus.jackson.annotate.JsonProperty;
 import org.codehaus.jackson.map.annotate.JsonSerialize;
-
-import java.util.List;
 
 
 @JsonSerialize(include=JsonSerialize.Inclusion.NON_NULL)
@@ -33,6 +34,10 @@ public class Widget{
 	private String type;
 	@JsonProperty("units")
 	private List<Unit> units;
+  @JsonProperty("required-properties")
+  private Map<String,String> requiredProperties;
+  @JsonProperty("display-name")
+  private String displayName;
 
   public String getType() {
     return type;
@@ -48,5 +53,21 @@ public class Widget{
 
   public void setUnits(List<Unit> units) {
     this.units = units;
+  }
+
+  public Map<String, String> getRequiredProperties() {
+    return requiredProperties;
+  }
+
+  public void setRequiredProperties(Map<String, String> requiredProperties) {
+    this.requiredProperties = requiredProperties;
+  }
+
+  public String getDisplayName() {
+    return displayName;
+  }
+
+  public void setDisplayName(String displayName) {
+    this.displayName = displayName;
   }
 }

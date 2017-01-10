@@ -19,6 +19,7 @@ limitations under the License.
 '''
 
 import os
+import time
 from ambari_commons.exceptions import FatalException, NonFatalException
 from ambari_commons.logging_utils import get_verbose
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
@@ -47,7 +48,7 @@ def is_server_runing():
     pid = f.readline().strip()
 
     if not pid.isdigit():
-      err = "%s is corrupt. Removing" % (pid_file_path)
+      err = "'%s' is incorrect PID value. %s is corrupt. Removing" % (pid, pid_file_path)
       f.close()
       run_os_command("rm -f " + pid_file_path)
       raise NonFatalException(err)
@@ -60,6 +61,16 @@ def is_server_runing():
       return False, None
   else:
     return False, None
+
+
+def wait_for_server_to_stop(wait_timeout):
+  start_time = time.time()
+  is_timeout = lambda: time.time() - start_time > wait_timeout
+
+  while is_server_runing()[0] and not is_timeout():
+    time.sleep(0.1)
+
+  return not is_timeout()
 
 
 @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)

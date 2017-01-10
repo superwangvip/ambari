@@ -20,6 +20,7 @@ package org.apache.ambari.server.actionmanager;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,7 @@ import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.agent.AgentCommand.AgentCommandType;
 import org.apache.ambari.server.agent.ExecutionCommand;
+import org.apache.ambari.server.metadata.RoleCommandPair;
 import org.apache.ambari.server.orm.dao.HostRoleCommandDAO;
 import org.apache.ambari.server.orm.entities.HostRoleCommandEntity;
 import org.apache.ambari.server.orm.entities.RoleSuccessCriteriaEntity;
@@ -63,7 +65,7 @@ public class Stage {
    * don't want stages getting confused with Ambari vs cluster hosts, so
    * don't use {@link StageUtils#getHostName()}
    */
-  private static final String INTERNAL_HOSTNAME = "_internal_ambari";
+  public static final String INTERNAL_HOSTNAME = "_internal_ambari";
 
   private static Logger LOG = LoggerFactory.getLogger(Stage.class);
   private final long requestId;
@@ -76,7 +78,10 @@ public class Stage {
   private String commandParamsStage;
   private String hostParamsStage;
 
+  private CommandExecutionType commandExecutionType = CommandExecutionType.STAGE;
+
   private boolean skippable;
+  private boolean supportsAutoSkipOnFailure;
 
   private int stageTimeout = -1;
 
@@ -94,6 +99,9 @@ public class Stage {
   @Inject
   private HostRoleCommandFactory hostRoleCommandFactory;
 
+  @Inject
+  private ExecutionCommandWrapperFactory ecwFactory;
+
   @AssistedInject
   public Stage(@Assisted long requestId,
       @Assisted("logDir") String logDir,
@@ -103,7 +111,7 @@ public class Stage {
       @Assisted("clusterHostInfo") String clusterHostInfo,
       @Assisted("commandParamsStage") String commandParamsStage,
       @Assisted("hostParamsStage") String hostParamsStage,
-      HostRoleCommandFactory hostRoleCommandFactory) {
+      HostRoleCommandFactory hostRoleCommandFactory, ExecutionCommandWrapperFactory ecwFactory) {
     wrappersLoaded = true;
     this.requestId = requestId;
     this.logDir = logDir;
@@ -113,21 +121,28 @@ public class Stage {
     this.clusterHostInfo = clusterHostInfo;
     this.commandParamsStage = commandParamsStage;
     this.hostParamsStage = hostParamsStage;
+
     skippable = false;
+    supportsAutoSkipOnFailure = false;
+
     this.hostRoleCommandFactory = hostRoleCommandFactory;
+    this.ecwFactory = ecwFactory;
   }
 
   @AssistedInject
   public Stage(@Assisted StageEntity stageEntity, HostRoleCommandDAO hostRoleCommandDAO,
-               ActionDBAccessor dbAccessor, Clusters clusters, HostRoleCommandFactory hostRoleCommandFactory) {
+      ActionDBAccessor dbAccessor, Clusters clusters, HostRoleCommandFactory hostRoleCommandFactory,
+      ExecutionCommandWrapperFactory ecwFactory) {
     this.hostRoleCommandFactory = hostRoleCommandFactory;
+    this.ecwFactory = ecwFactory;
 
     requestId = stageEntity.getRequestId();
     stageId = stageEntity.getStageId();
     skippable = stageEntity.isSkippable();
+    supportsAutoSkipOnFailure = stageEntity.isAutoSkipOnFailureSupported();
     logDir = stageEntity.getLogInfo();
 
-    long clusterId = stageEntity.getClusterId().longValue();
+    clusterId = stageEntity.getClusterId().longValue();
     if (-1L != clusterId) {
       try {
         clusterName = clusters.getClusterById(clusterId).getClusterName();
@@ -141,6 +156,7 @@ public class Stage {
     clusterHostInfo = stageEntity.getClusterHostInfo();
     commandParamsStage = stageEntity.getCommandParamsStage();
     hostParamsStage = stageEntity.getHostParamsStage();
+    commandExecutionType = stageEntity.getCommandExecutionType();
 
     List<Long> taskIds = hostRoleCommandDAO.findTaskIdsByStage(requestId, stageId);
     Collection<HostRoleCommand> commands = dbAccessor.getTasks(taskIds);
@@ -173,12 +189,14 @@ public class Stage {
     stageEntity.setStageId(getStageId());
     stageEntity.setLogInfo(logDir);
     stageEntity.setSkippable(skippable);
+    stageEntity.setAutoSkipFailureSupported(supportsAutoSkipOnFailure);
     stageEntity.setRequestContext(requestContext);
     stageEntity.setHostRoleCommands(new ArrayList<HostRoleCommandEntity>());
     stageEntity.setRoleSuccessCriterias(new ArrayList<RoleSuccessCriteriaEntity>());
     stageEntity.setClusterHostInfo(clusterHostInfo);
     stageEntity.setCommandParamsStage(commandParamsStage);
     stageEntity.setHostParamsStage(hostParamsStage);
+    stageEntity.setCommandExecutionType(commandExecutionType);
 
     for (Role role : successFactors.keySet()) {
       RoleSuccessCriteriaEntity roleSuccessCriteriaEntity = new RoleSuccessCriteriaEntity();
@@ -223,6 +241,23 @@ public class Stage {
     return commands;
   }
 
+  /**
+   * Returns <Role, RoleCommand> pairs which are in progress.
+   * @return
+   */
+  public Set<RoleCommandPair> getHostRolesInProgress() {
+    Set<RoleCommandPair> commandsToScheduleSet = new HashSet<>();
+    for (Map.Entry<String, Map<String, HostRoleCommand>> hostRoleCommandEntry : hostRoleCommands.entrySet()) {
+      for (Map.Entry<String, HostRoleCommand> roleCommandEntry : hostRoleCommandEntry.getValue().entrySet()) {
+        if (HostRoleStatus.IN_PROGRESS_STATUSES.contains(roleCommandEntry.getValue().getStatus())) {
+          commandsToScheduleSet.add(
+            new RoleCommandPair(roleCommandEntry.getValue().getRole(), roleCommandEntry.getValue().getRoleCommand()));
+        }
+      }
+    }
+    return commandsToScheduleSet;
+  }
+
   public String getClusterHostInfo() {
     return clusterHostInfo;
   }
@@ -247,6 +282,13 @@ public class Stage {
     this.hostParamsStage = hostParamsStage;
   }
 
+  public CommandExecutionType getCommandExecutionType() {
+    return commandExecutionType;
+  }
+
+  public void setCommandExecutionType(CommandExecutionType commandExecutionType) {
+    this.commandExecutionType = commandExecutionType;
+  }
 
   public synchronized void setStageId(long stageId) {
     if (this.stageId != -1) {
@@ -274,9 +316,12 @@ public class Stage {
       String hostName, Role role, RoleCommand command, ServiceComponentHostEvent event,
       boolean retryAllowed, boolean autoSkipFailure) {
 
+    boolean isHostRoleCommandAutoSkippable = autoSkipFailure && supportsAutoSkipOnFailure
+        && skippable;
+
     // used on stage creation only, no need to check if wrappers loaded
     HostRoleCommand hrc = hostRoleCommandFactory.create(hostName, role, event, command,
-        retryAllowed, autoSkipFailure);
+        retryAllowed, isHostRoleCommandAutoSkippable);
 
     return addGenericExecutionCommand(clusterName, hostName, role, command, event, hrc);
   }
@@ -284,8 +329,12 @@ public class Stage {
   private ExecutionCommandWrapper addGenericExecutionCommand(Cluster cluster, Host host, Role role,
       RoleCommand command, ServiceComponentHostEvent event, boolean retryAllowed,
       boolean autoSkipFailure) {
+
+    boolean isHostRoleCommandAutoSkippable = autoSkipFailure && supportsAutoSkipOnFailure
+        && skippable;
+
     HostRoleCommand hrc = hostRoleCommandFactory.create(host, role, event, command, retryAllowed,
-        autoSkipFailure);
+        isHostRoleCommandAutoSkippable);
 
     return addGenericExecutionCommand(cluster.getClusterName(), host.getHostName(), role, command,
         event, hrc);
@@ -294,7 +343,7 @@ public class Stage {
   //TODO refactor method to use Host object (host_id support)
   private ExecutionCommandWrapper addGenericExecutionCommand(String clusterName, String hostName, Role role, RoleCommand command, ServiceComponentHostEvent event, HostRoleCommand hrc) {
     ExecutionCommand cmd = new ExecutionCommand();
-    ExecutionCommandWrapper wrapper = new ExecutionCommandWrapper(cmd);
+    ExecutionCommandWrapper wrapper = ecwFactory.createFromCommand(cmd);
     hrc.setExecutionCommandWrapper(wrapper);
     cmd.setHostname(hostName);
     cmd.setClusterName(clusterName);
@@ -306,7 +355,7 @@ public class Stage {
 
     Map<String, HostRoleCommand> hrcMap = hostRoleCommands.get(hostName);
     if (hrcMap == null) {
-      hrcMap = new LinkedHashMap<String, HostRoleCommand>();
+      hrcMap = new LinkedHashMap<>();
       hostRoleCommands.put(hostName, hrcMap);
     }
     if (hrcMap.get(role.toString()) != null) {
@@ -317,7 +366,7 @@ public class Stage {
     hrcMap.put(role.toString(), hrc);
     List<ExecutionCommandWrapper> execCmdList = commandsToSend.get(hostName);
     if (execCmdList == null) {
-      execCmdList = new ArrayList<ExecutionCommandWrapper>();
+      execCmdList = new ArrayList<>();
       commandsToSend.put(hostName, execCmdList);
     }
 
@@ -340,8 +389,11 @@ public class Stage {
       ServiceComponentHostEvent event, String clusterName, String serviceName, boolean retryAllowed,
       boolean autoSkipFailure) {
 
+    boolean isHostRoleCommandAutoSkippable = autoSkipFailure && supportsAutoSkipOnFailure
+        && skippable;
+
     ExecutionCommandWrapper commandWrapper = addGenericExecutionCommand(clusterName, host, role,
-        command, event, retryAllowed, autoSkipFailure);
+        command, event, retryAllowed, isHostRoleCommandAutoSkippable);
 
     commandWrapper.getExecutionCommand().setServiceName(serviceName);
   }
@@ -355,8 +407,11 @@ public class Stage {
       ServiceComponentHostEvent event, Cluster cluster, String serviceName, boolean retryAllowed,
       boolean autoSkipFailure) {
 
+    boolean isHostRoleCommandAutoSkippable = autoSkipFailure && supportsAutoSkipOnFailure
+        && skippable;
+
     ExecutionCommandWrapper commandWrapper = addGenericExecutionCommand(cluster, host, role,
-        command, event, retryAllowed, autoSkipFailure);
+        command, event, retryAllowed, isHostRoleCommandAutoSkippable);
 
     commandWrapper.getExecutionCommand().setServiceName(serviceName);
   }
@@ -405,8 +460,11 @@ public class Stage {
       @Nullable String commandDetail, @Nullable Map<String, Map<String, String>> configTags,
       @Nullable Integer timeout, boolean retryAllowed, boolean autoSkipFailure) {
 
+    boolean isHostRoleCommandAutoSkippable = autoSkipFailure && supportsAutoSkipOnFailure
+        && skippable;
+
     ExecutionCommandWrapper commandWrapper = addGenericExecutionCommand(clusterName,
-        INTERNAL_HOSTNAME, role, command, event, retryAllowed, autoSkipFailure);
+        INTERNAL_HOSTNAME, role, command, event, retryAllowed, isHostRoleCommandAutoSkippable);
 
     ExecutionCommand cmd = commandWrapper.getExecutionCommand();
 
@@ -705,6 +763,29 @@ public class Stage {
   }
 
   /**
+   * Gets the {@link HostRoleCommand} matching the specified ID from this stage.
+   * This will not hit the database, instead using the pre-cached list of HRCs
+   * from the construction of the stage.
+   *
+   * @param taskId
+   *          the ID to match
+   * @return the {@link HostRoleCommand} or {@code null} if none match.
+   */
+  public HostRoleCommand getHostRoleCommand(long taskId) {
+    for (Map.Entry<String, Map<String, HostRoleCommand>> hostEntry : hostRoleCommands.entrySet()) {
+      Map<String, HostRoleCommand> hostCommands = hostEntry.getValue();
+      for (Map.Entry<String, HostRoleCommand> hostCommand : hostCommands.entrySet()) {
+        HostRoleCommand hostRoleCommand = hostCommand.getValue();
+        if (null != hostRoleCommand && hostRoleCommand.getTaskId() == taskId) {
+          return hostRoleCommand;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * This method should be used only in stage planner. To add
    * a new execution command use
    * {@link #addHostRoleExecutionCommand(String, org.apache.ambari.server.Role, org.apache.ambari.server.RoleCommand, org.apache.ambari.server.state.ServiceComponentHostEvent, String, String, boolean)}
@@ -797,6 +878,29 @@ public class Stage {
    */
   public void setSkippable(boolean skippable) {
     this.skippable = skippable;
+  }
+
+  /**
+   * Determine whether this stage supports automatically skipping failures of
+   * its commands.
+   *
+   * @return {@code true} if this stage supports automatically skipping failures
+   *         of its commands.
+   */
+  public boolean isAutoSkipOnFailureSupported() {
+    return supportsAutoSkipOnFailure;
+  }
+
+  /**
+   * Sets whether this stage supports automatically skipping failures of its
+   * commands.
+   *
+   * @param supportsAutoSkipOnFailure
+   *          {@code true} if this stage supports automatically skipping
+   *          failures of its commands.
+   */
+  public void setAutoSkipFailureSupported(boolean supportsAutoSkipOnFailure) {
+    this.supportsAutoSkipOnFailure = supportsAutoSkipOnFailure;
   }
 
   @Override //Object

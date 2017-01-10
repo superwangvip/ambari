@@ -62,7 +62,8 @@ public enum State {
    */
   WIPING_OUT,
   /**
-   * In the process of upgrading the deployed bits.
+   * In the process of upgrading the host component deployed bits.
+   * Valid only for host component state
    */
   UPGRADING,
   /**
@@ -165,18 +166,21 @@ public enum State {
             || startState == State.UNINSTALLING) {
           return true;
         }
+        break;
       case INIT:
         if (startState == State.UNINSTALLED
             || startState == State.INIT
             || startState == State.WIPING_OUT) {
           return true;
         }
+        break;
       case DISABLED:
         if (startState == State.INSTALLED
             || startState == State.INSTALL_FAILED
             || startState == State.UNKNOWN) {
           return true;
         }
+        break;
     }
     return false;
   }

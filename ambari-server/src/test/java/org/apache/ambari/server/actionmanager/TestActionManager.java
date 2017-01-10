@@ -24,26 +24,28 @@ import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.verify;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.agent.ActionQueue;
 import org.apache.ambari.server.agent.CommandReport;
-import org.apache.ambari.server.controller.HostsMap;
+import org.apache.ambari.server.audit.AuditLogger;
+import org.apache.ambari.server.events.publishers.JPAEventPublisher;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
+import org.apache.ambari.server.utils.CommandUtils;
 import org.apache.ambari.server.utils.StageUtils;
+import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -53,7 +55,8 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.persist.PersistService;
 import com.google.inject.persist.UnitOfWork;
-import static org.junit.Assert.assertNotNull;
+
+import junit.framework.Assert;
 
 public class TestActionManager {
 
@@ -75,10 +78,11 @@ public class TestActionManager {
     stageFactory = injector.getInstance(StageFactory.class);
 
     clusters.addHost(hostname);
-    clusters.getHost(hostname).persist();
     StackId stackId = new StackId("HDP-0.1");
     clusters.addCluster(clusterName, stackId);
     unitOfWork = injector.getInstance(UnitOfWork.class);
+
+    EasyMock.replay(injector.getInstance(AuditLogger.class));
   }
 
   @After
@@ -89,9 +93,7 @@ public class TestActionManager {
   @Test
   public void testActionResponse() throws AmbariException {
     ActionDBAccessor db = injector.getInstance(ActionDBAccessorImpl.class);
-    ActionManager am = new ActionManager(5000, 1200000, new ActionQueue(),
-        clusters, db, new HostsMap((String) null), unitOfWork,
-        injector.getInstance(RequestFactory.class), null, null);
+    ActionManager am = injector.getInstance(ActionManager.class);
     populateActionDB(db, hostname);
     Stage stage = db.getAllStages(requestId).get(0);
     Assert.assertEquals(stageId, stage.getStageId());
@@ -108,7 +110,7 @@ public class TestActionManager {
     cr.setStructuredOut("STRUCTURED_OUTPUT");
     cr.setExitCode(215);
     reports.add(cr);
-    am.processTaskResponse(hostname, reports, stage.getOrderedHostRoleCommands());
+    am.processTaskResponse(hostname, reports, CommandUtils.convertToTaskIdCommandMap(stage.getOrderedHostRoleCommands()));
     assertEquals(215,
         am.getAction(requestId, stageId).getExitCode(hostname, "HBASE_MASTER"));
     assertEquals(HostRoleStatus.COMPLETED, am.getAction(requestId, stageId)
@@ -130,11 +132,46 @@ public class TestActionManager {
   }
 
   @Test
+  public void testActionResponsesUnsorted() throws AmbariException {
+    ActionDBAccessor db = injector.getInstance(ActionDBAccessorImpl.class);
+    ActionManager am = injector.getInstance(ActionManager.class);
+    populateActionDBWithTwoCommands(db, hostname);
+    Stage stage = db.getAllStages(requestId).get(0);
+    Assert.assertEquals(stageId, stage.getStageId());
+    stage.setHostRoleStatus(hostname, "HBASE_MASTER", HostRoleStatus.QUEUED);
+    db.hostRoleScheduled(stage, hostname, "HBASE_MASTER");
+    List<CommandReport> reports = new ArrayList<CommandReport>();
+    CommandReport cr = new CommandReport();
+    cr.setTaskId(2);
+    cr.setActionId(StageUtils.getActionId(requestId, stageId));
+    cr.setRole("HBASE_REGIONSERVER");
+    cr.setStatus("COMPLETED");
+    cr.setStdErr("ERROR");
+    cr.setStdOut("OUTPUT");
+    cr.setStructuredOut("STRUCTURED_OUTPUT");
+    cr.setExitCode(215);
+    reports.add(cr);
+    CommandReport cr2 = new CommandReport();
+    cr2.setTaskId(1);
+    cr2.setActionId(StageUtils.getActionId(requestId, stageId));
+    cr2.setRole("HBASE_MASTER");
+    cr2.setStatus("IN_PROGRESS");
+    cr2.setStdErr("ERROR");
+    cr2.setStdOut("OUTPUT");
+    cr2.setStructuredOut("STRUCTURED_OUTPUT");
+    cr2.setExitCode(215);
+    reports.add(cr2);
+    am.processTaskResponse(hostname, reports, CommandUtils.convertToTaskIdCommandMap(am.getTasks(Arrays.asList(new Long[]{1L, 2L}))));
+    assertEquals(HostRoleStatus.IN_PROGRESS, am.getAction(requestId, stageId)
+        .getHostRoleStatus(hostname, "HBASE_MASTER"));
+    assertEquals(HostRoleStatus.PENDING, am.getAction(requestId, stageId)
+        .getHostRoleStatus(hostname, "HBASE_REGIONSERVER"));
+  }
+
+  @Test
   public void testLargeLogs() throws AmbariException {
     ActionDBAccessor db = injector.getInstance(ActionDBAccessorImpl.class);
-    ActionManager am = new ActionManager(5000, 1200000, new ActionQueue(),
-        clusters, db, new HostsMap((String) null), unitOfWork,
-        injector.getInstance(RequestFactory.class), null, null);
+    ActionManager am = injector.getInstance(ActionManager.class);
     populateActionDB(db, hostname);
     Stage stage = db.getAllStages(requestId).get(0);
     Assert.assertEquals(stageId, stage.getStageId());
@@ -153,7 +190,7 @@ public class TestActionManager {
     cr.setStructuredOut(outLog);
     cr.setExitCode(215);
     reports.add(cr);
-    am.processTaskResponse(hostname, reports, stage.getOrderedHostRoleCommands());
+    am.processTaskResponse(hostname, reports, CommandUtils.convertToTaskIdCommandMap(stage.getOrderedHostRoleCommands()));
     assertEquals(215,
         am.getAction(requestId, stageId).getExitCode(hostname, "HBASE_MASTER"));
     assertEquals(HostRoleStatus.COMPLETED, am.getAction(requestId, stageId)
@@ -179,6 +216,23 @@ public class TestActionManager {
         RoleCommand.START,
         new ServiceComponentHostStartEvent(Role.HBASE_MASTER.toString(),
             hostname, System.currentTimeMillis()), "cluster1", "HBASE", false, false);
+    List<Stage> stages = new ArrayList<Stage>();
+    stages.add(s);
+    Request request = new Request(stages, clusters);
+    db.persistActions(request);
+  }
+
+  private void populateActionDBWithTwoCommands(ActionDBAccessor db, String hostname) throws AmbariException {
+    Stage s = stageFactory.createNew(requestId, "/a/b", "cluster1", 1L, "action manager test", "clusterHostInfo", "commandParamsStage", "hostParamsStage");
+    s.setStageId(stageId);
+    s.addHostRoleExecutionCommand(hostname, Role.HBASE_MASTER,
+        RoleCommand.START,
+        new ServiceComponentHostStartEvent(Role.HBASE_MASTER.toString(),
+          hostname, System.currentTimeMillis()), "cluster1", "HBASE", false, false);
+    s.addHostRoleExecutionCommand(hostname, Role.HBASE_REGIONSERVER,
+        RoleCommand.START,
+        new ServiceComponentHostStartEvent(Role.HBASE_REGIONSERVER.toString(),
+          hostname, System.currentTimeMillis()), "cluster1", "HBASE", false, false);
     List<Stage> stages = new ArrayList<Stage>();
     stages.add(s);
     Request request = new Request(stages, clusters);
@@ -223,8 +277,8 @@ public class TestActionManager {
 
     replay(queue, db, clusters);
 
-    ActionManager manager = new ActionManager(0, 0, queue, clusters, db, null, unitOfWork,
-        injector.getInstance(RequestFactory.class), null, null);
+    ActionScheduler actionScheduler = new ActionScheduler(0, 0, db, createNiceMock(JPAEventPublisher.class));
+    ActionManager manager = new ActionManager(db, injector.getInstance(RequestFactory.class), actionScheduler);
     assertSame(listStages, manager.getActions(requestId));
 
     verify(queue, db, clusters);

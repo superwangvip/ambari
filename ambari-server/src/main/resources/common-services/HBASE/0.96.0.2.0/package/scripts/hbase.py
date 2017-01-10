@@ -18,11 +18,19 @@ limitations under the License.
 
 """
 import os
-from resource_management import *
 import sys
+from resource_management.libraries.script.script import Script
+from resource_management.libraries.resources.xml_config import XmlConfig
+from resource_management.libraries.resources.template_config import TemplateConfig
+from resource_management.libraries.functions.format import format
+from resource_management.core.source import Template, InlineTemplate
+from resource_management.core.resources import Package
+from resource_management.core.resources.service import ServiceConfig
+from resource_management.core.resources.system import Directory, Execute, File
 from ambari_commons.os_family_impl import OsFamilyFuncImpl, OsFamilyImpl
 from ambari_commons import OSConst
-
+from resource_management.libraries.functions.constants import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 
 @OsFamilyFuncImpl(os_family=OSConst.WINSRV_FAMILY)
 def hbase(name=None):
@@ -53,8 +61,28 @@ def hbase(name=None):
   Directory( params.hbase_conf_dir,
       owner = params.hbase_user,
       group = params.user_group,
-      recursive = True
+      create_parents = True
   )
+   
+  Directory(params.java_io_tmpdir,
+      create_parents = True,
+      mode=0777
+  )
+
+  # If a file location is specified in ioengine parameter,
+  # ensure that directory exists. Otherwise create the
+  # directory with permissions assigned to hbase:hadoop.
+  ioengine_input = params.ioengine_param
+  if ioengine_input != None:
+    if ioengine_input.startswith("file:/"):
+      ioengine_fullpath = ioengine_input[5:]
+      ioengine_dir = os.path.dirname(ioengine_fullpath)
+      Directory(ioengine_dir,
+          owner = params.hbase_user,
+          group = params.user_group,
+          create_parents = True,
+          mode = 0755
+      )
   
   parent_dir = os.path.dirname(params.tmp_dir)
   # In case if we have several placeholders in path
@@ -62,7 +90,7 @@ def hbase(name=None):
     parent_dir = os.path.dirname(parent_dir)
   if parent_dir != os.path.abspath(os.sep) :
     Directory (parent_dir,
-          recursive = True,
+          create_parents = True,
           cd_access="a",
     )
     Execute(("chmod", "1777", parent_dir), sudo=True)
@@ -75,29 +103,28 @@ def hbase(name=None):
             group = params.user_group
   )
 
-  XmlConfig( "core-site.xml",
-             conf_dir = params.hbase_conf_dir,
-             configurations = params.config['configurations']['core-site'],
-             configuration_attributes=params.config['configuration_attributes']['core-site'],
-             owner = params.hbase_user,
-             group = params.user_group
-  )
-
-  if 'hdfs-site' in params.config['configurations']:
-    XmlConfig( "hdfs-site.xml",
-            conf_dir = params.hbase_conf_dir,
-            configurations = params.config['configurations']['hdfs-site'],
-            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
-            owner = params.hbase_user,
-            group = params.user_group
+  if check_stack_feature(StackFeature.PHOENIX_CORE_HDFS_SITE_REQUIRED, params.version_for_stack_feature_checks):
+    XmlConfig( "core-site.xml",
+               conf_dir = params.hbase_conf_dir,
+               configurations = params.config['configurations']['core-site'],
+               configuration_attributes=params.config['configuration_attributes']['core-site'],
+               owner = params.hbase_user,
+               group = params.user_group
     )
-
-    XmlConfig("hdfs-site.xml",
-            conf_dir=params.hadoop_conf_dir,
-            configurations=params.config['configurations']['hdfs-site'],
-            configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
-            owner=params.hdfs_user,
-            group=params.user_group
+    if 'hdfs-site' in params.config['configurations']:
+      XmlConfig( "hdfs-site.xml",
+              conf_dir = params.hbase_conf_dir,
+              configurations = params.config['configurations']['hdfs-site'],
+              configuration_attributes=params.config['configuration_attributes']['hdfs-site'],
+              owner = params.hbase_user,
+              group = params.user_group
+      )
+  else:
+    File(format("{params.hbase_conf_dir}/hdfs-site.xml"),
+         action="delete"
+    )
+    File(format("{params.hbase_conf_dir}/core-site.xml"),
+         action="delete"
     )
 
   if 'hbase-policy' in params.config['configurations']:
@@ -117,9 +144,24 @@ def hbase(name=None):
 
   File(format("{hbase_conf_dir}/hbase-env.sh"),
        owner = params.hbase_user,
-       content=InlineTemplate(params.hbase_env_sh_template)
-  )     
-       
+       content=InlineTemplate(params.hbase_env_sh_template),
+       group = params.user_group,
+  )
+  
+  # On some OS this folder could be not exists, so we will create it before pushing there files
+  Directory(params.limits_conf_dir,
+            create_parents = True,
+            owner='root',
+            group='root'
+            )
+  
+  File(os.path.join(params.limits_conf_dir, 'hbase.conf'),
+       owner='root',
+       group='root',
+       mode=0644,
+       content=Template("hbase.conf.j2")
+       )
+    
   hbase_TemplateConfig( params.metric_prop_file_name,
     tag = 'GANGLIA-MASTER' if name == 'master' else 'GANGLIA-RS'
   )
@@ -132,12 +174,16 @@ def hbase(name=None):
   if name != "client":
     Directory( params.pid_dir,
       owner = params.hbase_user,
-      recursive = True
+      create_parents = True,
+      cd_access = "a",
+      mode = 0755,
     )
   
     Directory (params.log_dir,
       owner = params.hbase_user,
-      recursive = True
+      create_parents = True,
+      cd_access = "a",
+      mode = 0755,
     )
 
   if (params.log4j_props != None):
@@ -145,7 +191,7 @@ def hbase(name=None):
          mode=0644,
          group=params.user_group,
          owner=params.hbase_user,
-         content=params.log4j_props
+         content=InlineTemplate(params.log4j_props)
     )
   elif (os.path.exists(format("{params.hbase_conf_dir}/log4j.properties"))):
     File(format("{params.hbase_conf_dir}/log4j.properties"),
@@ -165,7 +211,19 @@ def hbase(name=None):
                          owner=params.hbase_user,
                          mode=0711
     )
+    if params.create_hbase_home_directory:
+      params.HdfsResource(params.hbase_home_directory,
+                          type="directory",
+                          action="create_on_execute",
+                          owner=params.hbase_user,
+                          mode=0755
+      )
     params.HdfsResource(None, action="execute")
+
+  if params.phoenix_enabled:
+    Package(params.phoenix_package,
+            retry_on_repo_unavailability=params.agent_stack_retry_on_unavailability,
+            retry_count=params.agent_stack_retry_count)
 
 def hbase_TemplateConfig(name, tag=None):
   import params

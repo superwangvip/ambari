@@ -17,6 +17,8 @@
  */
 package org.apache.ambari.server.api.services;
 
+import java.util.Collections;
+
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
@@ -31,8 +33,6 @@ import javax.ws.rs.core.UriInfo;
 
 import org.apache.ambari.server.api.resources.ResourceInstance;
 import org.apache.ambari.server.controller.spi.Resource;
-
-import java.util.Collections;
 
 /**
  * Service responsible for user requests.
@@ -146,6 +146,19 @@ public class UserService extends BaseService {
                                                     @PathParam ("userName") String userName) {
 
     return new ActiveWidgetLayoutService(userName);
+  }
+
+  /**
+   * Gets the user authorization service.
+   *
+   * @param request  the request
+   * @param username the username
+   * @return the UserAuthorizationService
+   */
+  @Path("{userName}/authorizations")
+  public UserAuthorizationService getUserAuthorizations(
+      @Context javax.ws.rs.core.Request request, @PathParam("userName") String username) {
+    return new UserAuthorizationService(username);
   }
 
   /**

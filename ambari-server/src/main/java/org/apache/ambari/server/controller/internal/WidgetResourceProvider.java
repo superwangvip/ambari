@@ -17,8 +17,13 @@
  */
 package org.apache.ambari.server.controller.internal;
 
-import com.google.gson.Gson;
-import com.google.inject.Inject;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ObjectNotFoundException;
 import org.apache.ambari.server.StaticallyInject;
@@ -47,12 +52,8 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.google.gson.Gson;
+import com.google.inject.Inject;
 
 /**
  * Resource provider for repository versions resources.
@@ -333,7 +334,7 @@ public class WidgetResourceProvider extends AbstractControllerResourceProvider {
   }
 
   @Override
-  public RequestStatus deleteResources(Predicate predicate)
+  public RequestStatus deleteResources(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     final Set<Map<String, Object>> propertyMaps = getPropertyMaps(predicate);
 
@@ -382,9 +383,9 @@ public class WidgetResourceProvider extends AbstractControllerResourceProvider {
     boolean hasPermissionForClusterScope = false;
     for (GrantedAuthority grantedAuthority : securityContext.getAuthentication().getAuthorities()) {
       if (((AmbariGrantedAuthority) grantedAuthority).getPrivilegeEntity().getPermission().getId()
-              == PermissionEntity.AMBARI_ADMIN_PERMISSION ||
+              == PermissionEntity.AMBARI_ADMINISTRATOR_PERMISSION ||
               ((AmbariGrantedAuthority) grantedAuthority).getPrivilegeEntity().getPermission().getId()
-                      == PermissionEntity.CLUSTER_OPERATE_PERMISSION) {
+                      == PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION) {
         hasPermissionForClusterScope = true;
       }
     }

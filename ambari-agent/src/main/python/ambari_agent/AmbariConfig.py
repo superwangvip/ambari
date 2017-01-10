@@ -23,7 +23,6 @@ import ConfigParser
 import StringIO
 import hostname
 import ambari_simplejson as json
-from NetUtil import NetUtil
 import os
 
 from ambari_commons import OSConst
@@ -46,6 +45,7 @@ data_cleanup_max_size_MB = 100
 ping_port=8670
 cache_dir={ps}var{ps}lib{ps}ambari-agent{ps}cache
 parallel_execution=0
+system_resource_overrides={ps}etc{ps}resource_overrides
 
 [services]
 
@@ -61,6 +61,12 @@ passphrase_env_var_name=AMBARI_PASSPHRASE
 state_interval = 6
 dirs={ps}etc{ps}hadoop,{ps}etc{ps}hadoop{ps}conf,{ps}var{ps}run{ps}hadoop,{ps}var{ps}log{ps}hadoop
 log_lines_count=300
+iddle_interval_min=1
+iddle_interval_max=10
+
+
+[logging]
+log_command_executes = 0
 
 """.format(ps=os.sep)
 
@@ -81,14 +87,13 @@ servicesToPidNames = {
   'ZOOKEEPER_SERVER': 'zookeeper_server.pid',
   'FLUME_SERVER': 'flume-node.pid',
   'TEMPLETON_SERVER': 'templeton.pid',
-  'GANGLIA_SERVER': 'gmetad.pid',
-  'GANGLIA_MONITOR': 'gmond.pid',
   'HBASE_MASTER': 'hbase-{USER}-master.pid',
   'HBASE_REGIONSERVER': 'hbase-{USER}-regionserver.pid',
   'HCATALOG_SERVER': 'webhcat.pid',
   'KERBEROS_SERVER': 'kadmind.pid',
   'HIVE_SERVER': 'hive-server.pid',
   'HIVE_METASTORE': 'hive.pid',
+  'HIVE_SERVER_INTERACTIVE' : 'hive-interactive.pid',
   'MYSQL_SERVER': 'mysqld.pid',
   'HUE_SERVER': '/var/run/hue/supervisor.pid',
   'WEBHCAT_SERVER': 'webhcat.pid',
@@ -117,8 +122,6 @@ pidPathVars = [
    'defaultValue' : '/var/run/hadoop'},
   {'var' : 'hadoop_pid_dir_prefix',
    'defaultValue' : '/var/run/hadoop'},
-  {'var' : 'ganglia_runtime_dir',
-   'defaultValue' : '/var/run/ganglia/hdp'},
   {'var' : 'hbase_pid_dir',
    'defaultValue' : '/var/run/hbase'},
   {'var' : 'zk_pid_dir',
@@ -140,13 +143,14 @@ pidPathVars = [
 ]
 
 
-
-
 class AmbariConfig:
   TWO_WAY_SSL_PROPERTY = "security.server.two_way_ssl"
   AMBARI_PROPERTIES_CATEGORY = 'agentConfig'
   SERVER_CONNECTION_INFO = "{0}/connection_info"
   CONNECTION_PROTOCOL = "https"
+
+  # linux open-file limit
+  ULIMIT_OPEN_FILES_KEY = 'ulimit.open.files'
 
   config = None
   net = None
@@ -154,12 +158,11 @@ class AmbariConfig:
   def __init__(self):
     global content
     self.config = ConfigParser.RawConfigParser()
-    self.net = NetUtil()
     self.config.readfp(StringIO.StringIO(content))
 
   def get(self, section, value, default=None):
     try:
-      return self.config.get(section, value)
+      return str(self.config.get(section, value)).strip()
     except ConfigParser.Error, err:
       if default != None:
         return default
@@ -180,35 +183,75 @@ class AmbariConfig:
   def getConfig(self):
     return self.config
 
-  @staticmethod
-  @OsFamilyFuncImpl(OSConst.WINSRV_FAMILY)
-  def getConfigFile():
-    if 'AMBARI_AGENT_CONF_DIR' in os.environ:
-      return os.path.join(os.environ['AMBARI_AGENT_CONF_DIR'], "ambari-agent.ini")
-    else:
-      return "ambari-agent.ini"
+  @classmethod
+  def get_resolved_config(cls, home_dir=""):
+    if hasattr(cls, "_conf_cache"):
+      return getattr(cls, "_conf_cache")
+    config = cls()
+    configPath = os.path.abspath(cls.getConfigFile(home_dir))
+    try:
+      if os.path.exists(configPath):
+        config.read(configPath)
+      else:
+        raise Exception("No config found at {0}, use default".format(configPath))
+
+    except Exception, err:
+      logger.warn(err)
+    setattr(cls, "_conf_cache", config)
+    return config
 
   @staticmethod
   @OsFamilyFuncImpl(OsFamilyImpl.DEFAULT)
-  def getConfigFile():
+  def getConfigFile(home_dir=""):
+    """
+    Get the configuration file path.
+    :param home_dir: In production, will be "". When running multiple Agents per host, each agent will have a unique path.
+    :return: Configuration file path.
+    """
     if 'AMBARI_AGENT_CONF_DIR' in os.environ:
       return os.path.join(os.environ['AMBARI_AGENT_CONF_DIR'], "ambari-agent.ini")
     else:
-      return os.path.join(os.sep, "etc", "ambari-agent", "conf", "ambari-agent.ini")
+      # home_dir may be an empty string
+      return os.path.join(os.sep, home_dir, "etc", "ambari-agent", "conf", "ambari-agent.ini")
 
+  # TODO AMBARI-18733, change usages of this function to provide the home_dir.
   @staticmethod
-  def getLogFile():
+  def getLogFile(home_dir=""):
+    """
+    Get the log file path.
+    :param home_dir: In production, will be "". When running multiple Agents per host, each agent will have a unique path.
+    :return: Log file path.
+    """
     if 'AMBARI_AGENT_LOG_DIR' in os.environ:
       return os.path.join(os.environ['AMBARI_AGENT_LOG_DIR'], "ambari-agent.log")
     else:
-      return os.path.join(os.sep, "var", "log", "ambari-agent", "ambari-agent.log")
+      return os.path.join(os.sep, home_dir, "var", "log", "ambari-agent", "ambari-agent.log")
 
+  # TODO AMBARI-18733, change usages of this function to provide the home_dir.
   @staticmethod
-  def getOutFile():
-    if 'AMBARI_AGENT_OUT_DIR' in os.environ:
-      return os.path.join(os.environ['AMBARI_AGENT_OUT_DIR'], "ambari-agent.out")
+  def getAlertsLogFile(home_dir=""):
+    """
+    Get the alerts log file path.
+    :param home_dir: In production, will be "". When running multiple Agents per host, each agent will have a unique path.
+    :return: Alerts log file path.
+    """
+    if 'AMBARI_AGENT_LOG_DIR' in os.environ:
+      return os.path.join(os.environ['AMBARI_AGENT_LOG_DIR'], "ambari-agent.log")
     else:
-      return os.path.join(os.sep, "var", "log", "ambari-agent", "ambari-agent.out")
+      return os.path.join(os.sep, home_dir, "var", "log", "ambari-agent", "ambari-alerts.log")
+
+  # TODO AMBARI-18733, change usages of this function to provide the home_dir.
+  @staticmethod
+  def getOutFile(home_dir=""):
+    """
+    Get the out file path.
+    :param home_dir: In production, will be "". When running multiple Agents per host, each agent will have a unique path.
+    :return: Out file path.
+    """
+    if 'AMBARI_AGENT_LOG_DIR' in os.environ:
+      return os.path.join(os.environ['AMBARI_AGENT_LOG_DIR'], "ambari-agent.out")
+    else:
+      return os.path.join(os.sep, home_dir, "var", "log", "ambari-agent", "ambari-agent.out")
 
   def has_option(self, section, option):
     return self.config.has_option(section, option)
@@ -223,7 +266,8 @@ class AmbariConfig:
     self.config.read(filename)
 
   def getServerOption(self, url, name, default=None):
-    status, response = self.net.checkURL(url)
+    from ambari_agent.NetUtil import NetUtil
+    status, response = NetUtil(self).checkURL(url)
     if status is True:
       try:
         data = json.loads(response)
@@ -233,13 +277,13 @@ class AmbariConfig:
         pass
     return default
 
-  def get_api_url(self):
+  def get_api_url(self, server_hostname):
     return "%s://%s:%s" % (self.CONNECTION_PROTOCOL,
-                           hostname.server_hostname(self),
+                           server_hostname,
                            self.get('server', 'url_port'))
 
-  def isTwoWaySSLConnection(self):
-    req_url = self.get_api_url()
+  def isTwoWaySSLConnection(self, server_hostname):
+    req_url = self.get_api_url(server_hostname)
     response = self.getServerOption(self.SERVER_CONNECTION_INFO.format(req_url), self.TWO_WAY_SSL_PROPERTY, 'false')
     if response is None:
       return False
@@ -251,6 +295,15 @@ class AmbariConfig:
   def get_parallel_exec_option(self):
     return int(self.get('agent', 'parallel_execution', 0))
 
+  def get_ulimit_open_files(self):
+    open_files_config_val =  int(self.get('agent', self.ULIMIT_OPEN_FILES_KEY, 0))
+    open_files_ulimit = int(open_files_config_val) if (open_files_config_val and int(open_files_config_val) > 0) else 0
+    return open_files_ulimit
+
+  def set_ulimit_open_files(self, value):
+    self.set('agent', self.ULIMIT_OPEN_FILES_KEY, value)
+
+
   def update_configuration_from_registration(self, reg_resp):
     if reg_resp and AmbariConfig.AMBARI_PROPERTIES_CATEGORY in reg_resp:
       if not self.has_section(AmbariConfig.AMBARI_PROPERTIES_CATEGORY):
@@ -260,17 +313,42 @@ class AmbariConfig:
         logger.info("Updating config property (%s) with value (%s)", k, v)
     pass
 
-def updateConfigServerHostname(configFile, new_host):
+  def get_force_https_protocol(self):
+    return self.get('security', 'force_https_protocol', default="PROTOCOL_TLSv1")
+
+def isSameHostList(hostlist1, hostlist2):
+  is_same = True
+
+  if (hostlist1 is not None and hostlist2 is not None):
+    if (len(hostlist1) != len(hostlist2)):
+      is_same = False
+    else:
+      host_lookup = {}
+      for item1 in hostlist1:
+        host_lookup[item1.lower()] = True
+      for item2 in hostlist2:
+        if item2.lower() in host_lookup:
+          del host_lookup[item2.lower()]
+        else:
+          is_same = False
+          break
+    pass
+  elif (hostlist1 is not None or hostlist2 is not None):
+    is_same = False
+  return is_same
+
+def updateConfigServerHostname(configFile, new_hosts):
   # update agent config file
   agent_config = ConfigParser.ConfigParser()
   agent_config.read(configFile)
-  server_host = agent_config.get('server', 'hostname')
-  if new_host is not None and server_host != new_host:
-    print "Updating server host from " + server_host + " to " + new_host
-    agent_config.set('server', 'hostname', new_host)
-    with (open(configFile, "wb")) as new_agent_config:
-      agent_config.write(new_agent_config)
-
+  server_hosts = agent_config.get('server', 'hostname')
+  if new_hosts is not None:
+      new_host_names = hostname.arrayFromCsvString(new_hosts)
+      if not isSameHostList(server_hosts, new_host_names):
+        print "Updating server hostname from " + server_hosts + " to " + new_hosts
+        agent_config.set('server', 'hostname', new_hosts)
+        with (open(configFile, "wb")) as new_agent_config:
+          agent_config.write(new_agent_config)
 
 def main():
   print AmbariConfig().config

@@ -46,6 +46,7 @@ from only_for_platform import get_platform, os_distro_value, PLATFORM_WINDOWS
 
 class TestCustomServiceOrchestrator(TestCase):
 
+
   def setUp(self):
     # disable stdout
     out = StringIO.StringIO()
@@ -53,10 +54,10 @@ class TestCustomServiceOrchestrator(TestCase):
     # generate sample config
     tmpdir = tempfile.gettempdir()
     exec_tmp_dir = os.path.join(tmpdir, 'tmp')
-    self.config = ConfigParser.RawConfigParser()
+    self.config = AmbariConfig()
+    self.config.config = ConfigParser.RawConfigParser()
     self.config.add_section('agent')
     self.config.set('agent', 'prefix', tmpdir)
-    self.config.set('agent', 'tmp_dir', exec_tmp_dir)
     self.config.set('agent', 'cache_dir', "/cachedir")
     self.config.add_section('python')
     self.config.set('python', 'custom_actions_dir', tmpdir)
@@ -67,7 +68,7 @@ class TestCustomServiceOrchestrator(TestCase):
   def test_add_reg_listener_to_controller(self, FileCache_mock):
     FileCache_mock.return_value = None
     dummy_controller = MagicMock()
-    config = AmbariConfig().getConfig()
+    config = AmbariConfig()
     tempdir = tempfile.gettempdir()
     config.set('agent', 'prefix', tempdir)
     CustomServiceOrchestrator(config, dummy_controller)
@@ -107,7 +108,7 @@ class TestCustomServiceOrchestrator(TestCase):
                          'all_hosts'     : ['h1.hortonworks.com', 'h2.hortonworks.com'],
                          'all_ping_ports': ['8670', '8670']}
     
-    config = AmbariConfig().getConfig()
+    config = AmbariConfig()
     tempdir = tempfile.gettempdir()
     config.set('agent', 'prefix', tempdir)
     dummy_controller = MagicMock()
@@ -135,6 +136,7 @@ class TestCustomServiceOrchestrator(TestCase):
     os.unlink(json_file)
     # Testing side effect of dump_command_to_json
     self.assertEquals(command['public_hostname'], "test.hst")
+    self.assertEquals(command['agentConfigParams']['agent']['parallel_execution'], 0)
     self.assertTrue(unlink_mock.called)
 
 
@@ -161,13 +163,15 @@ class TestCustomServiceOrchestrator(TestCase):
                          'slave_hosts'   : ['0', '1'],
                          'all_racks'   : [u'/default-rack:0'],
                          'ambari_server_host' : 'a.b.c',
+                         'ambari_server_port' : '123',
+                         'ambari_server_use_ssl' : 'false',
                          'all_ipv4_ips'   : [u'192.168.12.101:0'],
                          'all_hosts'     : ['h1.hortonworks.com', 'h2.hortonworks.com'],
                          'all_ping_ports': ['8670:0,1']},
       'hostLevelParams':{}
     }
 
-    config = AmbariConfig().getConfig()
+    config = AmbariConfig()
     tempdir = tempfile.gettempdir()
     config.set('agent', 'prefix', tempdir)
     dummy_controller = MagicMock()
@@ -191,6 +195,7 @@ class TestCustomServiceOrchestrator(TestCase):
     os.unlink(json_file)
     # Testing side effect of dump_command_to_json
     self.assertEquals(command['public_hostname'], "test.hst")
+    self.assertEquals(command['agentConfigParams']['agent']['parallel_execution'], 0)
     self.assertTrue(unlink_mock.called)
 
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
@@ -199,7 +204,7 @@ class TestCustomServiceOrchestrator(TestCase):
   def test_resolve_script_path(self, FileCache_mock, exists_mock):
     FileCache_mock.return_value = None
     dummy_controller = MagicMock()
-    config = AmbariConfig().getConfig()
+    config = AmbariConfig()
     orchestrator = CustomServiceOrchestrator(config, dummy_controller)
     # Testing existing path
     exists_mock.return_value = True
@@ -215,7 +220,7 @@ class TestCustomServiceOrchestrator(TestCase):
     except AgentException:
       pass # Expected
 
-
+  @patch.object(FileCache, "get_custom_resources_subdir")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(CustomServiceOrchestrator, "resolve_hook_script_path")
   @patch.object(FileCache, "get_host_scripts_base_dir")
@@ -229,10 +234,12 @@ class TestCustomServiceOrchestrator(TestCase):
                       get_hook_base_dir_mock, get_service_base_dir_mock, 
                       get_host_scripts_base_dir_mock, 
                       resolve_hook_script_path_mock, 
-                      resolve_script_path_mock):
+                      resolve_script_path_mock,
+                      get_custom_resources_subdir_mock):
     
     FileCache_mock.return_value = None
     command = {
+      'commandType' : 'EXECUTION_COMMAND',
       'role' : 'REGION_SERVER',
       'hostLevelParams' : {
         'stack_name' : 'HDP',
@@ -369,8 +376,8 @@ class TestCustomServiceOrchestrator(TestCase):
     ret = async_result.get()
 
     self.assertEqual(ret['exitcode'], 1)
-    self.assertEquals(ret['stdout'], 'killed\nCommand aborted. reason')
-    self.assertEquals(ret['stderr'], 'killed\nCommand aborted. reason')
+    self.assertEquals(ret['stdout'], 'killed\nCommand aborted. Reason: \'reason\'')
+    self.assertEquals(ret['stderr'], 'killed\nCommand aborted. Reason: \'reason\'')
 
     self.assertTrue(kill_process_with_children_mock.called)
     self.assertFalse(command['taskId'] in orchestrator.commands_in_progress.keys())
@@ -382,22 +389,18 @@ class TestCustomServiceOrchestrator(TestCase):
     except:
       pass
 
-  from ambari_agent.StackVersionsFileHandler import StackVersionsFileHandler
-
   @patch.object(OSCheck, "os_distribution", new = MagicMock(return_value = os_distro_value))
   @patch.object(CustomServiceOrchestrator, "get_py_executor")
   @patch("ambari_commons.shell.kill_process_with_children")
   @patch.object(FileCache, "__init__")
   @patch.object(CustomServiceOrchestrator, "resolve_script_path")
   @patch.object(CustomServiceOrchestrator, "resolve_hook_script_path")
-  @patch.object(StackVersionsFileHandler, "read_stack_version")
-  def test_cancel_backgound_command(self, read_stack_version_mock, resolve_hook_script_path_mock,
+  def test_cancel_backgound_command(self, resolve_hook_script_path_mock,
                                     resolve_script_path_mock, FileCache_mock, kill_process_with_children_mock,
                                     get_py_executor_mock):
     FileCache_mock.return_value = None
     FileCache_mock.cache_dir = MagicMock()
     resolve_hook_script_path_mock.return_value = None
-#     shell.kill_process_with_children = MagicMock()
     dummy_controller = MagicMock()
     cfg = AmbariConfig()
     cfg.set('agent', 'tolerate_download_failures', 'true')
@@ -439,7 +442,7 @@ class TestCustomServiceOrchestrator(TestCase):
 
     time.sleep(.1)
 
-    orchestrator.cancel_command(19,'')
+    orchestrator.cancel_command(19,'reason')
     self.assertTrue(kill_process_with_children_mock.called)
     kill_process_with_children_mock.assert_called_with(33)
 
@@ -456,13 +459,15 @@ class TestCustomServiceOrchestrator(TestCase):
     self.assertEqual(runningCommand['status'], ActionQueue.FAILED_STATUS)
 
 
+  @patch.object(AmbariConfig, "get")
   @patch.object(CustomServiceOrchestrator, "dump_command_to_json")
   @patch.object(PythonExecutor, "run_file")
   @patch.object(FileCache, "__init__")
   @patch.object(FileCache, "get_custom_actions_base_dir")
   def test_runCommand_custom_action(self, get_custom_actions_base_dir_mock,
                                     FileCache_mock,
-                                    run_file_mock, dump_command_to_json_mock):
+                                    run_file_mock, dump_command_to_json_mock, ambari_config_get):
+    ambari_config_get.return_value = "0"
     FileCache_mock.return_value = None
     get_custom_actions_base_dir_mock.return_value = "some path"
     _, script = tempfile.mkstemp()

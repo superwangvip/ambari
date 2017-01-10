@@ -17,26 +17,26 @@
 }}
 
 <div class="links">
-  <ul>
-    <li class="thumbnail row">
-      <a {{bindAttr class=":corner-icon :span1 view.parentView.isMoving:hidden"}}
+  <ul class="list-unstyled">
+    <li class="img-thumbnail row">
+      <a {{bindAttr class=":corner-icon :col-md-1 view.parentView.isMoving:hidden"}}
               href="#" {{action deleteWidget target="view"}}>
-        <i class="icon-remove-sign icon-large"></i>
+        <i class="glyphicon-remove-sign glyphicon glyphicon-large"></i>
       </a>
 
-      <div class="caption span10"> {{view.title}}</div>
+      <div class="caption col-md-10"> {{view.title}}</div>
       {{#if view.isDataLoaded}}
         <div class="widget-content">
           <table>
             <!-- Resource Manager-->
-            <tr>
+            <tr class="resourcemanager-link">
               <td>
                 <a href="#" {{action showDetails view.model.resourceManager.host}}> {{t dashboard.services.yarn.resourceManager}}</a>
               </td>
             </tr>
 
             <!-- Node Manages-->
-            <tr>
+            <tr class="nodemanager-link">
               <td>
                 <a href="#" {{action filterHosts view.component}}> {{view.model.nodeManagersTotal}} {{t dashboard.services.yarn.nodeManagers}}</a>
               </td>
@@ -46,12 +46,12 @@
 
         <div class="link-button">
           {{#if view.model.quickLinks.length}}
-            {{#view App.QuickViewLinks contentBinding="view.model"}}
+            {{#view App.QuickLinksView contentBinding="view.model"}}
               <div class="btn-group">
-                <a class="btn btn-mini dropdown-toggle" data-toggle="dropdown" href="#">
+                <button class="btn btn-default btn-xs dropdown-toggle" data-toggle="dropdown" href="#">
                   {{t common.more}}
                   <span class="caret"></span>
-                </a>
+                </button>
                 <ul class="dropdown-menu">
                   {{#if view.isLoaded}}
                     {{#if view.quickLinksArray}}
@@ -61,18 +61,18 @@
                           <a href="javascript:void(null)">{{quickLinks.publicHostNameLabel}} &nbsp;</a>
                           <ul class="dropdown-menu">
                             {{#each quickLinks}}
-                              <li><a {{bindAttr href="url"}} {{bindAttr target="view.linkTarget"}}>{{label}}</a></li>
+                              <li><a {{bindAttr href="url"}} target="_blank">{{label}}</a></li>
                             {{/each}}
                           </ul>
                         </li>
                       {{/each}}
                     {{else}}
                       {{#each view.quickLinks}}
-                        <li><a {{bindAttr href="url"}} {{bindAttr target="view.linkTarget"}}>{{label}}</a></li>
+                        <li><a {{bindAttr href="url"}} target="_blank">{{label}}</a></li>
                       {{/each}}
                     {{/if}}
                   {{else}}
-                    <div class="spinner"></div>
+                    {{view App.SpinnerView}}
                   {{/if}}
                 </ul>
               </div>
@@ -80,7 +80,7 @@
           {{/if}}
         </div>
       {{else}}
-        <div class="spinner"></div>
+        {{view App.SpinnerView}}
       {{/if}}
     </li>
   </ul>

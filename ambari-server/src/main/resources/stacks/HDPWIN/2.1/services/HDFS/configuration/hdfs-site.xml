@@ -1,6 +1,5 @@
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
-
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
  contributor license agreements.  See the NOTICE file distributed with
@@ -17,22 +16,26 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -->
-
 <!-- Put site-specific property overrides in this file. -->
 <configuration supports_final="true">
-
   <property>
     <name>dfs.namenode.name.dir</name>
     <value>file:///c:/hdpdata/hdfs/nn</value>
+    <display-name>NameNode directories</display-name>
     <description>Determines where on the local filesystem the DFS name node
       should store the name table.  If this is a comma-delimited list
       of directories then the name table is replicated in all of the
       directories, for redundancy. </description>
     <final>true</final>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <on-ambari-upgrade add="true"/>
   </property>
   <property>
     <name>dfs.datanode.data.dir</name>
     <value>file:///c:/hdpdata/hdfs/dn</value>
+    <display-name>DataNode directories</display-name>
     <description>Determines where on the local filesystem an DFS data node
     should store its blocks.  If this is a comma-delimited
     list of directories, then data will be stored in all named
@@ -40,6 +43,7 @@
     Directories that do not exist are ignored.
     </description>
     <final>true</final>
+    <on-ambari-upgrade add="true"/>
   </property>
   <property>
     <name>dfs.hosts.exclude</name>
@@ -48,6 +52,7 @@
       not permitted to connect to the namenode.  The full pathname of the
       file must be specified.  If the value is empty, no hosts are
       excluded.</description>
+    <on-ambari-upgrade add="true"/>
   </property>
   <property>
     <name>dfs.hosts</name>
@@ -56,33 +61,41 @@
       permitted to connect to the namenode. The full pathname of the file
       must be specified.  If the value is empty, all hosts are
       permitted.</description>
+    <on-ambari-upgrade add="true"/>
   </property>
   <property>
     <name>dfs.namenode.checkpoint.dir</name>
     <value>file:///c:/hadoop/hdfs/snn</value>
+    <display-name>SecondaryNameNode Checkpoint directories</display-name>
     <description>Determines where on the local filesystem the DFS secondary
       name node should store the temporary images to merge.
       If this is a comma-delimited list of directories then the image is
       replicated in all of the directories for redundancy.
     </description>
+    <value-attributes>
+      <overridable>false</overridable>
+    </value-attributes>
+    <on-ambari-upgrade add="true"/>
   </property>
-
   <property>
     <name>dfs.client.read.shortcircuit</name>
     <deleted>true</deleted>
+    <on-ambari-upgrade add="false"/>
   </property>
   <property>
     <name>dfs.client.read.shortcircuit.streams.cache.size</name>
     <deleted>true</deleted>
+    <on-ambari-upgrade add="false"/>
   </property>
   <property>
     <name>dfs.domain.socket.path</name>
     <deleted>true</deleted>
+    <on-ambari-upgrade add="false"/>
   </property>
   <property>
     <name>dfs.journalnode.edits.dir</name>
     <value>c:\hadoop\hdfs\journalnode</value>
     <description>The path where the JournalNode daemon will store its local state. </description>
+    <on-ambari-upgrade add="true"/>
   </property>
-
 </configuration>

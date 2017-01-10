@@ -18,13 +18,13 @@
 @import 'common.less';
 
 #advancedRepoAccordion{
-  .accordion-heading {
+  .panel-heading {
     background-color: #f0f0f0;
     a:hover {
       text-decoration: none;
     }
   }
-  .accordion-body {
+  .panel-body {
     .repositories-table {
       overflow: auto;
       margin-bottom: 10px;
@@ -82,12 +82,12 @@
                 text-decoration: none;
                 &.disabled-clear-button {
                   cursor: default;
-                  .icon-remove-sign {
+                  .glyphicon-remove-sign {
                     cursor: default;
                   }
                 }
               }
-              .icon-remove-sign {
+              .glyphicon-remove-sign {
                 color: #808080;
               }
             }
@@ -107,8 +107,6 @@
       }
       .textfield-error input {
         border-color: #b94a48;
-        -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-        -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
         box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
       }
       .disabled-label {
@@ -119,16 +117,57 @@
       .checkbox {
         margin-left: 3px;
         margin-right: 8px;
-        margin-top: 0px;
-      }
-      .icon-question-sign {
-        color: @blue;
+        margin-top: 0;
       }
     }
   }
 }
+.version-box-popup {
+  .modal{
+    .modal-dialog{
+      width: 340px;
+    }
+    .modal-body {
+      padding: 0;
+    }
+  }
+  .version-box-in-popup.version-box {
+    padding: 0;
+    margin: 0;
+    border: none;
+    .out-of-sync-badge {
+      top: 0;
+      left: 0;
+    }
+  }
+}
 
-#stack-upgrade-page {
+#stack-upgrade-page,
+.version-box-popup {
+  .versions-slides {
+    overflow-x: auto;
+    padding-bottom: 25px;
+    padding-left: 0;
+    margin-top: 10px;
+    margin-left: -1px;
+    .versions-slides-bar {
+      display: inline-flex;
+    }
+  }
+  .left-menu-table {
+    padding: 10px 0;
+    margin-top: 122px;
+    .border-extended-table {
+      width: 100%;
+      position: relative;
+      z-index: 999;
+      background: transparent;
+      td.service-display-name {
+        border-top: 1px solid #d2d9dd;
+        border-bottom: 1px solid #d2d9dd;
+      }
+    }
+  }
   div.current-version-box {
     background: none repeat scroll 0 0 #e6f1f6;
     box-shadow: 0 8px 6px -6px black;
@@ -137,9 +176,8 @@
     position: relative;
     background: none repeat scroll 0 0 #fff;
     border: 1px solid #d2d9dd;
-    height: 168px;
     margin: 15px 15px 0 0;
-    padding: 5px 0px;
+    padding: 0 5px;
     a.not-active:hover {
       text-decoration: none;
     }
@@ -155,10 +193,13 @@
       margin: 15px 0;
       line-height: 30px;
       padding-top: 5px;
-      height: 30px;
+      height: 35px;
       i {
         color: #0088cc;
         font-size: 16px;
+      }
+      i[disabled='disabled'] {
+        color: inherit;
       }
       .label {
         padding: 5px 20px;
@@ -192,8 +233,8 @@
       font-weight: 500;
       font-size: 20px;
       line-height: 20px;
-      padding: 5px 5px 0px 5px;
-      margin-bottom: 0px;
+      padding: 5px 5px 0 5px;
+      margin-bottom: 0;
       span {
         margin-left: 20px;
       }
@@ -207,31 +248,121 @@
       text-align: center;
       color: #888;
       font-size: 12px;
-      margin: 0px 0px -18px 1px;
+      margin: 0 0px -18px 1px;
+      padding: 1px;
+    }
+    .patch-icon {
+      text-align: center;
+      color: #ff4500;
+      height: 20px;
+      font-size: 14px;
+      margin: 18px 0px -18px 1px;
       padding: 1px;
     }
     .hosts-section {
       margin-top: 16px;
+      padding-bottom: 8px;
       width: 100%;
       text-align: center;
       background: #f8f8f8;
       border-top: 1px solid #e4e4e4;
-      padding-bottom: 4px;
     }
     .hosts-section .hosts-bar {
       font-size: 14px;
       font-weight: 500;
+      padding: 8px;
     }
     .hosts-section .host-link {
+      margin: 0;
       font-size: 12px;
     }
   }
+  .version-column {
+    min-height: 500px;
+    width: 115px;
+    margin: 15px 7px 0 7px;
+    .version-column-display-name {
+      color: #000;
+      text-align: center;
+      font-weight: 500;
+      font-size: 16px;
+      line-height: 18px;
+      padding: 5px;
+      margin-bottom: 0;
+    }
+    .version-column-show-details {
+      text-align: center;
+      font-size: 13px;
+      padding: 5px;
+      border-bottom: 1px solid #e4e4e4;
+      margin-bottom: 0;
+      a {
+        cursor: pointer;
+      }
+    }
+    .state {
+      margin: 5px 0 15px 0;
+      line-height: 20px;
+      height: 35px;
+      .label-success {
+        line-height: 30px;
+      }
+      .btn.btn-primary:not(.dropdown-toggle) {
+        padding: 4px 5px;
+        min-width: 70px;
+      }
+      .open .dropdown-menu {
+        min-width: 90px;
+      }
+    }
+    .state.installing {
+      margin: 5px 0 15px 0;
+    }
+    .services-section {
+      width: 100%;
+      text-align: center;
+      padding-bottom: 4px;
+      margin-top: -5px;
+      .service-version-info {
+        line-height: 20px;
+        margin-bottom: 9px;
+        padding-top: 6px;
+        text-align: center;
+        span.label {
+          padding: 5px 15px;
+          background-color: #a3a3a3;
+          z-index: 100;
+          position: relative;
+        }
+      }
+    }
+  }
+  div.current-version-box.version-column {
+    .services-section{
+      .service-version-info {
+        span.label {
+          background-color: #468847;
+        }
+      }
+    }
+  }
+  .nav.nav-tabs {
+    margin-bottom: 20px;
+  }
 }
 
-#stack-upgrade-dialog {
+#stack-upgrade-dialog,
+#stack-upgrade-record-dialog {
+  .row {
+    margin: 0;
+    padding: 5px 0;
+  }
+  .upgrade-item-text,
+  .upgrade-group-text {
+    padding-left: 0;
+  }
   .details-box {
     padding: 5px;
-    margin-left: 15px;
     margin-right: 95px;
     .button-row {
       text-align: right;
@@ -239,9 +370,6 @@
     }
     input[type="checkbox"] {
       margin: 0;
-    }
-    .message {
-      line-height: 30px;
     }
   }
   .task-details {
@@ -252,6 +380,7 @@
     textarea {
       width: 100%;
       min-height: 100px;
+      box-sizing: border-box;
     }
   }
   .task-list {
@@ -259,30 +388,185 @@
     .progress {
       margin-bottom: 0;
     }
-    padding-left: 20px;
+    padding-left: 15px;
     i {
       margin-right: 5px;
     }
   }
-  .task-list-main-warp i {
+  .task-list-main-wrap i {
     font-size: 16px;
+  }
+  ul.failed-info-list {
+    max-height: 500px;
+    margin-top: 5px;
+  }
+  .upgrade-options-link {
+    position: absolute;
+    cursor: pointer;
+    right: 10%;
+    top: 13px;
+    width: 100px;
+    a {
+      font-size: 13px;
+    }
+    .glyphicon-cogs {
+      color: #0088cc;
+      margin-right: 3px;
+    }
+  }
+  .upgrade-options-link.disabled {
+    cursor: not-allowed;
+    a, .glyphicon-cogs {
+      color: #808080;
+    }
+    a:hover {
+      text-decoration: none;
+    }
   }
 }
 
 .repository-list {
-  .os-block {
-    border-top: 1px solid #dddddd;
-    padding-top: 10px;
-  }
   input[type="text"] {
     width: 80%;
+  }
+}
+
+.upgrade-options-popup .modal .modal-body {
+  min-height: 295px;
+}
+#upgrade-options-popup-content {
+  .method-options {
+    margin: 10px;
+
+    .method-option {
+      margin-bottom: 5px;
+    }
+    .img-thumbnail {
+      background-color: #e4e4e4;
+      .method-name,.method-icon,.method-description {
+        color: #333;
+      }
+      cursor: pointer;
+      border: none;
+      width: 99%;
+      .method-icon {
+        font-size: 40px;
+      }
+      .method-name {
+        font-size: 16px;
+        font-weight: bold;
+        text-align: center;
+        margin-top: 2px;
+      }
+      .method-description {
+        margin-top: 5px;
+        text-align: center;
+      }
+    }
+
+    .ROLLING {
+      .method-icon {
+        margin-left: 88px;
+      }
+    }
+    .NON_ROLLING, .HOST_ORDERED {
+      .method-icon {
+        margin-left: 94px;
+      }
+    }
+    .selected.ROLLING, .selected.NON_ROLLING {
+      background-color: #d3e7ca;
+      box-shadow: 0 8px 6px -6px #b3b3b3;
+    }
+    .ROLLING:hover, .NON_ROLLING:hover {
+      background-color: #cbe3c2;
+    }
+
+    .img-thumbnail.not-allowed:hover {
+      background-color: #e4e4e4;
+    }
+    .img-thumbnail.not-allowed {
+      cursor: not-allowed;
+    }
+  }
+
+  .method-options.disabled {
+    .img-thumbnail {
+      cursor: not-allowed;
+      .method-name,.method-icon,.method-description {
+        color: #a9a9a9;
+      }
+    }
+    .ROLLING,.NON_ROLLING,
+    .ROLLING:hover,.NON_ROLLING:hover {
+      background-color: #f3f3f3;
+    }
+    .selected.ROLLING,.selected.NON_ROLLING,
+    .selected.ROLLING:hover,.selected.NON_ROLLING:hover {
+      border: solid 2px #a9a9a9;
+      box-shadow: 0 8px 6px -6px #a9a9a9;
+    }
+  }
+
+  .method-precheck-message {
+    a {
+      cursor: pointer;
+    }
+    text-align: center;
+    padding-top: 10px;
+    font-size: 13px;
+    &.checking {
+      padding-top: 5px;
+      line-height: @spinner-small-height;
+      .spinner {
+        display: inline-block;
+        width: auto;
+        height: @spinner-small-height;
+        padding-left: @spinner-small-width + 4px;
+        i {
+          font-size: 1em;
+        }
+        background-repeat: no-repeat;
+        background-size: contain;
+      }
+    }
+  }
+  .method-precheck-message.GREEN {
+    .glyphicon-ok {
+      color: @health-status-green;
+      font-size: 16px;
+    }
+  }
+  .method-precheck-message.RED {
+    .glyphicon-remove {
+      color: #cf2a27;
+      font-size: 16px;
+    }
+  }
+  .method-precheck-message.ORANGE {
+    .glyphicon-warning-sign {
+      color: @health-status-orange;
+      font-size: 16px;
+    }
+  }
+  .tolerance-text .tolerance-option {
+    margin: 5px 15px;
+    .ember-checkbox {
+      margin-top: 0;
+    }
+  }
+  .text {
+    margin-left: 10px;
+  }
+  .glyphicon-question-sign {
+    color: @blue;
   }
 }
 
 .admin-cluster {
   .repositories-table {
     margin-bottom: 10px;
-    border: 1px solid #dddddd;
+    border: 1px solid #ddd;
     overflow: auto;
     div {
       float: left;
@@ -308,7 +592,7 @@
       width: 100%;
       .trow {
         width: 100%;
-        border-top: 1px solid #dddddd;
+        border-top: 1px solid #ddd;
         padding-top: 8px;
         .os-td {
           padding-top: 4px;
@@ -355,7 +639,7 @@
               cursor: pointer;
               text-decoration: none;
             }
-            .icon-remove-sign {
+            .glyphicon-remove-sign {
               color: #808080;
             }
           }
@@ -364,8 +648,6 @@
     }
     .textfield-error input {
       border-color: #b94a48;
-      -webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-      -moz-box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
       box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
     }
     .disabled-textfield input {
@@ -384,10 +666,46 @@
     .checkbox {
       margin-left: 3px;
       margin-right: 8px;
-      margin-top: 0px;
+      margin-top: 0;
     }
-    .icon-question-sign {
-      color: @blue;
+  }
+}
+
+#skip-validation,
+#use-redhat {
+  .glyphicon-question-sign {
+    color: @blue;
+  }
+
+  .redhat-label {
+    padding-left: 0;
+    margin-left: -7px;
+  }
+}
+
+.upgrade-wizard-modal {
+  .modal-body {
+    position: static;
+  }
+}
+
+#upgrade-failed-hosts {
+  .host-list-container {
+    overflow-y: auto;
+    max-height: 320px;
+    margin-right: -15px;
+    .panel {
+      margin-bottom: 0;
+      .panel-group {
+        border: none;
+        .panel-toggle {
+          line-height: 20px;
+          padding: 5px 0;
+          .label {
+            margin-right: 10px;
+          }
+        }
+      }
     }
   }
 }

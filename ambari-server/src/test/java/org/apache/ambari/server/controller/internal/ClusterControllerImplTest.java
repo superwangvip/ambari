@@ -36,8 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import junit.framework.Assert;
-
 import org.apache.ambari.server.controller.spi.ClusterController;
 import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
 import org.apache.ambari.server.controller.spi.NoSuchResourceException;
@@ -62,6 +60,8 @@ import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.easymock.EasyMock;
 import org.junit.Test;
 
+import junit.framework.Assert;
+
 /**
  * Cluster controller tests
  */
@@ -76,6 +76,8 @@ public class ClusterControllerImplTest {
     propertyProviderProperties.add(PropertyHelper.getPropertyId("c3", "p6"));
     propertyProviderProperties.add(PropertyHelper.getPropertyId("c4", "p7"));
     propertyProviderProperties.add(PropertyHelper.getPropertyId("c4", "p8"));
+    propertyProviderProperties.add(PropertyHelper.getPropertyId("alerts_summary", "WARNING"));
+    propertyProviderProperties.add(PropertyHelper.getPropertyId("alerts_summary", "CRITICAL"));
   }
 
   private static final PropertyProvider propertyProvider = new PropertyProvider() {
@@ -765,7 +767,7 @@ public class ClusterControllerImplTest {
 
     Predicate predicate = new PredicateBuilder().property("c1/p2").equals(1).toPredicate();
 
-    controller.deleteResources(Resource.Type.Host, predicate);
+    controller.deleteResources(Resource.Type.Host, new RequestImpl(null, null, null, null), predicate);
 
     Assert.assertEquals(TestHostResourceProvider.Action.Delete, resourceProvider.getLastAction());
     Assert.assertNull(resourceProvider.getLastRequest());
@@ -780,7 +782,7 @@ public class ClusterControllerImplTest {
     Predicate predicate = new PredicateBuilder().property(UNSUPPORTED_PROPERTY).equals(1).toPredicate();
 
     try {
-      controller.deleteResources(Resource.Type.Host, predicate);
+      controller.deleteResources(Resource.Type.Host, new RequestImpl(null, null, null, null), predicate);
       Assert.fail("Expected an UnsupportedPropertyException for the unsupported properties.");
     } catch (UnsupportedPropertyException e) {
       // Expected
@@ -795,7 +797,7 @@ public class ClusterControllerImplTest {
 
     Predicate predicate = new PredicateBuilder().property("c3/p6").equals(1).toPredicate();
 
-    controller.deleteResources(Resource.Type.Host, predicate);
+    controller.deleteResources(Resource.Type.Host, new RequestImpl(null, null, null, null), predicate);
 
     Assert.assertEquals(TestHostResourceProvider.Action.Delete, resourceProvider.getLastAction());
     Assert.assertNull(resourceProvider.getLastRequest());
@@ -892,7 +894,7 @@ public class ClusterControllerImplTest {
             anyObject(Predicate.class))).andReturn(
         Collections.<Resource> emptySet()).anyTimes();
 
-    expect(resourceProvider.checkPropertyIds(EasyMock.anyObject(Set.class))).andReturn(
+    expect(resourceProvider.checkPropertyIds(EasyMock.<Set<String>>anyObject())).andReturn(
         new HashSet<String>()).anyTimes();
 
     // strict pageRequest mock to ensure that paging is not performed on
@@ -987,7 +989,7 @@ public class ClusterControllerImplTest {
     }
 
     @Override
-    public RequestStatus deleteResources(Predicate predicate) throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
+    public RequestStatus deleteResources(Request request, Predicate predicate) throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
       throw new UnsupportedOperationException(); // not needed for testing
     }
 
@@ -1067,6 +1069,13 @@ public class ClusterControllerImplTest {
         resource.setProperty(PropertyHelper.getPropertyId("c1", "p2"), cnt % 2);
         resource.setProperty(PropertyHelper.getPropertyId("c1", "p3"), "foo");
         resource.setProperty(PropertyHelper.getPropertyId("c2", "p4"), "bar");
+
+        if (cnt % 2 == 0) {
+          resource.setProperty(PropertyHelper.getPropertyId("alerts_summary", "CRITICAL"), "1");
+        } else {
+          resource.setProperty(PropertyHelper.getPropertyId("alerts_summary", "WARNING"), "1");
+        }
+
         resources.add(resource);
       }
 
@@ -1090,7 +1099,7 @@ public class ClusterControllerImplTest {
     }
 
     @Override
-    public RequestStatus deleteResources(Predicate predicate) throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
+    public RequestStatus deleteResources(Request request, Predicate predicate) throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
       lastAction = Action.Delete;
       lastRequest = null;
       lastPredicate = predicate;

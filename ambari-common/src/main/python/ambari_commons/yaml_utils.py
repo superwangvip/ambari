@@ -19,36 +19,67 @@ limitations under the License.
 """
 import re
 
+# [a,b,c]
+REGEX_LIST = '^\w*\[.+\]\w*$'
+
+# {a: v, b: v2, c: v3}
+REGEX_DICTIONARY = '^\w*\{.+\}\w*$'
+
+"""
+storm-cluster:
+  hosts:
+    [c6401.ambari.apache.org, c6402.ambari.apache.org, c6403-master.ambari.apache.org]
+  groups:
+    [hadoop, hadoop-secure]
+
+^\s* - allow any whitespace or newlines to start
+\S+ - at least 1 word character (including dashes)
+[ ]*:[ ]* - followed by a colon (allowing spaces around the colon)
+[\r\n\f]+ - at least 1 newline
+
+\s*\S+[ ]*:[ ]*[\r\n\f] - follow with the same basically to ensure a map of maps
+"""
+REGEX_NESTED_MAPS = "^\s*\S+[ ]*:[ ]*[\r\n\f]+\s*\S+[ ]*:[ ]*[\r\n\f]"
+
+
 def escape_yaml_property(value):
-  unquouted = False
   unquouted_values = ["null", "Null", "NULL", "true", "True", "TRUE", "false",
     "False", "FALSE", "YES", "Yes", "yes", "NO", "No", "no", "ON", "On", "on",
     "OFF", "Off", "off"]
 
+  # known list of boolean/null types
   if value in unquouted_values:
-    unquouted = True
+    return value
 
-  # if is list [a,b,c] or dictionary {a: v, b: v2, c: v3}
-  if re.match('^\w*\[.+\]\w*$', value) or re.match('^\w*\{.+\}\w*$', value):
-    unquouted = True
-
+  # quick pythonic check for integer
   try:
     int(value)
-    unquouted = True
+    return value
   except ValueError:
     pass
 
+  # quick pythonic check for float
   try:
     float(value)
-    unquouted = True
+    return value
   except ValueError:
     pass
 
-  if not unquouted:
-    value = value.replace("'", "''")
-    value = "'" + value + "'"
+  # if is list [a,b,c] or dictionary {a: v, b: v2, c: v3}
+  if re.match(REGEX_LIST, value) or re.match(REGEX_DICTIONARY, value):
+    return value
 
+  # check for a nested map
+  if re.match(REGEX_NESTED_MAPS, value):
+    # nested maps must begin on a newline and not have whitespace on the first line
+    value = value.lstrip()
+    return "\n" + value
+
+  # no more checks, so assume it's a string a quote it
+  value = value.replace("'", "''")
+  value = "'" + value + "'"
   return value
+
 
 def get_values_from_yaml_array(yaml_array):
   """

@@ -28,6 +28,8 @@ App.AssignMasterComponentsView = Em.View.extend({
    */
   title: '',
 
+  showTitle: true,
+
   /**
    * Alert message to be shown on the page
    * @type {String}
@@ -39,9 +41,13 @@ App.AssignMasterComponentsView = Em.View.extend({
    * Otherwise - App.SelectHostView
    * @type {bool}
    */
-  shouldUseInputs: function() {
-    return this.get('controller.hosts.length') > 25;
-  }.property('controller.hosts.length'),
+  shouldUseInputs: Em.computed.gt('controller.hosts.length', 25),
+
+  isBackButtonVisible: true,
+
+  isCancelButtonVisible: false,
+
+  acceptButtonText: Em.I18n.t('common.next') + '&rarr;',
 
   didInsertElement: function () {
     this.get('controller').loadStep();
@@ -57,6 +63,8 @@ App.InputHostView = Em.TextField.extend(App.SelectHost, {
    */
   typeahead: null,
 
+  classNames: ['form-control'],
+
   /**
    * When <code>value</code> (host_info) is changed this method is triggered
    * If new hostname is valid, this host is assigned to master component
@@ -67,10 +75,12 @@ App.InputHostView = Em.TextField.extend(App.SelectHost, {
     var host = this.get('controller.hosts').findProperty('host_name', this.get('value'));
     if (Em.isNone(host)) {
       this.get('controller').updateIsHostNameValidFlag(this.get("component.component_name"), this.get("component.serviceComponentId"), false);
+      this.get('controller').updateIsSubmitDisabled();
       return;
     }
     this.get('controller').assignHostToMaster(this.get("component.component_name"), host.get('host_name'), this.get("component.serviceComponentId"));
     this.tryTriggerRebalanceForMultipleComponents();
+    this.get('controller').updateIsSubmitDisabled();
   }.observes('controller.hostNameCheckTrigger'),
 
   didInsertElement: function () {
@@ -90,6 +100,7 @@ App.InputHostView = Em.TextField.extend(App.SelectHost, {
       self.change();
     });
     this.set('typeahead', typeahead);
+    App.popover($("[rel=popover]"), {'placement': 'right', 'trigger': 'hover'});
   },
 
   /**
@@ -118,6 +129,7 @@ App.InputHostView = Em.TextField.extend(App.SelectHost, {
 
 App.SelectHostView = Em.Select.extend(App.SelectHost, {
 
+  classNames: ['form-control'],
   attributeBindings: ['disabled'],
 
   didInsertElement: function () {
@@ -150,6 +162,12 @@ App.SelectHostView = Em.Select.extend(App.SelectHost, {
 App.AddControlView = Em.View.extend({
 
   /**
+   * DOM node class attribute
+   * @type {string}
+   */
+  uniqueId: Em.computed.format('{0}-add', 'componentName'),
+
+  /**
    * Current component name
    * @type {string}
    */
@@ -157,7 +175,9 @@ App.AddControlView = Em.View.extend({
 
   tagName: "span",
 
-  classNames: ["badge", "badge-important"],
+  classNames: ["label", 'extra-component'],
+
+  classNameBindings: ['uniqueId'],
 
   template: Em.Handlebars.compile('+'),
 
@@ -172,6 +192,13 @@ App.AddControlView = Em.View.extend({
 });
 
 App.RemoveControlView = Em.View.extend({
+  /**
+   * DOM node class attribute
+   * @type {string}
+   */
+  uniqueId: Em.computed.format('{0}-{1}-remove', 'componentName', 'serviceComponentId'),
+
+  classNameBindings: ['uniqueId'],
 
   /**
    * Index for multiple component
@@ -187,7 +214,7 @@ App.RemoveControlView = Em.View.extend({
 
   tagName: "span",
 
-  classNames: ["badge", "badge-important"],
+  classNames: ["label", 'extra-component'],
 
   template: Em.Handlebars.compile('-'),
 

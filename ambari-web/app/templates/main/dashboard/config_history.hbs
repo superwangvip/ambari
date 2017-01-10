@@ -17,7 +17,10 @@
 }}
 
 <div id="config_history">
-  <table class="table advanced-header-table table-bordered table-striped" >
+  <div class="row">
+    <h2 class="table-title col-md-12">{{t dashboard.configHistory.title}}</h2>
+  </div>
+  <table class="table advanced-header-table table-hover">
     <thead>
     {{#view view.sortView classNames="label-row config-history-sort-row"}}
       {{view view.parentView.versionSort}}
@@ -28,11 +31,11 @@
     {{/view}}
 
     <tr class="filter-row config-history-filter-row">
-      <th class="first">{{view view.serviceFilterView}}</th>
-      <th>{{view view.configGroupFilterView}}</th>
-      <th>{{view view.modifiedFilterView}}</th>
-      <th>{{view view.authorFilterView}}</th>
-      <th>{{view view.notesFilterView}}</th>
+      <th class="first cg-service">{{view view.serviceFilterView}}</th>
+      <th class="cg-name">{{view view.configGroupFilterView}}</th>
+      <th class="cg-created">{{view view.modifiedFilterView}}</th>
+      <th class="cg-author">{{view view.authorFilterView}}</th>
+      <th class="cg-notes">{{view view.notesFilterView}}</th>
     </tr>
     </thead>
     <tbody class="services-menu">
@@ -42,10 +45,14 @@
           {{#view view.ConfigVersionView contentBinding="item"}}
             <td class="first">
               <span class="label label-info">{{item.versionText}}</span>
-              <a {{action goToServiceConfigs item}} class="service-name">
+              {{#if view.isServiceLinkDisabled}}
                 {{item.displayName}}
-              </a>
-              <i {{bindAttr class=":icon-refresh :restart-required-service item.isRestartRequired::hidden"}}
+              {{else}}
+                <a {{action goToServiceConfigs item}} class="service-name">
+                  {{item.displayName}}
+                </a>
+              {{/if}}
+              <i {{bindAttr class=":glyphicon :glyphicon-refresh :restart-required-service item.isRestartRequired::hidden"}}
                 rel="Tooltip" {{translateAttr data-original-title="dashboard.configHistory.table.restart.tooltip"}}></i>
             </td>
             <td>{{item.configGroupName}}
@@ -80,25 +87,16 @@
         </tr>
       {{/if}}
     {{else}}
-      <tr><td colspan="5"><div class="spinner"></div></td></tr>
+      <tr><td colspan="5">{{view App.SpinnerView}}</td></tr>
     {{/if}}
     </tbody>
-</table>
+    <tfoot>
+    <tr>
+      <td colspan="5">
+        {{view App.PaginationView dataViewBinding="view" isDataLoadedBinding="view.filteringComplete"}}
+      </td>
+    </tr>
+    </tfoot>
+  </table>
 
-  <div class="page-bar">
-    <div class="filtered-info span4">
-    {{#if view.showFilteredContent}}
-      <label>{{view.filteredContentInfo}} - <a {{action clearFilters target="view"}}
-              href="#">{{t tableView.filters.clearAllFilters}}</a></label>
-    {{/if}}
-    </div>
-    <div class="items-on-page">
-      <label>{{t common.show}}: {{view view.rowsPerPageSelectView selectionBinding="view.displayLength"}}</label>
-    </div>
-    <div class="info">{{view.paginationInfo}}</div>
-    <div class="paging_two_button">
-      {{view view.paginationLeft}}
-      {{view view.paginationRight}}
-    </div>
-  </div>
 </div>

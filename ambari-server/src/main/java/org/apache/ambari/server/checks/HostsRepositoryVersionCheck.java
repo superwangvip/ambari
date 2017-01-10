@@ -31,6 +31,7 @@ import org.apache.ambari.server.state.RepositoryVersionState;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
+import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
 
 import com.google.inject.Singleton;
 
@@ -41,7 +42,9 @@ import com.google.inject.Singleton;
  * orchstration, so no warning is required.
  */
 @Singleton
-@UpgradeCheck(group = UpgradeCheckGroup.REPOSITORY_VERSION)
+@UpgradeCheck(
+    group = UpgradeCheckGroup.REPOSITORY_VERSION,
+    required = { UpgradeType.ROLLING, UpgradeType.NON_ROLLING, UpgradeType.HOST_ORDERED })
 public class HostsRepositoryVersionCheck extends AbstractCheckDescriptor {
 
   static final String KEY_NO_REPO_VERSION = "no_repo_version";
@@ -55,11 +58,7 @@ public class HostsRepositoryVersionCheck extends AbstractCheckDescriptor {
 
   @Override
   public boolean isApplicable(PrereqCheckRequest request) throws AmbariException {
-    if (!super.isApplicable(request)) {
-      return false;
-    }
-
-    return request.getRepositoryVersion() != null;
+    return super.isApplicable(request) && request.getRepositoryVersion() != null;
   }
 
   @Override
@@ -82,7 +81,7 @@ public class HostsRepositoryVersionCheck extends AbstractCheckDescriptor {
         for (HostVersionEntity hve : hostVersionDaoProvider.get().findByHost(host.getHostName())) {
 
           if (hve.getRepositoryVersion().getVersion().equals(request.getRepositoryVersion())
-              && hve.getState() == RepositoryVersionState.INSTALLED) {
+              && (hve.getState() == RepositoryVersionState.INSTALLED || hve.getState() == RepositoryVersionState.NOT_REQUIRED)) {
             found = true;
             break;
           }

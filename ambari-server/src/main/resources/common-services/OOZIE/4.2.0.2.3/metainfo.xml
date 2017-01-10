@@ -32,6 +32,7 @@
           <category>MASTER</category>
           <cardinality>1+</cardinality>
           <versionAdvertised>true</versionAdvertised>
+          <reassignAllowed>true</reassignAllowed>
           <dependencies>
             <dependency>
               <name>HDFS/HDFS_CLIENT</name>
@@ -58,8 +59,14 @@
           <commandScript>
             <script>scripts/oozie_server.py</script>
             <scriptType>PYTHON</scriptType>
-            <timeout>1200</timeout>
+            <timeout>1800</timeout>
           </commandScript>
+          <logs>
+            <log>
+              <logId>oozie_app</logId>
+              <primary>true</primary>
+            </log>
+          </logs>
         </component>
 
         <component>
@@ -118,6 +125,7 @@
             <package>
               <name>mysql-connector-java</name>
               <skipUpgrade>true</skipUpgrade>
+              <condition>should_install_mysql_connector</condition>
             </package>
             <package>
               <name>extjs</name>
@@ -125,34 +133,30 @@
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>redhat5,redhat6,redhat7,suse11</osFamily>
+          <osFamily>redhat5,amazon2015,redhat6,redhat7,suse11,suse12</osFamily>
           <packages>
             <package>
-              <name>oozie_2_3_*</name>
+              <name>oozie_${stack_version}</name>
             </package>
             <package>
-              <name>falcon_2_3_*</name>
+              <name>falcon_${stack_version}</name>
             </package>
           </packages>
         </osSpecific>
         <osSpecific>
-          <osFamily>debian7,ubuntu12,ubuntu14</osFamily>
+          <osFamily>debian7,ubuntu12,ubuntu14,ubuntu16</osFamily>
           <packages>
             <package>
-              <name>oozie-2-3-.*</name>
+              <name>oozie-${stack_version}</name>
             </package>
             <package>
-              <name>falcon-2-3-.*</name>
+              <name>falcon-${stack_version}</name>
             </package>
             <package>
               <name>extjs</name>
             </package>
-            <package>
-              <name>libxml2-utils</name>
-            </package>
           </packages>
         </osSpecific>
-
       </osSpecifics>
 
       <commandScript>
@@ -172,7 +176,16 @@
         <config-type>yarn-site</config-type>
         <config-type>hive-site</config-type>
         <config-type>tez-site</config-type>
+        <config-type>mapred-site</config-type>
       </configuration-dependencies>
+
+      <quickLinksConfigurations>
+        <quickLinksConfiguration>
+          <fileName>quicklinks.json</fileName>
+          <default>true</default>
+        </quickLinksConfiguration>
+      </quickLinksConfigurations>
+
     </service>
   </services>
 </metainfo>

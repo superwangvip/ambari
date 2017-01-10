@@ -21,10 +21,6 @@ var App = require('app');
 App.HDFSLinksView = App.LinkDashboardWidgetView.extend({
 
   templateName: require('templates/main/dashboard/widgets/hdfs_links'),
-  title: Em.I18n.t('dashboard.widgets.HDFSLinks'),
-  id: '11',
-
-  model_type: 'hdfs',
 
   port: '50070',
 
@@ -37,18 +33,14 @@ App.HDFSLinksView = App.LinkDashboardWidgetView.extend({
     this.calc();
   },
 
-  isHAEnabled: function() {
-    return !this.get('model.snameNode');
-  }.property('model.snameNode'),
-  isActiveNNValid: function () {
-    return this.get('model.activeNameNode') != null;
-  }.property('model.activeNameNode'),
-  isStandbyNNValid: function () {
-    return this.get('model.standbyNameNode') != null;
-  }.property('model.standbyNameNode'),
-  isTwoStandbyNN: function () {
-    return (this.get('model.standbyNameNode') != null && this.get('model.standbyNameNode2') != null);
-  }.property('model.standbyNameNode', 'model.standbyNameNode2'),
+  isHAEnabled: Em.computed.not('model.snameNode'),
+
+  isActiveNNValid: Em.computed.bool('model.activeNameNode'),
+
+  isStandbyNNValid: Em.computed.bool('model.standbyNameNode'),
+
+  isTwoStandbyNN: Em.computed.and('model.standbyNameNode', 'model.standbyNameNode2'),
+
   twoStandbyComponent: function () {
     return App.HostComponent.find().findProperty('componentName', 'NAMENODE');
   }.property()

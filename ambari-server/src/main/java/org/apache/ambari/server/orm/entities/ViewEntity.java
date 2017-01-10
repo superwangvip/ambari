@@ -18,16 +18,11 @@
 
 package org.apache.ambari.server.orm.entities;
 
-import org.apache.ambari.server.configuration.Configuration;
-import org.apache.ambari.server.controller.spi.Resource;
-import org.apache.ambari.server.controller.spi.ResourceProvider;
-import org.apache.ambari.server.view.ViewSubResourceDefinition;
-import org.apache.ambari.server.view.configuration.ParameterConfig;
-import org.apache.ambari.server.view.configuration.ResourceConfig;
-import org.apache.ambari.server.view.configuration.ViewConfig;
-import org.apache.ambari.view.validation.Validator;
-import org.apache.ambari.view.View;
-import org.apache.ambari.view.ViewDefinition;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import javax.persistence.Basic;
 import javax.persistence.CascadeType;
@@ -42,11 +37,16 @@ import javax.persistence.OneToMany;
 import javax.persistence.Table;
 import javax.persistence.Transient;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import org.apache.ambari.server.configuration.Configuration;
+import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.ambari.server.controller.spi.ResourceProvider;
+import org.apache.ambari.server.view.ViewSubResourceDefinition;
+import org.apache.ambari.server.view.configuration.ParameterConfig;
+import org.apache.ambari.server.view.configuration.ResourceConfig;
+import org.apache.ambari.server.view.configuration.ViewConfig;
+import org.apache.ambari.view.View;
+import org.apache.ambari.view.ViewDefinition;
+import org.apache.ambari.view.validation.Validator;
 
 /**
  * Entity representing a View.
@@ -56,6 +56,9 @@ import java.util.Set;
     query = "SELECT view FROM ViewEntity view")
 @Entity
 public class ViewEntity implements ViewDefinition {
+
+  public static final String AMBARI_ONLY = "AMBARI-ONLY";
+
   /**
    * The unique view name.
    */
@@ -728,6 +731,12 @@ public class ViewEntity implements ViewDefinition {
   public void setConfiguration(ViewConfig configuration) {
     this.configuration       = configuration;
     this.clusterConfigurable = false;
+
+    if(configuration.getClusterConfigOptions() != null &&
+       configuration.getClusterConfigOptions().equals(AMBARI_ONLY)){
+      this.clusterConfigurable = true;
+      return;
+    }
 
     // if any of the parameters contain a cluster config element then the view is cluster configurable
     for (ParameterConfig parameterConfig : configuration.getParameters()) {

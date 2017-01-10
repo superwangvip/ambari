@@ -36,13 +36,12 @@ import org.apache.ambari.server.agent.HeartBeatHandler;
 import org.apache.ambari.server.agent.HeartBeatResponse;
 import org.apache.ambari.server.agent.Register;
 import org.apache.ambari.server.agent.RegistrationResponse;
+import org.apache.ambari.server.agent.RegistrationStatus;
 import org.apache.ambari.server.state.fsm.InvalidStateTransitionException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import com.google.inject.Inject;
-
-import org.apache.ambari.server.agent.RegistrationStatus;
 
 /**
  * Agent Resource represents Ambari agent controller.
@@ -58,6 +57,13 @@ public class AgentResource {
   @Inject
   public static void init(HeartBeatHandler instance) {
     hh = instance;
+    //hh.start();
+  }
+
+  /**
+   * Explicitly start HH
+   */
+  public static void statHeartBeatHandler() {
     hh.start();
   }
 

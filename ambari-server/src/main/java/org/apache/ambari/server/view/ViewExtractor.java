@@ -15,15 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.ambari.server.view;
 
-import org.apache.ambari.server.orm.entities.ViewEntity;
-import org.apache.ambari.server.view.configuration.ViewConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.inject.Inject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -32,6 +25,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
+
+import javax.inject.Inject;
+
+import org.apache.ambari.server.orm.entities.ViewEntity;
+import org.apache.ambari.server.view.configuration.ViewConfig;
+import org.apache.commons.io.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Extractor for view archives.
@@ -73,9 +74,13 @@ public class ViewExtractor {
     String archivePath = archiveDir.getAbsolutePath();
 
     try {
+      // Remove directory if jar was updated since last extracting
+      if (archiveDir.exists() && viewArchive != null && viewArchive.lastModified() > archiveDir.lastModified()) {
+        FileUtils.deleteDirectory(archiveDir);
+      }
+
       // Skip if the archive has already been extracted
       if (!archiveDir.exists()) {
-
         String msg = "Creating archive folder " + archivePath + ".";
 
         view.setStatusDetail(msg);

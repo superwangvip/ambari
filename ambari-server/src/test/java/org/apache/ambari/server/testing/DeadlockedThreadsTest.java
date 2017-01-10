@@ -21,8 +21,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
 import org.junit.Assert;
-import org.junit.Test;
 
 /**
  *
@@ -172,16 +172,16 @@ public class DeadlockedThreadsTest {
       }
     }
     private void f() {
-      w.lock(); {
-        g();
-      } w.unlock();
+      w.lock();
+      g();
+      w.unlock();
     }
     
     private void g() {
-      r.lock(); {
-        // do some work...
-        for (int i = 0; i < 1000 * 1000; i++) ;
-      } r.unlock();
+      r.lock();
+      // do some work...
+      for (int i = 0; i < 1000 * 1000; i++) ;
+      r.unlock();
     }
   }
   

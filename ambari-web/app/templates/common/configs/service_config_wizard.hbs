@@ -17,26 +17,40 @@
 }}
 
 {{#if view.supportsHostOverrides}}
-  <div class="alert alert-info">
+  <div class="alert alert-info config-manage-nav">
     {{t common.group}}&nbsp;
-    <div class="config-groups-dropdown">
-      {{view App.ConfigGroupDropdownView}}
-    </div>
-    {{#isAccessible ADMIN}}
+	  <span class="btn-group config-groups-dropdown">
+		  <button {{bindAttr disabled="controller.isHostsConfigsPage"}} class="btn btn-default dropdown-toggle first" data-toggle="dropdown">{{selectedConfigGroup.displayNameHosts}}</button>
+		  <button {{bindAttr disabled="controller.isHostsConfigsPage"}} class="btn btn-default dropdown-toggle" data-toggle="dropdown">
+        <span class="caret"></span>
+      </button>
+		  <ul class="dropdown-menu config-groups-dropdown-menu">
+        <!-- available config group menu links -->
+        {{#each configGroup in configGroups}}
+          <li>
+            <a href="#" {{action "selectConfigGroup" configGroup target="controller"}}>
+              {{configGroup.displayNameHosts}}
+            </a>
+          </li>
+        {{/each}}
+      </ul>
+		</span>
+    {{#isAuthorized "SERVICE.MANAGE_CONFIG_GROUPS"}}
       {{#if controller.isHostsConfigsPage}}
         &nbsp;<a href="#" {{action "switchHostGroup" target="controller"}}>{{t common.change}}</a>
       {{else}}
         <a href="#"  class="link-left-pad" {{action "manageConfigurationGroup" target="controller"}}>{{t services.service.actions.manage_configuration_groups.short}}</a>
       {{/if}}
-    {{/isAccessible}}
+    {{/isAuthorized}}
     <div class="pull-right">
       {{view App.FilterComboCleanableView filterBinding="view.filter" columnsBinding="view.columns" popoverDescriptionBinding="view.propertyFilterPopover"}}
     </div>
+    <div class="clearfix"></div>
   </div>
 {{/if}}
 
 {{#if view.supportsConfigLayout}}
-  <ul class="nav nav-tabs mbm config-tabs">
+  <ul class="nav nav-tabs mbm">
     {{#each tab in view.tabs}}
       <li rel='tooltip' {{bindAttr class="tab.isActive:active tab.isHiddenByFilter:disabled" data-original-title="tab.tooltipMsg"}}>
         <a href="#" {{action "setActiveTab" tab target="view"}} {{bindAttr data-target="tab.headingClass"}} data-toggle="tab">
@@ -58,11 +72,9 @@
     {{#each tab in view.tabs}}
       <div {{bindAttr class=":tab-pane tab.isActive:active tab.id"}}>
         {{#if tab.isAdvanced}}
-          <div class="accordion">
-            {{#each catView in view.serviceConfigsByCategoryView.childViews}}
-              {{view catView}}
-            {{/each}}
-          </div>
+          {{#each catView in view.serviceConfigsByCategoryView.childViews}}
+            {{view catView}}
+          {{/each}}
         {{else}}
           {{! Render Enhanced Config Section }}
           {{view App.ServiceConfigLayoutTabView contentBinding="tab"}}
@@ -71,11 +83,9 @@
     {{/each}}
   </div>
 {{else}}
-  <div class="accordion">
-    {{#each catView in view.serviceConfigsByCategoryView.childViews}}
-      {{view catView}}
-    {{/each}}
-  </div>
+  {{#each catView in view.serviceConfigsByCategoryView.childViews}}
+    {{view catView}}
+  {{/each}}
 {{/if}}
 {{#if view.isAllConfigsHidden}}
   <div class="alert alert-info col-sm-12">

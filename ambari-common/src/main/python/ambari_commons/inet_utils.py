@@ -21,10 +21,33 @@ limitations under the License.
 import os
 import sys
 import urllib2
+import socket
+from functools import wraps
 
-from exceptions import *
+from exceptions import FatalException, NonFatalException, TimeoutError
+
 from logging_utils import *
 from os_check import OSCheck
+
+
+def openurl(url, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *args, **kwargs):
+  """
+
+  :param url: url to open
+  :param timeout: open timeout, raise TimeoutError on timeout
+  :rtype urllib2.Request
+  """
+  try:
+    return urllib2.urlopen(url, timeout=timeout, *args, **kwargs)
+  except urllib2.URLError as e:
+    # Python 2.6 timeout handling
+    if hasattr(e, "reason") and isinstance(e.reason, socket.timeout):
+      raise TimeoutError(e.reason)
+    else:
+      raise e  # re-throw exception
+  except socket.timeout as e:  # Python 2.7 timeout handling
+    raise TimeoutError(e)
+
 
 def download_file(link, destination, chunk_size=16 * 1024, progress_func = None):
   print_info_msg("Downloading {0} to {1}".format(link, destination))
@@ -159,3 +182,24 @@ def resolve_address(address):
     if address == '0.0.0.0':
       return '127.0.0.1'
   return address
+
+def ensure_ssl_using_protocol(protocol):
+  """
+  Monkey patching ssl module to force it use tls_v1. Do this in common module to avoid problems with
+  PythonReflectiveExecutor.
+  :param protocol: one of ("PROTOCOL_SSLv2", "PROTOCOL_SSLv3", "PROTOCOL_SSLv23", "PROTOCOL_TLSv1", "PROTOCOL_TLSv1_1", "PROTOCOL_TLSv1_2")
+  :return:
+  """
+  from functools import wraps
+  import ssl
+  if hasattr(ssl.wrap_socket, "_ambari_patched"):
+    return # do not create chain of wrappers, patch only once
+  def sslwrap(func):
+    @wraps(func)
+    def bar(*args, **kw):
+      import ssl
+      kw['ssl_version'] = getattr(ssl, protocol)
+      return func(*args, **kw)
+    bar._ambari_patched = True
+    return bar
+  ssl.wrap_socket = sslwrap(ssl.wrap_socket)

@@ -18,15 +18,17 @@
 
 package org.apache.ambari.server.controller.gsinstaller;
 
-import junit.framework.Assert;
+import java.util.HashMap;
+import java.util.Set;
+
+import org.apache.ambari.server.controller.internal.RequestImpl;
 import org.apache.ambari.server.controller.spi.Predicate;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.junit.Test;
 
-import java.util.HashMap;
-import java.util.Set;
+import junit.framework.Assert;
 
 /**
  * Tests for GSInstallerClusterProvider
@@ -93,7 +95,7 @@ public class GSInstallerClusterProviderTest {
     GSInstallerResourceProvider provider = new GSInstallerClusterProvider(clusterDefinition);
 
     try {
-      provider.deleteResources(null);
+      provider.deleteResources(new RequestImpl(null, null, null, null), null);
       Assert.fail("Expected UnsupportedOperationException.");
     } catch (UnsupportedOperationException e) {
       //expected

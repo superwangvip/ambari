@@ -18,25 +18,38 @@
 
 package org.apache.ambari.server.api.handlers;
 
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.fail;
+
+import java.util.HashSet;
+import java.util.Set;
+
 import org.apache.ambari.server.api.query.Query;
 import org.apache.ambari.server.api.query.render.DefaultRenderer;
 import org.apache.ambari.server.api.query.render.Renderer;
 import org.apache.ambari.server.api.resources.ResourceDefinition;
 import org.apache.ambari.server.api.resources.ResourceInstance;
-import org.apache.ambari.server.api.services.*;
+import org.apache.ambari.server.api.services.Request;
+import org.apache.ambari.server.api.services.RequestBody;
+import org.apache.ambari.server.api.services.Result;
+import org.apache.ambari.server.api.services.ResultStatus;
 import org.apache.ambari.server.api.services.persistence.PersistenceManager;
 import org.apache.ambari.server.api.util.TreeNode;
 import org.apache.ambari.server.controller.spi.RequestStatus;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.events.publishers.AmbariEventPublisher;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
 import org.apache.ambari.server.view.ViewRegistry;
 import org.junit.Before;
 import org.junit.Test;
-
-import java.util.*;
-
-import static org.easymock.EasyMock.*;
-import static org.junit.Assert.*;
 
 /**
  * Unit tests for CreateHandler.
@@ -236,6 +249,37 @@ public class CreateHandlerTest {
     assertEquals(ResultStatus.STATUS.ACCEPTED, result.getStatus().getStatus());
     verify(request, body, resource, resourceDefinition, query, pm, status, resource1, resource2,
         requestResource);
+  }
+
+  @Test
+  public void testHandleRequest__AuthorizationFailure() throws Exception {
+    Request request = createMock(Request.class);
+    RequestBody body = createMock(RequestBody.class);
+    ResourceInstance resource = createMock(ResourceInstance.class);
+    ResourceDefinition resourceDefinition = createMock(ResourceDefinition.class);
+    Query query = createStrictMock(Query.class);
+    PersistenceManager pm = createStrictMock(PersistenceManager.class);
+    Renderer renderer = new DefaultRenderer();
+
+    // expectations
+    expect(request.getResource()).andReturn(resource).atLeastOnce();
+    expect(request.getBody()).andReturn(body).atLeastOnce();
+    expect(request.getQueryPredicate()).andReturn(null).atLeastOnce();
+    expect(request.getRenderer()).andReturn(renderer);
+
+    expect(resource.getQuery()).andReturn(query);
+    query.setRenderer(renderer);
+    expect(resource.getResourceDefinition()).andReturn(resourceDefinition).anyTimes();
+    expect(resourceDefinition.isCreatable()).andReturn(true).anyTimes();
+
+    expect(pm.create(resource, body)).andThrow(new AuthorizationException());
+
+    replay(request, body, resource, resourceDefinition, query, pm);
+
+    Result result = new TestCreateHandler(pm).handleRequest(request);
+
+    assertEquals(ResultStatus.STATUS.FORBIDDEN, result.getStatus().getStatus());
+    verify(request, body, resource, resourceDefinition, query, pm);
   }
 
   private class TestCreateHandler extends CreateHandler {

@@ -25,6 +25,11 @@ App.RAHighAvailabilityWizardController = App.WizardController.extend({
 
   totalSteps: 4,
 
+  /**
+   * @type {string}
+   */
+  displayName: Em.I18n.t('admin.ra_highAvailability.wizard.header'),
+
   isFinished: false,
 
   content: Em.Object.create({
@@ -72,8 +77,9 @@ App.RAHighAvailabilityWizardController = App.WizardController.extend({
           var self = this;
           this.loadHosts().done(function () {
             self.loadServicesFromServer();
-            self.loadMasterComponentHosts();
-            dfd.resolve();
+            self.loadMasterComponentHosts().done(function () {
+              dfd.resolve();
+            });
           });
           return dfd.promise();
         }

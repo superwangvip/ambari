@@ -25,11 +25,11 @@ import java.util.Set;
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.controller.PrereqCheckRequest;
 import org.apache.ambari.server.orm.entities.RepositoryVersionEntity;
-import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.ConfigMergeHelper;
 import org.apache.ambari.server.state.ConfigMergeHelper.ThreeWayValue;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
+import org.apache.ambari.server.state.stack.upgrade.UpgradeType;
 import org.apache.commons.lang.StringUtils;
 
 import com.google.inject.Inject;
@@ -39,7 +39,9 @@ import com.google.inject.Singleton;
  * Checks for configuration merge conflicts.
  */
 @Singleton
-@UpgradeCheck(order = 99.0f)
+@UpgradeCheck(
+    order = 99.0f,
+    required = { UpgradeType.ROLLING, UpgradeType.NON_ROLLING, UpgradeType.HOST_ORDERED })
 public class ConfigurationMergeCheck extends AbstractCheckDescriptor {
 
   @Inject
@@ -48,33 +50,6 @@ public class ConfigurationMergeCheck extends AbstractCheckDescriptor {
   public ConfigurationMergeCheck() {
     super(CheckDescription.CONFIG_MERGE);
   }
-
-  @Override
-  public boolean isApplicable(PrereqCheckRequest request) throws AmbariException {
-    if (!super.isApplicable(request)) {
-      return false;
-    }
-
-    String stackName = request.getTargetStackId().getStackName();
-    String repoVersion = request.getRepositoryVersion();
-    if (null == repoVersion) {
-      return false;
-    }
-
-    RepositoryVersionEntity rve = repositoryVersionDaoProvider.get().findByStackNameAndVersion(stackName, repoVersion);
-    if (null == rve) {
-      return false;
-    }
-
-    Cluster cluster = clustersProvider.get().getCluster(request.getClusterName());
-
-    if (rve.getStackId().equals(cluster.getCurrentStackVersion())) {
-      return false;
-    }
-
-    return true;
-  }
-
 
   /**
    * The following logic determines if a warning is generated for config merge

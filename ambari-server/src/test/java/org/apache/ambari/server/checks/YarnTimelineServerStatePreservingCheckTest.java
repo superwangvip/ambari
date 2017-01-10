@@ -32,8 +32,10 @@ import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.stack.PrereqCheckStatus;
 import org.apache.ambari.server.state.stack.PrerequisiteCheck;
+import org.apache.ambari.server.state.stack.UpgradePack.PrerequisiteCheckConfig;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -41,7 +43,9 @@ import com.google.inject.Provider;
 
 /**
  * Tests for {@link YarnTimelineServerStatePreservingCheckTest}
+ * @Deprecated
  */
+@Ignore
 public class YarnTimelineServerStatePreservingCheckTest {
   private final Clusters m_clusters = Mockito.mock(Clusters.class);
 
@@ -60,8 +64,6 @@ public class YarnTimelineServerStatePreservingCheckTest {
       }
     };
     Configuration config = Mockito.mock(Configuration.class);
-    Mockito.when(config.getRollingUpgradeMinStack()).thenReturn("HDP-2.2");
-    Mockito.when(config.getRollingUpgradeMaxStack()).thenReturn("");
     m_check.config = config;
   }
 
@@ -85,8 +87,15 @@ public class YarnTimelineServerStatePreservingCheckTest {
     Mockito.when(clusterVersionEntity.getRepositoryVersion()).thenReturn(repositoryVersionEntity);
     Mockito.when(repositoryVersionEntity.getVersion()).thenReturn("2.2.4.2");
 
+    Map<String, String> checkProperties = new HashMap<String, String>();
+    checkProperties.put("min-applicable-stack-version","HDP-2.2.4.2");
+    PrerequisiteCheckConfig prerequisiteCheckConfig = Mockito.mock(PrerequisiteCheckConfig.class);
+    Mockito.when(prerequisiteCheckConfig.getCheckProperties(
+        m_check.getClass().getName())).thenReturn(checkProperties);
+
     PrereqCheckRequest request = new PrereqCheckRequest("cluster");
     request.setRepositoryVersion("2.3.0.0");
+    request.setPrerequisiteCheckConfig(prerequisiteCheckConfig);
 
     // YARN not installed
     Assert.assertFalse(m_check.isApplicable(request));
@@ -146,7 +155,15 @@ public class YarnTimelineServerStatePreservingCheckTest {
     RepositoryVersionEntity repositoryVersionEntity = Mockito.mock(RepositoryVersionEntity.class);
     Mockito.when(clusterVersionEntity.getRepositoryVersion()).thenReturn(repositoryVersionEntity);
     Mockito.when(m_clusters.getCluster("c1")).thenReturn(cluster);
+
+    Map<String, String> checkProperties = new HashMap<String, String>();
+    checkProperties.put("min-applicable-stack-version","HDP-2.2.4.2");
+    PrerequisiteCheckConfig prerequisiteCheckConfig = Mockito.mock(PrerequisiteCheckConfig.class);
+    Mockito.when(prerequisiteCheckConfig.getCheckProperties(
+        m_check.getClass().getName())).thenReturn(checkProperties);
+
     PrereqCheckRequest request = new PrereqCheckRequest("c1");
+    request.setPrerequisiteCheckConfig(prerequisiteCheckConfig);
 
     // Check < 2.2.4.2
     Mockito.when(repositoryVersionEntity.getVersion()).thenReturn("2.1.1.1");
@@ -186,7 +203,15 @@ public class YarnTimelineServerStatePreservingCheckTest {
     RepositoryVersionEntity repositoryVersionEntity = Mockito.mock(RepositoryVersionEntity.class);
     Mockito.when(clusterVersionEntity.getRepositoryVersion()).thenReturn(repositoryVersionEntity);
     Mockito.when(m_clusters.getCluster("c1")).thenReturn(cluster);
+
+    Map<String, String> checkProperties = new HashMap<String, String>();
+    checkProperties.put("min-applicable-stack-version", "HDP-2.2.4.2");
+    PrerequisiteCheckConfig prerequisiteCheckConfig = Mockito.mock(PrerequisiteCheckConfig.class);
+    Mockito.when(prerequisiteCheckConfig.getCheckProperties(
+        m_check.getClass().getName())).thenReturn(checkProperties);
+
     PrereqCheckRequest request = new PrereqCheckRequest("c1");
+    request.setPrerequisiteCheckConfig(prerequisiteCheckConfig);
 
     Mockito.when(repositoryVersionEntity.getVersion()).thenReturn("2.3.0.1");
     boolean isApplicable = m_check.isApplicable(request);

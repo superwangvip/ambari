@@ -104,10 +104,7 @@ App.AlertConfigProperty = Ember.Object.extend({
    * if false - label is shown after input
    * @type {Boolean}
    */
-  isPreLabeled: function () {
-    var afterLabeledTypes = ['radioButton'];
-    return !afterLabeledTypes.contains(this.get('displayType'));
-  }.property('displayType'),
+  isPreLabeled: Em.computed.notExistsIn('displayType', ['radioButton']),
 
   /**
    * value converted to appropriate format for sending to server
@@ -115,9 +112,7 @@ App.AlertConfigProperty = Ember.Object.extend({
    * should be defined in child class
    * @type {*}
    */
-  apiFormattedValue: function () {
-    return this.get('value');
-  }.property('value'),
+  apiFormattedValue: Em.computed.alias('value'),
 
   /**
    * define if property was changed by user
@@ -144,8 +139,9 @@ App.AlertConfigProperty = Ember.Object.extend({
         return App.AlertConfigThresholdView;
       case 'radioButton':
         return App.AlertConfigRadioButtonView;
+      case 'parameter':
+        return App.AlertConfigParameterView;
       default:
-        console.error('Unable to find viewClass for displayType ', displayType);
     }
   }.property('displayType'),
 
@@ -167,7 +163,6 @@ App.AlertConfigProperties = {
     name: 'alert_name',
     label: 'Alert Name',
     displayType: 'textField',
-    classNames: 'alert-text-input',
     apiProperty: 'name'
   }),
 
@@ -178,28 +173,18 @@ App.AlertConfigProperties = {
     apiProperty: 'name'
   }),
 
-  ServiceAlertType: App.AlertConfigProperty.extend({
-    name: 'alert_type_service',
-    label: 'Service Alert Definition',
-    displayType: 'radioButton',
-    group: 'alert_type'
-  }),
-
-  HostAlertType: App.AlertConfigProperty.extend({
-    name: 'alert_type_host',
-    label: 'Host Alert Definition',
-    displayType: 'radioButton',
-    group: 'alert_type'
-  }),
-
   Service: App.AlertConfigProperty.extend({
     name: 'service',
     label: 'Service',
     displayType: 'select',
     apiProperty: 'service_name',
     apiFormattedValue: function () {
-      return App.StackService.find().findProperty('displayName', this.get('value')).get('serviceName');
-    }.property('value')
+      return this.get('value') == 'CUSTOM' ? this.get('value') : App.StackService.find().findProperty('displayName', this.get('value')).get('serviceName');
+    }.property('value'),
+    change: function () {
+      this.set('property.value', true);
+      this.get('parentView.controller').changeService(this.get('property.name'));
+    }
   }),
 
   Component: App.AlertConfigProperty.extend({
@@ -208,7 +193,7 @@ App.AlertConfigProperties = {
     displayType: 'select',
     apiProperty: 'component_name',
     apiFormattedValue: function () {
-      return App.StackServiceComponent.find().findProperty('displayName', this.get('value')).get('componentName');
+      return this.get('value') == 'No component' ? this.get('value') : App.StackServiceComponent.find().findProperty('displayName', this.get('value')).get('componentName');
     }.property('value')
   }),
 
@@ -226,7 +211,6 @@ App.AlertConfigProperties = {
     name: 'description',
     label: 'Description',
     displayType: 'textArea',
-    classNames: 'alert-config-text-area',
     // todo: check value after API will be provided
     apiProperty: 'description'
   }),
@@ -236,7 +220,7 @@ App.AlertConfigProperties = {
     label: 'Check Interval',
     displayType: 'textField',
     unit: 'Minute',
-    classNames: 'alert-interval-input',
+    colWidth: 'col-md-4',
     apiProperty: 'interval',
     isValid: function () {
       var value = this.get('value');
@@ -298,8 +282,6 @@ App.AlertConfigProperties = {
 
     displayType: 'threshold',
 
-    classNames: 'alert-thresholds-input',
-
     apiProperty: [],
 
     init: function () {
@@ -337,17 +319,15 @@ App.AlertConfigProperties = {
      * Custom css-class for different badges
      * type {string}
      */
-    badgeCssClass: function () {
-      return 'alert-state-' + this.get('badge');
-    }.property('badge'),
+    badgeCssClass: Em.computed.format('alert-state-{0}', 'badge'),
 
     /**
      * Determines if <code>value</code> or <code>text</code> were changed
      * @type {bool}
      */
     wasChanged: function () {
-      return (this.get('previousValue') !== null && this.get('value') !== this.get('previousValue')) ||
-      (this.get('previousText') !== null && this.get('text') !== this.get('previousText'));
+      return this.get('previousValue') !== null && this.get('value') !== this.get('previousValue') ||
+      this.get('previousText') !== null && this.get('text') !== this.get('previousText');
     }.property('value', 'text', 'previousValue', 'previousText'),
 
     /**
@@ -414,9 +394,8 @@ App.AlertConfigProperties = {
 
   URI: App.AlertConfigProperty.extend({
     name: 'uri',
-    label: 'URI',
+    label: 'Host',
     displayType: 'textField',
-    classNames: 'alert-text-input',
     apiProperty: 'source.uri'
   }),
 
@@ -424,7 +403,6 @@ App.AlertConfigProperties = {
     name: 'uri',
     label: 'URI',
     displayType: 'textArea',
-    classNames: 'alert-config-text-area',
     apiProperty: 'source.uri',
     apiFormattedValue: function () {
       var result = {};
@@ -442,14 +420,18 @@ App.AlertConfigProperties = {
     label: 'Default Port',
     displayType: 'textField',
     classNames: 'alert-port-input',
-    apiProperty: 'source.default_port'
+    apiProperty: 'source.default_port',
+    isValid: function () {
+      var value = this.get('value');
+      if (!value) return false;
+      return String(value) === String(parseInt(value, 10)) && value >= 1;
+    }.property('value')
   }),
 
   Path: App.AlertConfigProperty.extend({
     name: 'path',
     label: 'Path',
     displayType: 'textField',
-    classNames: 'alert-text-input',
     apiProperty: 'source.path'
   }),
 
@@ -457,10 +439,7 @@ App.AlertConfigProperties = {
     name: 'metrics',
     label: 'JMX/Ganglia Metrics',
     displayType: 'textArea',
-    classNames: 'alert-config-text-area',
-    apiProperty: function () {
-      return this.get('isJMXMetric') ? 'source.jmx.property_list' : 'source.ganglia.property_list'
-    }.property('isJMXMetric'),
+    apiProperty: Em.computed.ifThenElse('isJMXMetric', 'source.jmx.property_list', 'source.ganglia.property_list'),
     apiFormattedValue: function () {
       return this.get('value').split(',\n');
     }.property('value')
@@ -470,14 +449,69 @@ App.AlertConfigProperties = {
     name: 'metrics_string',
     label: 'Format String',
     displayType: 'textArea',
-    classNames: 'alert-config-text-area',
-    apiProperty: function () {
-      return this.get('isJMXMetric') ? 'source.jmx.value' : 'source.ganglia.value'
-    }.property('isJMXMetric')
+    apiProperty: Em.computed.ifThenElse('isJMXMetric', 'source.jmx.value', 'source.ganglia.value')
+  }),
+
+  Parameter: App.AlertConfigProperty.extend({
+
+    name: 'parameter',
+
+    displayType: 'parameter',
+
+    badge: Em.computed.alias('threshold'),
+
+    thresholdExists: Em.computed.bool('threshold'),
+
+    thresholdNotExists: Em.computed.empty('threshold'),
+
+    /**
+     * Custom css-class for different badges
+     * type {string}
+     */
+    badgeCssClass: Em.computed.format('alert-state-{0}', 'badge')
+
   })
 
 };
+App.AlertConfigProperties.Parameters = {
 
+  StringMixin: Em.Mixin.create({
+    isValid: function () {
+      var value = this.get('value');
+      return String(value).trim() !== '';
+    }.property('value')
+  }),
+  NumericMixin: Em.Mixin.create({
+    isValid: function () {
+      var value = this.get('value');
+      if (!value) {
+        return false;
+      }
+      value = ('' + value).trim();
+      if (!numericUtils.isPositiveNumber(value)) {
+        return false;
+      }
+      value = parseFloat(value);
+      return !isNaN(value);
+    }.property('value')
+  }),
+  PercentageMixin: Em.Mixin.create({
+    isValid: function () {
+      var value = this.get('value');
+      if (!value) {
+        return false;
+      }
+      if (!validator.isValidFloat(value) || !numericUtils.isPositiveNumber(value)) {
+        return false;
+      }
+      value = String(value).trim();
+      value = parseFloat(value);
+
+      return !isNaN(value) && value > 0;
+    }.property('value')
+  })
+
+};
 App.AlertConfigProperties.Thresholds = {
 
   OkThreshold: App.AlertConfigProperties.Threshold.extend({
@@ -563,26 +597,8 @@ App.AlertConfigProperties.Thresholds = {
         return false;
       }
 
-      return this.get('showInputForValue') ? !isNaN(value) && value > 0 && value <= 100 : true;
-    }.property('displayValue', 'showInputForValue'),
-
-    /**
-     * Return <code>value * 100</code>
-     * @returns {string}
-     */
-    getNewValue: function () {
-      var value = this.get('value');
-      return (value && !isNaN(value)) ? (Number(value) * 100) + '' : value;
-    },
-
-    /**
-     * Return <code>displayValue / 100</code>
-     * @returns {string}
-     */
-    getNewDisplayValue: function () {
-      var displayValue = this.get('displayValue');
-      return (displayValue && !isNaN(displayValue)) ? (Number(displayValue) / 100) + '' : displayValue;
-    }
+      return this.get('showInputForValue') ? !isNaN(value) && value > 0 : true;
+    }.property('displayValue', 'showInputForValue')
 
   }),
 

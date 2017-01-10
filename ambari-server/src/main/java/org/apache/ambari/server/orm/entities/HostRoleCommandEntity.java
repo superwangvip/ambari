@@ -32,6 +32,7 @@ import javax.persistence.FetchType;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
+import javax.persistence.Index;
 import javax.persistence.JoinColumn;
 import javax.persistence.JoinColumns;
 import javax.persistence.Lob;
@@ -48,7 +49,11 @@ import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.commons.lang.ArrayUtils;
 
 @Entity
-@Table(name = "host_role_command")
+@Table(name = "host_role_command"
+       , indexes = {
+           @Index(name = "idx_hrc_request_id", columnList = "request_id")
+         , @Index(name = "idx_hrc_status_role", columnList = "status, role")
+       })
 @TableGenerator(name = "host_role_command_id_generator",
     table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
     , pkColumnValue = "host_role_command_id_seq"
@@ -56,10 +61,16 @@ import org.apache.commons.lang.ArrayUtils;
 )
 @NamedQueries({
     @NamedQuery(name = "HostRoleCommandEntity.findCountByCommandStatuses", query = "SELECT COUNT(command.taskId) FROM HostRoleCommandEntity command WHERE command.status IN :statuses"),
+    @NamedQuery(name = "HostRoleCommandEntity.findByRequestIdAndStatuses", query="SELECT task FROM HostRoleCommandEntity task WHERE task.requestId=:requestId AND task.status IN :statuses ORDER BY task.taskId ASC"),
+    @NamedQuery(name = "HostRoleCommandEntity.findTasksByStatusesOrderByIdDesc", query = "SELECT task FROM HostRoleCommandEntity task WHERE task.requestId = :requestId AND task.status IN :statuses ORDER BY task.taskId DESC"),
+    @NamedQuery(name = "HostRoleCommandEntity.findNumTasksAlreadyRanInStage", query = "SELECT COUNT(task.taskId) FROM HostRoleCommandEntity task WHERE task.requestId = :requestId AND task.taskId > :taskId AND task.stageId > :stageId AND task.status NOT IN :statuses"),
     @NamedQuery(name = "HostRoleCommandEntity.findByCommandStatuses", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.status IN :statuses ORDER BY command.requestId, command.stageId"),
     @NamedQuery(name = "HostRoleCommandEntity.findByHostId", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostId=:hostId"),
     @NamedQuery(name = "HostRoleCommandEntity.findByHostRole", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostEntity.hostName=:hostName AND command.requestId=:requestId AND command.stageId=:stageId AND command.role=:role ORDER BY command.taskId"),
-    @NamedQuery(name = "HostRoleCommandEntity.findByHostRoleNullHost", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostEntity IS NULL AND command.requestId=:requestId AND command.stageId=:stageId AND command.role=:role")
+    @NamedQuery(name = "HostRoleCommandEntity.findByHostRoleNullHost", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.hostEntity IS NULL AND command.requestId=:requestId AND command.stageId=:stageId AND command.role=:role"),
+    @NamedQuery(name = "HostRoleCommandEntity.findByStatusBetweenStages", query = "SELECT command FROM HostRoleCommandEntity command WHERE command.requestId = :requestId AND command.stageId >= :minStageId AND command.stageId <= :maxStageId AND command.status = :status"),
+    @NamedQuery(name = "HostRoleCommandEntity.updateAutoSkipExcludeRoleCommand", query = "UPDATE HostRoleCommandEntity command SET command.autoSkipOnFailure = :autoSkipOnFailure WHERE command.requestId = :requestId AND command.roleCommand <> :roleCommand"),
+    @NamedQuery(name = "HostRoleCommandEntity.updateAutoSkipForRoleCommand", query = "UPDATE HostRoleCommandEntity command SET command.autoSkipOnFailure = :autoSkipOnFailure WHERE command.requestId = :requestId AND command.roleCommand = :roleCommand")
 })
 public class HostRoleCommandEntity {
 
@@ -125,6 +136,13 @@ public class HostRoleCommandEntity {
   @Basic
   @Column(name = "start_time", nullable = false)
   private Long startTime = -1L;
+
+  /**
+   * Because the startTime is allowed to be overwritten, introduced a new column for the original start time.
+   */
+  @Basic
+  @Column(name = "original_start_time", nullable = false)
+  private Long originalStartTime = -1L;
 
   @Basic
   @Column(name = "end_time", nullable = false)
@@ -273,6 +291,22 @@ public class HostRoleCommandEntity {
     this.startTime = startTime;
   }
 
+  /**
+   * Get the original time the command was first scheduled on the agent. This value is never overwritten.
+   * @return Original start time
+   */
+  public Long getOriginalStartTime() {
+    return originalStartTime;
+  }
+
+  /**
+   * Set the original start time when the command is first scheduled. This value is never overwritten.
+   * @param originalStartTime Original start time
+   */
+  public void setOriginalStartTime(Long originalStartTime) {
+    this.originalStartTime = originalStartTime;
+  }
+
   public Long getLastAttemptTime() {
     return lastAttemptTime;
   }
@@ -411,6 +445,9 @@ public class HostRoleCommandEntity {
     if (startTime != null ? !startTime.equals(that.startTime) : that.startTime != null) {
       return false;
     }
+    if (originalStartTime != null ? !originalStartTime.equals(that.originalStartTime) : that.originalStartTime != null) {
+      return false;
+    }
     if (status != null ? !status.equals(that.status) : that.status != null) {
       return false;
     }
@@ -454,6 +491,7 @@ public class HostRoleCommandEntity {
     result = 31 * result + (outputLog != null ? outputLog.hashCode() : 0);
     result = 31 * result + (errorLog != null ? errorLog.hashCode() : 0);
     result = 31 * result + (startTime != null ? startTime.hashCode() : 0);
+    result = 31 * result + (originalStartTime != null ? originalStartTime.hashCode() : 0);
     result = 31 * result + (lastAttemptTime != null ? lastAttemptTime.hashCode() : 0);
     result = 31 * result + (attemptCount != null ? attemptCount.hashCode() : 0);
     result = 31 * result + (endTime != null ? endTime.hashCode() : 0);
@@ -473,8 +511,27 @@ public class HostRoleCommandEntity {
     return stage;
   }
 
+  /**
+   * Sets the associated {@link StageEntity} for this command. If the
+   * {@link StageEntity} has been persisted, then this will also set the
+   * commands stage and request ID fields.
+   *
+   * @param stage
+   */
   public void setStage(StageEntity stage) {
     this.stage = stage;
+
+    // ensure that the IDs are also set since they may not be retrieved from JPA
+    // when this entity is cached
+    if (null != stage) {
+      if (null == stageId) {
+        stageId = stage.getStageId();
+      }
+
+      if (null == requestId) {
+        requestId = stage.getRequestId();
+      }
+    }
   }
 
   public HostEntity getHostEntity() {
@@ -491,5 +548,21 @@ public class HostRoleCommandEntity {
 
   public void setTopologyLogicalTaskEntity(TopologyLogicalTaskEntity topologyLogicalTaskEntity) {
     this.topologyLogicalTaskEntity = topologyLogicalTaskEntity;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public String toString() {
+    StringBuilder buffer = new StringBuilder("HostRoleCommandEntity{ ");
+    buffer.append("taskId").append(taskId);
+    buffer.append(", stageId=").append(stageId);
+    buffer.append(", requestId=").append(requestId);
+    buffer.append(", role=").append(role);
+    buffer.append(", roleCommand=").append(roleCommand);
+    buffer.append(", exitcode=").append(exitcode);
+    buffer.append("}");
+    return buffer.toString();
   }
 }

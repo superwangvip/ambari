@@ -20,14 +20,12 @@ limitations under the License.
 
 
 from resource_management.libraries.script.script import Script
-from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.functions import conf_select
-from resource_management.libraries.functions import hdp_select
-from resource_management.libraries.functions import format
+from resource_management.libraries.functions import stack_select
 from resource_management.libraries.functions.copy_tarball import copy_to_hdfs
-from resource_management.libraries.functions.get_hdp_version import get_hdp_version
 from resource_management.libraries.functions.check_process_status import check_process_status
-from resource_management.libraries.functions.version import compare_versions, format_hdp_stack_version
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_XML
@@ -45,8 +43,7 @@ from hive_service import hive_service
 
 class HiveServer(Script):
   def install(self, env):
-    import params
-    self.install_packages(env, exclude_packages=params.hive_exclude_packages)
+    self.install_packages(env)
 
   def configure(self, env):
     import params
@@ -74,59 +71,69 @@ class HiveServerWindows(HiveServer):
 
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
 class HiveServerDefault(HiveServer):
-  def get_stack_to_component(self):
-    return {"HDP": "hive-server2"}
+  def get_component_name(self):
+    return "hive-server2"
 
-  def start(self, env, rolling_restart=False):
+  def start(self, env, upgrade_type=None):
     import params
     env.set_params(params)
     self.configure(env) # FOR SECURITY
 
-    setup_ranger_hive(rolling_upgrade=rolling_restart)
-    hive_service( 'hiveserver2', action = 'start', rolling_restart=rolling_restart)
-    if rolling_restart:
-      hive_server_upgrade.post_upgrade_deregister()
+    setup_ranger_hive(upgrade_type=upgrade_type)
+    hive_service('hiveserver2', action = 'start', upgrade_type=upgrade_type)
 
-  def stop(self, env, rolling_restart=False):
+
+  def stop(self, env, upgrade_type=None):
     import params
     env.set_params(params)
 
-    # During rolling upgrade, HiveServer2 should not be stopped before new server is available.
-    # Once new server is started, old one is stopped by the --deregister command which is 
-    # invoked by the 'hive_server_upgrade.post_upgrade_deregister()' method
-    if not rolling_restart:
-      hive_service( 'hiveserver2', action = 'stop' )
+    # always de-register the old hive instance so that ZK can route clients
+    # to the newly created hive server
+    try:
+      if upgrade_type is not None:
+        hive_server_upgrade.deregister()
+    except Exception as exception:
+      Logger.exception(str(exception))
+
+    # even during rolling upgrades, Hive Server will be stopped - this is because Ambari will
+    # not support the "port-change/deregister" workflow as it would impact Hive clients
+    # which do not use ZK discovery.
+    hive_service( 'hiveserver2', action = 'stop' )
+
 
   def status(self, env):
     import status_params
     env.set_params(status_params)
-    pid_file = format("{hive_pid_dir}/{hive_pid}")
 
     # Recursively check all existing gmetad pid files
-    check_process_status(pid_file)
+    check_process_status(status_params.hive_pid)
 
-  def pre_rolling_restart(self, env):
-    Logger.info("Executing HiveServer2 Rolling Upgrade pre-restart")
+
+  def pre_upgrade_restart(self, env, upgrade_type=None):
+    Logger.info("Executing Hive Server Stack Upgrade pre-restart")
     import params
     env.set_params(params)
 
-    if params.version and compare_versions(format_hdp_stack_version(params.version), '2.2.0.0') >= 0:
+    if params.version and check_stack_feature(StackFeature.ROLLING_UPGRADE, params.version):
       conf_select.select(params.stack_name, "hive", params.version)
-      hdp_select.select("hive-server2", params.version)
+      stack_select.select("hive-server2", params.version)
 
       # Copy mapreduce.tar.gz and tez.tar.gz to HDFS
       resource_created = copy_to_hdfs(
         "mapreduce",
         params.user_group,
         params.hdfs_user,
-        host_sys_prepped=params.host_sys_prepped)
+        skip=params.sysprep_skip_copy_tarballs_hdfs)
+
       resource_created = copy_to_hdfs(
         "tez",
         params.user_group,
         params.hdfs_user,
-        host_sys_prepped=params.host_sys_prepped) or resource_created
+        skip=params.sysprep_skip_copy_tarballs_hdfs) or resource_created
+
       if resource_created:
         params.HdfsResource(None, action="execute")
+
 
   def security_status(self, env):
     import status_params
@@ -188,6 +195,17 @@ class HiveServerDefault(HiveServer):
     else:
       self.put_structured_out({"securityState": "UNSECURED"})
 
+  def get_log_folder(self):
+    import params
+    return params.hive_log_dir
+  
+  def get_user(self):
+    import params
+    return params.hive_user
+
+  def get_pid_files(self):
+    import status_params
+    return [status_params.hive_pid]
 
 if __name__ == "__main__":
   HiveServer().execute()

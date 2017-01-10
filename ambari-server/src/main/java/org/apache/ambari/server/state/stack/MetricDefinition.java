@@ -18,13 +18,13 @@
 
 package org.apache.ambari.server.state.stack;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
-import org.codehaus.jackson.annotate.JsonProperty;
+import static java.util.Map.Entry;
 
 import java.util.HashMap;
 import java.util.Map;
 
-import static java.util.Map.Entry;
+import org.codehaus.jackson.annotate.JsonIgnore;
+import org.codehaus.jackson.annotate.JsonProperty;
 
 /**
  * Used to represent metrics for a stack component.
@@ -33,7 +33,13 @@ public class MetricDefinition {
   private String type = null;
   private Map<String, String> properties = null;
   private Map<String, Map<String, Metric>> metrics = null;
-  
+
+  public MetricDefinition(String type, Map<String, String> properties, Map<String, Map<String, Metric>> metrics) {
+    this.type = type;
+    this.properties = properties;
+    this.metrics = metrics;
+  }
+
   public String getType() {
     return type;
   }

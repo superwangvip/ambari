@@ -16,72 +16,43 @@
  */
 
 var App = require('app');
-var date = require('utils/date');
 var sort = require('views/common/sort_view');
+require('views/main/service/info/metrics/flume/flume_agent_metrics_section');
 
 App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServiceViewWrapper, {
   templateName: require('templates/main/service/services/flume'),
-
-  isFullWidth: true,
 
   pagination: false,
 
   selectedHost: null,
 
-  flumeAgentsCount:0,
+  flumeAgentsCount: 0,
 
   content: function () {
     var flumeAgents = this.get('service.agents'),
-    hostNames = flumeAgents.mapProperty('hostName').uniq(),
-    content = [],
-    self = this;
-    hostNames.forEach(function(hostName) {
+      content = [];
+
+    flumeAgents.mapProperty('hostName').uniq().forEach(function (hostName) {
       var agents = flumeAgents.filterProperty('hostName', hostName);
       content.push(
         Em.Object.create({
           hostName: hostName,
-          agents: agents,
-          rowspan: agents.length,
-          firtstAgent: agents[0],
-          otherAgents: agents.without(agents[0])
+          agents: agents
         })
       );
     });
     return content;
   }.property('App.FlumeAgent.@each.id', 'flumeAgentsCount'),
 
-
-
   summaryHeader: function () {
-    var agents = App.FlumeService.find().objectAt(0).get('agents'),
-    agentCount = agents.get('length'),
-    hostCount = this.get('service.flumeHandlersTotal');
-    return this.t("dashboard.services.flume.summary.title").format(hostCount, (hostCount > 1 ? "s" : ""), agentCount,  (agentCount > 1 ? "s" : ""));
+    var agentCount = App.FlumeService.find().objectAt(0).get('agents.length'),
+      hostCount = this.get('service.flumeHandlersTotal');
+    return this.t("dashboard.services.flume.summary.title")
+      .format(hostCount, hostCount > 1 ? 's' : '', agentCount, agentCount > 1 ? 's' : '');
   }.property('service.agents', 'service.hostComponents.length'),
 
-  flumeHandlerComponent: function () {
-    return Em.Object.create({
-      componentName: 'FLUME_HANDLER'
-    });
-    //return App.HostComponent.find().findProperty('componentName', 'FLUME_HANDLER');
-  }.property(),
-
-  agentView: Em.View.extend({
-    content: null,
-    tagName: 'tr',
-
-    click: function (e) {
-      var numberOfAgents = this.get('content.agents').length;
-      if($(e.target).attr('class') == "agent-host-name" || $(e.target).attr('class') == "agent-host-link"){
-        var currentTargetRow = $(e.currentTarget);
-        if ($(e.target).attr('class') == "agent-host-link") {
-          currentTargetRow = currentTargetRow.parent(".agent-host-name").parent();
-        }
-        currentTargetRow.parents("table:first").find('tr').removeClass('highlight');
-        currentTargetRow.addClass('highlight').nextAll("tr").slice(0,numberOfAgents - 1).addClass('highlight');
-        this.get('parentView').showAgentInfo(this.get('content'));
-      }
-    }
+  flumeHandlerComponent: Em.Object.create({
+    componentName: 'FLUME_HANDLER'
   }),
 
   sortView: sort.wrapperView,
@@ -95,9 +66,17 @@ App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServic
   didInsertElement: function () {
     var self = this;
     this.filter();
-    this.$().on('click','.flume-agents-actions .dropdown-toggle', function (e){
+    this.$().on('click', '.flume-agents-actions .dropdown-toggle', function () {
       self.setDropdownPosition(this);
     });
+  },
+
+  selectHost: function (e) {
+    var host = e && e.context;
+    this.get('pageContent').setEach('isActive', false);
+    if (host) {
+      this.showAgentInfo(host);
+    }
   },
 
   /**
@@ -119,7 +98,7 @@ App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServic
    * Change classes for dropdown DOM elements after status change of selected agent
    */
   setActionsDropdownClasses: function () {
-    this.get('content').forEach(function(hosts){
+    this.get('content').forEach(function (hosts) {
       hosts.agents.forEach(function (agent) {
         agent.set('isStartAgentDisabled', agent.get('status') !== 'NOT_RUNNING');
         agent.set('isStopAgentDisabled', agent.get('status') !== 'RUNNING');
@@ -132,13 +111,14 @@ App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServic
   }.observes('service.agents.length'),
 
   /**
-   * Action handler from flume tepmlate.
+   * Action handler from flume template.
    * Highlight selected row and show metrics graphs of selected agent.
    *
    * @method showAgentInfo
-   * @param {object} agent
+   * @param {object} host
    */
   showAgentInfo: function (host) {
+    Em.set(host, 'isActive', true);
     this.set('selectedHost', host);
     this.setAgentMetrics(host);
   },
@@ -146,47 +126,34 @@ App.MainDashboardServiceFlumeView = App.TableView.extend(App.MainDashboardServic
    * Show Flume agent metric.
    *
    * @method setFlumeAgentMetric
-   * @param {object} agent - DS.model of agent
+   * @param {object} host
    */
-  setAgentMetrics: function(host) {
-    var getMetricTitle = function(metricTypeKey, hostName) {
-      var metricType = Em.I18n.t('services.service.info.metrics.flume.' + metricTypeKey).format(Em.I18n.t('common.metrics'));
-      return  metricType + ' - ' + hostName;
-    };
-    var gangliaUrlTpl = App.router.get('clusterController.gangliaUrl') + '/?r=hour&cs=&ce=&m=load_one&s=by+name&c=HDPFlumeServer&h={0}&host_regex=&max_graphs=0&tab=m&vn=&sh=1&z=small&hc=4';
-    var agentHostMock = host.get('hostName');
+  setAgentMetrics: function (host) {
     var mockMetricData = [
       {
         header: 'channelName',
-        metricView: App.MainServiceInfoFlumeGraphsView.extend(),
-        metricViewData: {
-          agent: host,
-          metricType: 'CHANNEL'
-        }
+        metricType: 'CHANNEL'
       },
       {
         header: 'sinkName',
-        metricView: App.MainServiceInfoFlumeGraphsView.extend(),
-        metricViewData: {
-          agent: host,
-          metricType: 'SINK'
-        }
+        metricType: 'SINK'
       },
       {
         header: 'sourceName',
+        metricType: 'SOURCE'
+      }
+    ];
+    var metricViews = mockMetricData.map(function (mockData, index) {
+      return App.FlumeAgentMetricsSectionView.extend({
+        index: index,
+        metricTypeKey: mockData.header,
         metricView: App.MainServiceInfoFlumeGraphsView.extend(),
         metricViewData: {
           agent: host,
-          metricType: 'SOURCE'
+          metricType: mockData.metricType
         }
-      }
-    ];
-    mockMetricData.forEach(function(mockData, index) {
-      mockData.header = getMetricTitle(mockData.header, agentHostMock);
-      mockData.url = gangliaUrlTpl.format(agentHostMock);
-      mockData.id = 'metric' + index;
-      mockData.toggleIndex = '#' + mockData.id;
+      });
     });
-    this.set('parentView.parentView.collapsedSections', mockMetricData);
+    this.set('parentView.collapsedSections', metricViews);
   }
 });

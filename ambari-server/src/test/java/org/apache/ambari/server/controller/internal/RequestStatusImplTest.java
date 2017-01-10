@@ -18,18 +18,20 @@
 
 package org.apache.ambari.server.controller.internal;
 
+import java.util.Collections;
+import java.util.Set;
+
 import org.apache.ambari.server.controller.spi.RequestStatus;
+import org.apache.ambari.server.controller.spi.RequestStatusMetaData;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.junit.Assert;
 import org.junit.Test;
-
-import java.util.Collections;
-import java.util.Set;
 
 /**
  * RequestStatusImpl Tests
  */
 public class RequestStatusImplTest {
+
   @Test
   public void testGetAssociatedResources() throws Exception {
     RequestStatusImpl status = new RequestStatusImpl(null);
@@ -62,5 +64,15 @@ public class RequestStatusImplTest {
     requestResource.setProperty("Requests/status", "InProgress");
     status = new RequestStatusImpl(requestResource);
     Assert.assertEquals(RequestStatus.Status.InProgress, status.getStatus());
+  }
+
+  @Test
+  public void testGetRequestStatusMetadata() throws Exception {
+    RequestStatusImpl status = new RequestStatusImpl(null);
+    Assert.assertNull(status.getStatusMetadata());
+    RequestStatusMetaData metaData = new RequestStatusMetaData() {};
+
+    status = new RequestStatusImpl(null, null, metaData);
+    Assert.assertEquals(metaData, status.getStatusMetadata());
   }
 }

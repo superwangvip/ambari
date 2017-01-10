@@ -18,6 +18,7 @@
 package org.apache.ambari.server.orm.dao;
 
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -48,6 +49,8 @@ import org.apache.ambari.server.state.NotificationState;
 import org.apache.ambari.server.state.Service;
 import org.eclipse.persistence.config.HintValues;
 import org.eclipse.persistence.config.QueryHints;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -85,13 +88,16 @@ public class AlertDispatchDAO {
    */
   private final Lock m_groupLock = new ReentrantLock();
 
-  /**
-   * Gets an alert group with the specified ID.
-   *
-   * @param groupId
-   *          the ID of the group to retrieve.
-   * @return the group or {@code null} if none exists.
-   */
+  private static final Logger LOG = LoggerFactory.getLogger(AlertDispatchDAO.class);
+
+    /**
+     * Gets an alert group with the specified ID.
+     *
+     * @param groupId
+     *          the ID of the group to retrieve.
+     * @return the group or {@code null} if none exists.
+     */
+
   @RequiresSession
   public AlertGroupEntity findGroupById(long groupId) {
     return entityManagerProvider.get().find(AlertGroupEntity.class, groupId);
@@ -559,20 +565,29 @@ public class AlertDispatchDAO {
   }
 
   /**
-   * Persists new alert notices.
+   * Creates new alert notices using the {@link EntityManager#merge(Object)}
+   * method to ensure that the associated {@link AlertTargetEntity} instances
+   * are also updated.
+   * <p/>
+   * The method returns the newly managed entities as the ones passed in will
+   * not be managed.
    *
    * @param entities
-   *          the targets to persist (not {@code null}).
+   *          the targets to create (not {@code null}).
    */
   @Transactional
-  public void createNotices(List<AlertNoticeEntity> entities) {
-    if (null == entities) {
-      return;
+  public List<AlertNoticeEntity> createNotices(List<AlertNoticeEntity> entities) {
+    if (null == entities || entities.isEmpty()) {
+      return entities;
     }
 
+    List<AlertNoticeEntity> managedEntities = new ArrayList<>(entities.size());
     for (AlertNoticeEntity entity : entities) {
-      create(entity);
+      AlertNoticeEntity managedEntity = merge(entity);
+      managedEntities.add(managedEntity);
     }
+
+    return managedEntities;
   }
 
   /**
@@ -625,7 +640,7 @@ public class AlertDispatchDAO {
    */
   @Transactional
   public void remove(AlertTargetEntity alertTarget) {
-    entityManagerProvider.get().remove(merge(alertTarget));
+    entityManagerProvider.get().remove(alertTarget);
   }
 
   /**
@@ -670,7 +685,7 @@ public class AlertDispatchDAO {
    */
   @Transactional
   public void remove(AlertNoticeEntity alertNotice) {
-    entityManagerProvider.get().remove(merge(alertNotice));
+    entityManagerProvider.get().remove(alertNotice);
   }
 
   /**
@@ -683,12 +698,27 @@ public class AlertDispatchDAO {
    */
   @Transactional
   public void removeNoticeByDefinitionId(long definitionId) {
+    LOG.info("Deleting AlertNotice entities by definition id.");
     EntityManager entityManager = entityManagerProvider.get();
-    TypedQuery<AlertNoticeEntity> currentQuery = entityManager.createNamedQuery(
-        "AlertNoticeEntity.removeByDefinitionId", AlertNoticeEntity.class);
+    TypedQuery<Integer> historyIdQuery = entityManager.createNamedQuery(
+      "AlertHistoryEntity.findHistoryIdsByDefinitionId", Integer.class);
+    historyIdQuery.setParameter("definitionId", definitionId);
+    List<Integer> ids = daoUtils.selectList(historyIdQuery);
+    // Batch delete notice
+    int BATCH_SIZE = 999;
+    TypedQuery<AlertNoticeEntity> noticeQuery = entityManager.createNamedQuery(
+      "AlertNoticeEntity.removeByHistoryIds", AlertNoticeEntity.class);
+    if (ids != null && !ids.isEmpty()) {
+      for (int i = 0; i < ids.size(); i += BATCH_SIZE) {
+        int endIndex = (i + BATCH_SIZE) > ids.size() ? ids.size() : (i + BATCH_SIZE);
+        List<Integer> idsSubList = ids.subList(i, endIndex);
+        LOG.info("Deleting AlertNotice entity batch with history ids: " +
+          idsSubList.get(0) + " - " + idsSubList.get(idsSubList.size() - 1));
+        noticeQuery.setParameter("historyIds", idsSubList);
+        noticeQuery.executeUpdate();
+      }
+    }
 
-    currentQuery.setParameter("definitionId", definitionId);
-    currentQuery.executeUpdate();
     entityManager.clear();
   }
 

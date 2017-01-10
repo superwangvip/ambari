@@ -18,12 +18,13 @@
 
 package org.apache.ambari.server.stack;
 
-import org.apache.ambari.server.state.theme.Theme;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 import java.io.File;
 
-import static org.junit.Assert.*;
+import org.apache.ambari.server.state.theme.Theme;
+import org.junit.Test;
 
 public class ThemeModuleTest {
 
@@ -36,7 +37,7 @@ public class ThemeModuleTest {
     ThemeModule parentModule = new ThemeModule(parentThemeFile);
     ThemeModule childModule = new ThemeModule(childThemeFile);
 
-    childModule.resolve(parentModule, null, null);
+    childModule.resolve(parentModule, null, null, null);
 
     Theme childTheme = childModule.getModuleInfo().getThemeMap().get(ThemeModule.THEME_KEY);
     Theme parentTheme = parentModule.getModuleInfo().getThemeMap().get(ThemeModule.THEME_KEY);

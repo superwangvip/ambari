@@ -17,9 +17,17 @@
  */
 package org.apache.ambari.server.controller.metrics;
 
+import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
+import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.GANGLIA;
+import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.TIMELINE_METRICS;
+
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
 import org.apache.ambari.server.controller.internal.AbstractPropertyProvider;
 import org.apache.ambari.server.controller.internal.PropertyInfo;
+import org.apache.ambari.server.controller.internal.URLStreamProvider;
 import org.apache.ambari.server.controller.metrics.ganglia.GangliaReportPropertyProvider;
 import org.apache.ambari.server.controller.metrics.timeline.AMSReportPropertyProvider;
 import org.apache.ambari.server.controller.metrics.timeline.cache.TimelineMetricCacheProvider;
@@ -27,24 +35,17 @@ import org.apache.ambari.server.controller.spi.Predicate;
 import org.apache.ambari.server.controller.spi.Request;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.SystemException;
-import org.apache.ambari.server.controller.utilities.StreamProvider;
-
-import java.util.Map;
-import java.util.Set;
-
-import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
-import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.GANGLIA;
-import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService.TIMELINE_METRICS;
 
 public class MetricsReportPropertyProviderProxy extends AbstractPropertyProvider {
   private MetricsReportPropertyProvider amsMetricsReportProvider;
   private MetricsReportPropertyProvider gangliaMetricsReportProvider;
   private final MetricsServiceProvider metricsServiceProvider;
   private TimelineMetricCacheProvider cacheProvider;
+  private String clusterNamePropertyId;
 
   public MetricsReportPropertyProviderProxy(
     Map<String, Map<String, PropertyInfo>> componentPropertyInfoMap,
-    StreamProvider streamProvider,
+    URLStreamProvider streamProvider,
     ComponentSSLConfiguration configuration,
     TimelineMetricCacheProvider cacheProvider,
     MetricHostProvider hostProvider,
@@ -55,6 +56,7 @@ public class MetricsReportPropertyProviderProxy extends AbstractPropertyProvider
     super(componentPropertyInfoMap);
     this.metricsServiceProvider = serviceProvider;
     this.cacheProvider = cacheProvider;
+    this.clusterNamePropertyId = clusterNamePropertyId;
 
     createReportPropertyProviders(componentPropertyInfoMap,
       streamProvider,
@@ -64,7 +66,7 @@ public class MetricsReportPropertyProviderProxy extends AbstractPropertyProvider
   }
 
   private void createReportPropertyProviders(Map<String, Map<String, PropertyInfo>> componentPropertyInfoMap,
-                                             StreamProvider streamProvider,
+                                             URLStreamProvider streamProvider,
                                              ComponentSSLConfiguration configuration,
                                              MetricHostProvider hostProvider,
                                              String clusterNamePropertyId) {
@@ -104,6 +106,9 @@ public class MetricsReportPropertyProviderProxy extends AbstractPropertyProvider
   public Set<Resource> populateResources(Set<Resource> resources, Request request,
                                          Predicate predicate) throws SystemException {
 
+    if(!checkAuthorizationForMetrics(resources, clusterNamePropertyId)) {
+      return resources;
+    }
     MetricsService metricsService = metricsServiceProvider.getMetricsServiceType();
 
     if (metricsService != null) {

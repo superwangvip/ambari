@@ -20,17 +20,22 @@ limitations under the License.
 
 import logging
 import time
-import os
 import urllib2
+import ssl
+
+from functools import wraps
 from urllib2 import HTTPError
 
-from  tempfile import gettempdir
+from tempfile import gettempdir
 from alerts.base_alert import BaseAlert
 from collections import namedtuple
 from resource_management.libraries.functions.get_port_from_url import get_port_from_url
+from resource_management.libraries.functions.get_path_from_url import get_path_from_url
 from resource_management.libraries.functions.curl_krb_request import curl_krb_request
 from ambari_commons import OSCheck
-from ambari_commons.inet_utils import resolve_address
+from ambari_commons.inet_utils import resolve_address, ensure_ssl_using_protocol
+from ambari_agent import Constants
+from ambari_agent.AmbariConfig import AmbariConfig
 
 # hashlib is supplied as of Python 2.5 as the replacement interface for md5
 # and other secure hashes.  In 2.6, md5 is deprecated.  Import hashlib if
@@ -50,10 +55,12 @@ DEFAULT_CONNECTION_TIMEOUT = 5
 
 WebResponse = namedtuple('WebResponse', 'status_code time_millis error_msg')
 
+ensure_ssl_using_protocol(AmbariConfig.get_resolved_config().get_force_https_protocol())
+
 class WebAlert(BaseAlert):
 
   def __init__(self, alert_meta, alert_source_meta, config):
-    super(WebAlert, self).__init__(alert_meta, alert_source_meta)
+    super(WebAlert, self).__init__(alert_meta, alert_source_meta, config)
 
     connection_timeout = DEFAULT_CONNECTION_TIMEOUT
 
@@ -70,7 +77,8 @@ class WebAlert(BaseAlert):
     self.connection_timeout = float(connection_timeout)
     self.curl_connection_timeout = int(connection_timeout)
 
-    self.config = config
+    # will force a kinit even if klist says there are valid tickets (4 hour default)
+    self.kinit_timeout = long(config.get('agent', 'alert_kinit_timeout', BaseAlert._DEFAULT_KINIT_TIMEOUT))
 
 
   def _collect(self):
@@ -115,6 +123,10 @@ class WebAlert(BaseAlert):
     if string_uri.startswith('http://') or string_uri.startswith('https://'):
       return alert_uri.uri
 
+    uri_path = None
+    if string_uri and string_uri != str(None):
+      uri_path = get_path_from_url(string_uri)
+
     # start building the URL manually
     host = BaseAlert.get_host_from_url(alert_uri.uri)
     if host is None:
@@ -139,8 +151,10 @@ class WebAlert(BaseAlert):
       # on windows 0.0.0.0 is invalid address to connect but on linux it resolved to 127.0.0.1
       host = resolve_address(host)
 
-    return "{0}://{1}:{2}".format(scheme, host, str(port))
-
+    if uri_path:
+      return "{0}://{1}:{2}/{3}".format(scheme, host, str(port), uri_path)
+    else:
+      return "{0}://{1}:{2}".format(scheme, host, str(port))
 
   def _make_web_request(self, url):
     """
@@ -171,7 +185,7 @@ class WebAlert(BaseAlert):
         # Create the kerberos credentials cache (ccache) file and set it in the environment to use
         # when executing curl. Use the md5 hash of the combination of the principal and keytab file
         # to generate a (relatively) unique cache filename so that we can use it as needed.
-        tmp_dir = self.config.get('agent', 'tmp_dir')
+        tmp_dir = Constants.AGENT_TMP_DIR
         if tmp_dir is None:
           tmp_dir = gettempdir()
 
@@ -181,7 +195,7 @@ class WebAlert(BaseAlert):
 
         response_code, error_msg, time_millis = curl_krb_request(tmp_dir, kerberos_keytab, kerberos_principal, url,
           "web_alert", kerberos_executable_search_paths, True, self.get_name(), smokeuser,
-          connection_timeout=self.curl_connection_timeout)
+          connection_timeout=self.curl_connection_timeout, kinit_timer_ms = self.kinit_timeout)
       else:
         # kerberos is not involved; use urllib2
         response_code, time_millis, error_msg = self._make_web_request_urllib(url)

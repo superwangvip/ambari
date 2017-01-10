@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,7 +18,15 @@
 
 package org.apache.ambari.server.orm.entities;
 
-import javax.persistence.*;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.NamedQueries;
+import javax.persistence.NamedQuery;
+import javax.persistence.Table;
+import javax.persistence.TableGenerator;
 
 /**
  * Represents a principal type.
@@ -28,8 +36,11 @@ import javax.persistence.*;
 @TableGenerator(name = "principal_type_id_generator",
     table = "ambari_sequences", pkColumnName = "sequence_name", valueColumnName = "sequence_value"
     , pkColumnValue = "principal_type_id_seq"
-    , initialValue = 3
+    , initialValue = 100
 )
+@NamedQueries({
+    @NamedQuery(name = "PrincipalTypeEntity.findByName", query = "SELECT p FROM PrincipalTypeEntity p WHERE p.name = :name")
+})
 public class PrincipalTypeEntity {
 
   /**
@@ -37,9 +48,11 @@ public class PrincipalTypeEntity {
    */
   public static final int USER_PRINCIPAL_TYPE  = 1;
   public static final int GROUP_PRINCIPAL_TYPE = 2;
+  public static final int ROLE_PRINCIPAL_TYPE = 8;
 
   public static final String USER_PRINCIPAL_TYPE_NAME  = "USER";
   public static final String GROUP_PRINCIPAL_TYPE_NAME = "GROUP";
+  public static final String ROLE_PRINCIPAL_TYPE_NAME = "ROLE";
 
   /**
    * The type id.

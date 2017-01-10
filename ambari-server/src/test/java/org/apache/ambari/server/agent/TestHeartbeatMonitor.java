@@ -73,11 +73,12 @@ public class TestHeartbeatMonitor {
 
   private String hostname1 = "host1";
   private String hostname2 = "host2";
+  private String hostname3 = "host3";
   private String clusterName = "cluster1";
   private String serviceName = "HDFS";
   private int heartbeatMonitorWakeupIntervalMS = 30;
-  private AmbariMetaInfo ambariMetaInfo;
-  private OrmTestHelper helper;
+  private static AmbariMetaInfo ambariMetaInfo;
+  private static OrmTestHelper helper;
 
   private static final Logger LOG =
           LoggerFactory.getLogger(TestHeartbeatMonitor.class);
@@ -104,43 +105,73 @@ public class TestHeartbeatMonitor {
   }
 
   @Test
+  public void testHeartbeatLoss() throws AmbariException, InterruptedException,
+          InvalidStateTransitionException {
+    Clusters fsm = injector.getInstance(Clusters.class);
+    String hostname = "host1";
+    fsm.addHost(hostname);
+    ActionQueue aq = new ActionQueue();
+    ActionManager am = mock(ActionManager.class);
+    HeartbeatMonitor hm = new HeartbeatMonitor(fsm, aq, am, 10, injector);
+    HeartBeatHandler handler = new HeartBeatHandler(fsm, aq, am, injector);
+    Register reg = new Register();
+    reg.setHostname(hostname);
+    reg.setResponseId(12);
+    reg.setTimestamp(System.currentTimeMillis() - 300);
+    reg.setAgentVersion(ambariMetaInfo.getServerVersion());
+    HostInfo hi = new HostInfo();
+    hi.setOS("Centos5");
+    reg.setHardwareProfile(hi);
+    handler.handleRegistration(reg);
+    HeartBeat hb = new HeartBeat();
+    hb.setHostname(hostname);
+    hb.setNodeStatus(new HostStatus(HostStatus.Status.HEALTHY, "cool"));
+    hb.setTimestamp(System.currentTimeMillis());
+    hb.setResponseId(12);
+    handler.handleHeartBeat(hb);
+    hm.start();
+    aq.enqueue(hostname, new ExecutionCommand());
+    //Heartbeat will expire and action queue will be flushed
+    while (aq.size(hostname) != 0) {
+      Thread.sleep(1);
+    }
+    assertEquals(fsm.getHost(hostname).getState(), HostState.HEARTBEAT_LOST);
+    hm.shutdown();
+  }
+
+  @Test
   public void testStateCommandsGeneration() throws AmbariException, InterruptedException,
           InvalidStateTransitionException {
     StackId stackId = new StackId("HDP-0.1");
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
-    clusters.getHost(hostname1).persist();
     clusters.addHost(hostname2);
     setOsFamily(clusters.getHost(hostname2), "redhat", "6.3");
-    clusters.getHost(hostname2).persist();
     clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
       add(hostname2);
     }};
 
     ConfigFactory configFactory = injector.getInstance(ConfigFactory.class);
-    Config config = configFactory.createNew(cluster, "hadoop-env",
+    Config config = configFactory.createNew(cluster, "hadoop-env", "version1",
         new HashMap<String,String>() {{ put("a", "b"); }}, new HashMap<String, Map<String,String>>());
-    config.setTag("version1");
-    cluster.addConfig(config);
     cluster.addDesiredConfig("_test", Collections.singleton(config));
 
 
-    clusters.mapHostsToCluster(hostNames, clusterName);
+    clusters.mapAndPublishHostsToCluster(hostNames, clusterName);
     Service hdfs = cluster.addService(serviceName);
-    hdfs.persist();
-    hdfs.addServiceComponent(Role.DATANODE.name()).persist();
-    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1).persist();
+    hdfs.addServiceComponent(Role.DATANODE.name());
+    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.NAMENODE.name());
+    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name());
+    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1);
 
     hdfs.getServiceComponent(Role.DATANODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
     hdfs.getServiceComponent(Role.NAMENODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
@@ -196,48 +227,48 @@ public class TestHeartbeatMonitor {
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
-    clusters.getHost(hostname1).persist();
     clusters.addHost(hostname2);
     setOsFamily(clusters.getHost(hostname2), "redhat", "6.3");
-    clusters.getHost(hostname2).persist();
     clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
 
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
     Set<String> hostNames = new HashSet<String>() {{
       add(hostname1);
       add(hostname2);
     }};
 
     ConfigFactory configFactory = injector.getInstance(ConfigFactory.class);
-    Config config = configFactory.createNew(cluster, "hadoop-env",
+    Config hadoopEnvConfig = configFactory.createNew(cluster, "hadoop-env", "version1",
       new HashMap<String, String>() {{
         put("a", "b");
       }}, new HashMap<String, Map<String,String>>());
-    config.setTag("version1");
-    cluster.addConfig(config);
-    cluster.addDesiredConfig("_test", Collections.singleton(config));
+    Config hbaseEnvConfig = configFactory.createNew(cluster, "hbase-env", "version1",
+            new HashMap<String, String>() {{
+              put("a", "b");
+            }}, new HashMap<String, Map<String,String>>());
+
+    cluster.addDesiredConfig("_test", Collections.singleton(hadoopEnvConfig));
 
 
-    clusters.mapHostsToCluster(hostNames, clusterName);
+    clusters.mapAndPublishHostsToCluster(hostNames, clusterName);
     Service hdfs = cluster.addService(serviceName);
-    hdfs.persist();
-    hdfs.addServiceComponent(Role.DATANODE.name()).persist();
+    hdfs.addServiceComponent(Role.DATANODE.name());
     hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost
-      (hostname1).persist();
-    hdfs.addServiceComponent(Role.NAMENODE.name()).persist();
+    (hostname1);
+    hdfs.addServiceComponent(Role.NAMENODE.name());
     hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost
-      (hostname1).persist();
-    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name()).persist();
+    (hostname1);
+    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name());
     hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).
-      addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.HDFS_CLIENT.name()).persist();
+        addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.HDFS_CLIENT.name());
     hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).addServiceComponentHost
-      (hostname1).persist();
+    (hostname1);
     hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).addServiceComponentHost
-      (hostname2).persist();
+    (hostname2);
 
     hdfs.getServiceComponent(Role.DATANODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
     hdfs.getServiceComponent(Role.NAMENODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
@@ -264,7 +295,7 @@ public class TestHeartbeatMonitor {
     HostInfo hi = new HostInfo();
     hi.setOS("Centos5");
     reg.setHardwareProfile(hi);
-    handler.handleRegistration(reg);
+    RegistrationResponse registrationResponse = handler.handleRegistration(reg);
 
     HeartBeat hb = new HeartBeat();
     hb.setHostname(hostname1);
@@ -272,6 +303,10 @@ public class TestHeartbeatMonitor {
     hb.setTimestamp(System.currentTimeMillis());
     hb.setResponseId(12);
     handler.handleHeartBeat(hb);
+
+    Map<String, Map<String, String>> statusCommandConfig = registrationResponse.getStatusCommands().get(0).getConfigurations();
+    assertEquals(statusCommandConfig.size(), 1);
+    assertTrue(statusCommandConfig.containsKey("hadoop-env"));
 
     // HeartbeatMonitor should generate StatusCommands for
     // MASTER, SLAVE or CLIENT components
@@ -314,28 +349,26 @@ public class TestHeartbeatMonitor {
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "5.9");
-    clusters.getHost(hostname1).persist();
     clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
 
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
 
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
      }};
 
-    clusters.mapHostsToCluster(hostNames, clusterName);
+    clusters.mapAndPublishHostsToCluster(hostNames, clusterName);
 
     Service hdfs = cluster.addService(serviceName);
-    hdfs.persist();
-    hdfs.addServiceComponent(Role.DATANODE.name()).persist();
-    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1).persist();
+    hdfs.addServiceComponent(Role.DATANODE.name());
+    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.NAMENODE.name());
+    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name());
+    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1);
 
     hdfs.getServiceComponent(Role.DATANODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
     hdfs.getServiceComponent(Role.NAMENODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
@@ -370,9 +403,15 @@ public class TestHeartbeatMonitor {
     hm.start();
     Thread.sleep(3 * heartbeatMonitorWakeupIntervalMS);
     hm.shutdown();
-    hm.join(2*heartbeatMonitorWakeupIntervalMS);
-    if (hm.isAlive()) {
-      fail("HeartbeatMonitor should be already stopped");
+
+    int tryNumber = 0;
+    while(hm.isAlive()) {
+      hm.join(2*heartbeatMonitorWakeupIntervalMS);
+      tryNumber++;
+
+      if(tryNumber >= 5) {
+        fail("HeartbeatMonitor should be already stopped");
+      }
     }
     verify(aqMock, atLeast(2)).enqueue(eq(hostname1), commandCaptor.capture());  // After registration and by HeartbeatMonitor
 
@@ -385,70 +424,34 @@ public class TestHeartbeatMonitor {
   }
 
   @Test
-  public void testHeartbeatLoss() throws AmbariException, InterruptedException,
-          InvalidStateTransitionException {
-    Clusters fsm = injector.getInstance(Clusters.class);
-    String hostname = "host1";
-    fsm.addHost(hostname);
-    ActionQueue aq = new ActionQueue();
-    ActionManager am = mock(ActionManager.class);
-    HeartbeatMonitor hm = new HeartbeatMonitor(fsm, aq, am, 10, injector);
-    HeartBeatHandler handler = new HeartBeatHandler(fsm, aq, am, injector);
-    Register reg = new Register();
-    reg.setHostname(hostname);
-    reg.setResponseId(12);
-    reg.setTimestamp(System.currentTimeMillis() - 300);
-    reg.setAgentVersion(ambariMetaInfo.getServerVersion());
-    HostInfo hi = new HostInfo();
-    hi.setOS("Centos5");
-    reg.setHardwareProfile(hi);
-    handler.handleRegistration(reg);
-    HeartBeat hb = new HeartBeat();
-    hb.setHostname(hostname);
-    hb.setNodeStatus(new HostStatus(HostStatus.Status.HEALTHY, "cool"));
-    hb.setTimestamp(System.currentTimeMillis());
-    hb.setResponseId(12);
-    handler.handleHeartBeat(hb);
-    hm.start();
-    aq.enqueue(hostname, new ExecutionCommand());
-    //Heartbeat will expire and action queue will be flushed
-    while (aq.size(hostname) != 0) {
-      Thread.sleep(1);
-    }
-    assertEquals(fsm.getHost(hostname).getState(), HostState.HEARTBEAT_LOST);
-  }
-
-  @Test
   public void testHeartbeatLossWithComponent() throws AmbariException, InterruptedException,
           InvalidStateTransitionException {
     StackId stackId = new StackId("HDP-0.1");
     Clusters clusters = injector.getInstance(Clusters.class);
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
-    clusters.getHost(hostname1).persist();
 
     clusters.addCluster(clusterName, stackId);
     Cluster cluster = clusters.getCluster(clusterName);
 
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+            RepositoryVersionState.INSTALLING);
 
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
      }};
 
-    clusters.mapHostsToCluster(hostNames, clusterName);
+    clusters.mapAndPublishHostsToCluster(hostNames, clusterName);
 
     Service hdfs = cluster.addService(serviceName);
-    hdfs.persist();
-    hdfs.addServiceComponent(Role.DATANODE.name()).persist();
-    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.HDFS_CLIENT.name()).persist();
+    hdfs.addServiceComponent(Role.DATANODE.name());
+    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.NAMENODE.name());
+    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name());
+    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.HDFS_CLIENT.name());
     hdfs.getServiceComponent(Role.HDFS_CLIENT.name()).addServiceComponentHost(hostname1);
 
     ActionQueue aq = new ActionQueue();
@@ -541,11 +544,9 @@ public class TestHeartbeatMonitor {
 
     clusters.addHost(hostname1);
     setOsFamily(clusters.getHost(hostname1), "redhat", "6.3");
-    clusters.getHost(hostname1).persist();
 
     clusters.addHost(hostname2);
     setOsFamily(clusters.getHost(hostname2), "redhat", "6.3");
-    clusters.getHost(hostname2).persist();
     clusters.addCluster(clusterName, stackId);
 
     Cluster cluster = clusters.getCluster(clusterName);
@@ -553,24 +554,23 @@ public class TestHeartbeatMonitor {
     cluster.setDesiredStackVersion(stackId);
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
 
     Set<String> hostNames = new HashSet<String>(){{
       add(hostname1);
       add(hostname2);
     }};
 
-    clusters.mapHostsToCluster(hostNames, clusterName);
+    clusters.mapAndPublishHostsToCluster(hostNames, clusterName);
 
     Service hdfs = cluster.addService(serviceName);
-    hdfs.persist();
 
-    hdfs.addServiceComponent(Role.DATANODE.name()).persist();
-    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1).persist();
-    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name()).persist();
-    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1).persist();
+    hdfs.addServiceComponent(Role.DATANODE.name());
+    hdfs.getServiceComponent(Role.DATANODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.NAMENODE.name());
+    hdfs.getServiceComponent(Role.NAMENODE.name()).addServiceComponentHost(hostname1);
+    hdfs.addServiceComponent(Role.SECONDARY_NAMENODE.name());
+    hdfs.getServiceComponent(Role.SECONDARY_NAMENODE.name()).addServiceComponentHost(hostname1);
 
     hdfs.getServiceComponent(Role.DATANODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);
     hdfs.getServiceComponent(Role.NAMENODE.name()).getServiceComponentHost(hostname1).setState(State.INSTALLED);

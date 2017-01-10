@@ -25,7 +25,12 @@ import sys
 import time
 import glob
 import subprocess
+import logging
 from ambari_commons import OSConst,OSCheck
+from ambari_commons.logging_utils import print_error_msg
+from ambari_commons.exceptions import FatalException
+
+logger = logging.getLogger(__name__)
 
 # PostgreSQL settings
 PG_STATUS_RUNNING_DEFAULT = "running"
@@ -63,6 +68,22 @@ def locate_file(filename, default=''):
   else:
     return filename
 
+def locate_all_file_paths(filename, default=''):
+  """Locate command possible paths according to OS environment"""
+  paths = []
+  for path in ENV_PATH:
+    path = os.path.join(path, filename)
+    if os.path.isfile(path):
+      paths.append(path)
+
+  if not paths:
+    if default != '':
+      return [os.path.join(default, filename)]
+    else:
+      return [filename]
+
+  return paths
+
 
 def check_exitcode(exitcode_file_path):
   """
@@ -87,58 +108,73 @@ def save_pid(pid, pidfile):
   try:
     pfile = open(pidfile, "w")
     pfile.write("%s\n" % pid)
-  except IOError:
+  except IOError as e:
+    logger.error("Failed to write PID to " + pidfile + " due to " + str(e))
     pass
   finally:
     try:
       pfile.close()
-    except:
+    except Exception as e:
+      logger.error("Failed to close PID file " + pidfile + " due to " + str(e))
       pass
 
 
-def save_main_pid_ex(pids, pidfile, exclude_list=[], kill_exclude_list=False):
+def save_main_pid_ex(pids, pidfile, exclude_list=[], skip_daemonize=False):
   """
     Save pid which is not included to exclude_list to pidfile.
-    If kill_exclude_list is set to true,  all processes in that
-    list would be killed. It's might be useful to daemonize child process
 
     exclude_list contains list of full executable paths which should be excluded
   """
+  pid_saved = False
   try:
-    pfile = open(pidfile, "w")
-    for item in pids:
-      if pid_exists(item["pid"]) and (item["exe"] not in exclude_list):
-        pfile.write("%s\n" % item["pid"])
-      if pid_exists(item["pid"]) and (item["exe"] in exclude_list):
-        try:
-          os.kill(int(item["pid"]), signal.SIGKILL)
-        except:
-          pass
-  except IOError:
+    if pids:
+      pfile = open(pidfile, "w")
+      for item in pids:
+        if pid_exists(item["pid"]) and (item["exe"] not in exclude_list):
+          pfile.write("%s\n" % item["pid"])
+          pid_saved = True
+          logger.info("Ambari server started with PID " + str(item["pid"]))
+        if pid_exists(item["pid"]) and (item["exe"] in exclude_list) and not skip_daemonize:
+          try:
+            os.kill(int(item["pid"]), signal.SIGKILL)
+          except:
+            pass
+  except IOError as e:
+    logger.error("Failed to write PID to " + pidfile + " due to " + str(e))
     pass
   finally:
     try:
       pfile.close()
-    except:
+    except Exception as e:
+      logger.error("Failed to close PID file " + pidfile + " due to " + str(e))
+      pass
+  return pid_saved
+
+def get_live_pids_count(pids):
+  """
+    Check pids for existence
+  """
+  return len([pid for pid in pids if pid_exists(pid)])
+
+def wait_for_ui_start(ambari_server_ui_port, timeout=1):
+
+  tstart = time.time()
+  while int(time.time()-tstart) <= timeout:
+    try:
+      sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+      sock.settimeout(1)
+      sock.connect(('localhost', ambari_server_ui_port))
+      print "\nServer started listening on " + str(ambari_server_ui_port)
+      return True
+    except Exception as e:
+      #print str(e)
       pass
 
-
-def wait_for_pid(pids, timeout):
-  """
-    Check pid for existence during timeout
-  """
-  tstart = time.time()
-  pid_live = 0
-  while int(time.time()-tstart) <= timeout and len(pids) > 0:
     sys.stdout.write('.')
     sys.stdout.flush()
-    pid_live = 0
-    for item in pids:
-      if pid_exists(item["pid"]):
-        pid_live += 1
     time.sleep(1)
-  return pid_live
 
+  return False
 
 def get_symlink_path(path_to_link):
   """
@@ -216,7 +252,7 @@ def get_postgre_hba_dir(OS_FAMILY):
     # Like: /etc/postgresql/9.1/main/
     return os.path.join(get_pg_hba_init_files(), get_ubuntu_pg_version(),
                         "main")
-  elif OSCheck.is_redhat_family() and int(OSCheck.get_os_major_version()) >= 7:
+  elif not glob.glob(get_pg_hba_init_files() + '*'): # this happens when the service file is of new format (/usr/lib/systemd/system/postgresql.service)
     return PG_HBA_ROOT_DEFAULT
   else:
     if not os.path.isfile(get_pg_hba_init_files()):
@@ -224,8 +260,9 @@ def get_postgre_hba_dir(OS_FAMILY):
       os.symlink(glob.glob(get_pg_hba_init_files() + '*')[0],
                  get_pg_hba_init_files())
 
+    pg_hba_init_basename = os.path.basename(get_pg_hba_init_files())
     # Get postgres_data location (default: /var/lib/pgsql/data)
-    cmd = "alias exit=return; source " + get_pg_hba_init_files() + " status &>/dev/null; echo $PGDATA"
+    cmd = "alias basename='echo {0}; true' ; alias exit=return; source {1} status &>/dev/null; echo $PGDATA".format(pg_hba_init_basename, get_pg_hba_init_files())
     p = subprocess.Popen(cmd,
                          stdout=subprocess.PIPE,
                          stdin=subprocess.PIPE,

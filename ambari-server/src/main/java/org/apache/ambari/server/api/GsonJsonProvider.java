@@ -19,10 +19,15 @@
 package org.apache.ambari.server.api;
 
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Reader;
+import java.io.Writer;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Type;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.Produces;
@@ -32,9 +37,12 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.ext.MessageBodyReader;
 import javax.ws.rs.ext.MessageBodyWriter;
 import javax.ws.rs.ext.Provider;
-import java.io.*;
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Type;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 @Provider
 @Consumes({MediaType.APPLICATION_JSON, "text/json"})
@@ -55,6 +63,10 @@ public class GsonJsonProvider implements MessageBodyReader<Object>,
 
   @Override
   public Object readFrom(Class<Object> type, Type genericType, Annotation[] annotations, MediaType mediaType, MultivaluedMap<String, String> httpHeaders, InputStream entityStream) throws IOException, WebApplicationException {
+    // ignore objects of type InputStream. Used in case of file uploads
+    if(type.equals(InputStream.class))
+      return entityStream;
+
     Reader reader = new InputStreamReader(entityStream);
     try {
       return gson.fromJson(reader, genericType);

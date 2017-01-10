@@ -31,8 +31,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import junit.framework.TestCase;
-
 import org.apache.ambari.server.agent.ActionQueue;
 import org.apache.ambari.server.agent.AlertDefinitionCommand;
 import org.apache.ambari.server.agent.AlertExecutionCommand;
@@ -56,6 +54,7 @@ import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 import com.google.inject.Binder;
 import com.google.inject.Guice;
@@ -63,9 +62,12 @@ import com.google.inject.Injector;
 import com.google.inject.Module;
 import com.google.inject.util.Modules;
 
+import junit.framework.TestCase;
+
 /**
  * Tests for {@link AlertDefinitionHash}.
  */
+@Category({ category.AlertTest.class})
 public class AlertDefinitionHashTest extends TestCase {
 
   private AlertDefinitionHash m_hash;
@@ -80,6 +82,7 @@ public class AlertDefinitionHashTest extends TestCase {
   private List<AlertDefinitionEntity> m_agentDefinitions;
   private AlertDefinitionEntity m_hdfsService;
   AlertDefinitionEntity m_hdfsHost;
+  private ConfigHelper m_configHelper;
 
   /**
    *
@@ -201,6 +204,12 @@ public class AlertDefinitionHashTest extends TestCase {
 
     EasyMock.replay(m_mockClusters, m_mockCluster, m_mockDao);
     m_hash = m_injector.getInstance(AlertDefinitionHash.class);
+
+    // configHelper mock
+    m_configHelper = m_injector.getInstance(ConfigHelper.class);
+    EasyMock.expect(m_configHelper.getEffectiveDesiredTags((Cluster) anyObject(), EasyMock.anyString())).andReturn(new HashMap<String, Map<String, String>>()).anyTimes();
+    EasyMock.expect(m_configHelper.getEffectiveConfigProperties((Cluster) anyObject(), (Map<String, Map<String, String>>) anyObject())).andReturn(new HashMap<String, Map<String, String>>()).anyTimes();
+    EasyMock.replay(m_configHelper);
   }
 
   /**

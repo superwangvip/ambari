@@ -18,17 +18,17 @@
 
 package org.apache.ambari.server.api.resources;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.util.Set;
+
 import org.apache.ambari.server.api.query.render.ClusterBlueprintRenderer;
 import org.apache.ambari.server.api.query.render.DefaultRenderer;
 import org.apache.ambari.server.api.query.render.MinimalRenderer;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.junit.Test;
-
-import java.util.Set;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * ClusterResourceDefinition unit tests.
@@ -50,7 +50,7 @@ public class ClusterResourceDefinitionTest {
     ResourceDefinition resource = new ClusterResourceDefinition();
     Set<SubResourceDefinition> subResources = resource.getSubResourceDefinitions();
 
-    assertEquals(12, subResources.size());
+    assertEquals(13, subResources.size());
     assertTrue(includesType(subResources, Resource.Type.Service));
     assertTrue(includesType(subResources, Resource.Type.Host));
     assertTrue(includesType(subResources, Resource.Type.Configuration));
@@ -63,6 +63,7 @@ public class ClusterResourceDefinitionTest {
     assertTrue(includesType(subResources, Resource.Type.Alert));
     assertTrue(includesType(subResources, Resource.Type.ClusterStackVersion));
     assertTrue(includesType(subResources, Resource.Type.Artifact));
+    assertTrue(includesType(subResources, Resource.Type.ClusterKerberosDescriptor));
   }
 
   @Test

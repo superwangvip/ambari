@@ -120,30 +120,6 @@ class TestUtils(TestCase):
     normpath_mock.return_value = "test value"
     self.assertEquals(utils.get_symlink_path("/"), "test value")
 
-  @patch('time.time')
-  @patch.object(utils, 'pid_exists')
-  @patch('time.sleep')
-  def test_wait_for_pid(self, sleep_mock, pid_exists_mock, time_mock):
-    pid_exists_mock.return_value = True
-    time_mock.side_effect = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11]
-
-    out = StringIO.StringIO()
-    sys.stdout = out
-    live_pids = utils.wait_for_pid([
-                                   {"pid": "111",
-                                    "exe": "",
-                                    "cmd": ""
-                                    },
-                                   {"pid": "222",
-                                    "exe": "",
-                                    "cmd": ""
-                                    },
-                                   ], 10)
-    self.assertEqual("..........", out.getvalue())
-    sys.stdout = sys.__stdout__
-
-    self.assertEquals(2, live_pids)
-
   @patch.object(utils, 'pid_exists')
   @patch('__builtin__.open')
   @patch('os.kill')
@@ -170,7 +146,7 @@ class TestUtils(TestCase):
                              "exe": "/exe2",
                              "cmd": ""
                              },
-                            ], "/pidfile", ["/exe1"], True)
+                            ], "/pidfile", ["/exe1"])
     self.assertEquals(open_mock.call_count, 1)
     self.assertEquals(pid_exists_mock.call_count, 4)
     self.assertEquals(kill_mock.call_count, 1)
@@ -202,33 +178,31 @@ class TestUtils(TestCase):
     from resource_management.core.environment import Environment
 
     env = Environment()
-    env._instances.append(env)
+    with env:
+      # declare some environment variables
+      env_params = {}
+      env_params["envfoo"] = "env-foo1"
+      env_params["envbar"] = "env-bar1"
+      env.config.params = env_params
 
+      # declare some local variables
+      foo = "foo1"
+      bar = "bar1"
 
-    # declare some environment variables
-    env_params = {}
-    env_params["envfoo"] = "env-foo1"
-    env_params["envbar"] = "env-bar1"
-    env.config.params = env_params
+      # make sure local variables and env variables work
+      message = "{foo} {bar} {envfoo} {envbar}"
+      formatted_message = format(message)
+      self.assertEquals("foo1 bar1 env-foo1 env-bar1", formatted_message)
 
-    # declare some local variables
-    foo = "foo1"
-    bar = "bar1"
+      # try the same thing with an instance; we pass in keyword args to be
+      # combined with the env params
+      formatter = ConfigurationFormatter()
+      formatted_message = formatter.format(message, foo="foo2", bar="bar2")
+      self.assertEquals("foo2 bar2 env-foo1 env-bar1", formatted_message)
 
-    # make sure local variables and env variables work
-    message = "{foo} {bar} {envfoo} {envbar}"
-    formatted_message = format(message)
-    self.assertEquals("foo1 bar1 env-foo1 env-bar1", formatted_message)
-
-    # try the same thing with an instance; we pass in keyword args to be
-    # combined with the env params
-    formatter = ConfigurationFormatter()
-    formatted_message = formatter.format(message, foo="foo2", bar="bar2")
-    self.assertEquals("foo2 bar2 env-foo1 env-bar1", formatted_message)
-
-    # now supply keyword args to override env params
-    formatted_message = formatter.format(message, envfoo="foobar", envbar="foobarbaz", foo="foo3", bar="bar3")
-    self.assertEquals("foo3 bar3 foobar foobarbaz", formatted_message)
+      # now supply keyword args to override env params
+      formatted_message = formatter.format(message, envfoo="foobar", envbar="foobarbaz", foo="foo3", bar="bar3")
+      self.assertEquals("foo3 bar3 foobar foobarbaz", formatted_message)
 
   def test_compare_versions(self):
     self.assertEquals(utils.compare_versions("1.7.0", "2.0.0"), -1)
@@ -245,3 +219,9 @@ class TestUtils(TestCase):
     self.assertEquals(utils.compare_versions("2.0.0_1","2.0.0_2"),0)
     self.assertEquals(utils.compare_versions("2.0.0-abc","2.0.0_abc"),0)
 
+class FakeProperties(object):
+  def __init__(self, prop_map):
+    self.prop_map = prop_map
+
+  def get_property(self, prop_name):
+    return self.prop_map[prop_name]

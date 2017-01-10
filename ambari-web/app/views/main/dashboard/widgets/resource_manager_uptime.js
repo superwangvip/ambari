@@ -17,14 +17,8 @@
  */
 
 var App = require('app');
-var date = require('utils/date');
 
 App.ResourceManagerUptimeView = App.UptimeTextDashboardWidgetView.extend({
-
-  title: Em.I18n.t('dashboard.widgets.ResourceManagerUptime'),
-  id: '18',
-
-  model_type: 'yarn',
 
   component: 'ResourceManager',
   modelField: 'resourceManagerStartTime',

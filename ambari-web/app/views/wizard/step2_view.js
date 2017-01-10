@@ -61,9 +61,7 @@ App.WizardStep2View = Em.View.extend({
    * Is manualInstall selected
    * @type {bool}
    */
-  sshKeyState: function () {
-    return this.get("controller.content.installOptions.manualInstall");
-  }.property("controller.content.installOptions.manualInstall"),
+  sshKeyState: Em.computed.alias('controller.content.installOptions.manualInstall'),
 
   /**
    * Is File API available
@@ -76,23 +74,14 @@ App.WizardStep2View = Em.View.extend({
   }.property(),
 
   /**
-   * Checkbox for activate SSH fields
-   * @type {Ember.Checkbox}
+   * Radio button for activate SSH fields
+   * @type {App.RadioButtonView}
    * TODO: replace next 2 properties with new one used in both places
    */
-  providingSSHKeyRadioButton: Em.Checkbox.extend({
-
-    tagName: 'input',
-
-    attributeBindings: ['type', 'checked'],
-
-    classNames: ['radio-btn-provide-ssh-key'],
-
-    checked: function () {
-      return this.get('controller.content.installOptions.useSsh');
-    }.property('controller.content.installOptions.useSsh'),
-
-    type: 'radio',
+  providingSSHKeyRadioButton: App.RadioButtonView.extend({
+    classNames: ['radio'],
+    checkboxClassNames: ['radio-btn-provide-ssh-key'],
+    checked: Em.computed.alias('controller.content.installOptions.useSsh'),
 
     click: function () {
       this.set('controller.content.installOptions.useSsh', true);
@@ -101,21 +90,13 @@ App.WizardStep2View = Em.View.extend({
   }),
 
   /**
-   * Checkbox for manual registration
-   * @type {Ember.Checkbox}
+   * Radio button for manual registration
+   * @type {App.RadioButtonView}
    */
-  manualRegistrationRadioButton: Em.Checkbox.extend({
-    tagName: 'input',
-
-    attributeBindings: ['type', 'checked'],
-
-    classNames: ['radio-btn-manual-reg'],
-
-    type: 'radio',
-
-    checked: function () {
-      return this.get('controller.content.installOptions.manualInstall');
-    }.property('controller.content.installOptions.manualInstall'),
+  manualRegistrationRadioButton: App.RadioButtonView.extend({
+    classNames: ['radio'],
+    checkboxClassNames: ['radio-btn-manual-reg'],
+    checked: Em.computed.alias('controller.content.installOptions.manualInstall'),
 
     click: function () {
       this.set('controller.content.installOptions.manualInstall', true);
@@ -133,11 +114,7 @@ App.WizardStep2View = Em.View.extend({
      * Is textfield disabled
      * @type {bool}
      */
-    disabled: function () {
-      return !this.get('isEnabled');
-    }.property('isEnabled')
+    disabled: Em.computed.not('isEnabled')
   })
 
 });
-
-

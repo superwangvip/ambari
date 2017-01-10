@@ -58,7 +58,7 @@
     &.text-success {
       color: @green;
     }
-    .icon-warning-sign {
+    .glyphicon-warning-sign {
       &.warning {
         color: @health-status-yellow
       }
@@ -80,7 +80,7 @@
       .label-current {
         padding: 2px 3px 3px 5px;
       }
-      .icon-lock {
+      .glyphicon-lock {
         position: relative;
         top: 2px;
         left: 2px;
@@ -108,7 +108,7 @@
       &.active {
         color: @widget-config-override-action-active-color;
       }
-      &.text-error {
+      &.text-danger {
         color: #b94a48;
       }
     }
@@ -121,10 +121,9 @@
   }
   &.slider-widget {
     width: 100%;
-    overflow-x: hidden;
-    margin-left: -20px;
+  //  margin-left: -20px;
     margin-right: 0;
-    padding-left: 20px;
+  //  padding-left: 20px;
   }
   // background hack instead of increasing padding,
   // because we have lack of space for widget container.
@@ -200,7 +199,7 @@
         display: none;
       }
       .tooltip-inner {
-        padding: 0px 2px;
+        padding: 0 2px;
         background-color: @slider-widget-tooltip-background-color;
         text-align: center;
       }
@@ -212,9 +211,9 @@
       }
     }
     .slider-tick {
-      width: 0px;
+      width: 0;
       margin-top: 10px;
-      margin-left: 0px;
+      margin-left: 0;
       font-size: 8px;
       &:before,
       &.in-selection:before {
@@ -245,10 +244,10 @@
     }
     &.slider-disabled {
       .tooltip-arrow {
-        border-top-color: lighten(@green, 20%);;
+        border-top-color: lighten(@green, 20%);
       }
       .tooltip-inner {
-        background-color: lighten(@green, 20%);;
+        background-color: lighten(@green, 20%);
       }
     }
   }
@@ -326,12 +325,12 @@
     line-height: normal;
     float: left;
 
-    .input-append.input-prepend {
+    .input-group {
        margin: 0;
     }
 
     input {
-      width: 20px;
+      width: 30px;
       font-size: 12px;
       text-align: center;
     }
@@ -363,52 +362,59 @@
   .undo-button {
     margin-left: @undo-btn-margin;
   }
+}
 
-  .bootstrap-switch {
-    &,
-    &.bootstrap-switch-focused {
-      border-color: transparent;
-      box-shadow: none;
-    }
+.bootstrap-switch {
+  &,
+  &.bootstrap-switch-focused {
+    border-color: transparent;
+    box-shadow: none;
+  }
 
-    .bootstrap-switch-label {
-      background-color: @toggle-widget-handle-background-color;
-      background-image: none;
+  .bootstrap-switch-label {
+    background-color: @toggle-widget-handle-background-color;
+    background-image: none;
+    text-shadow: none;
+    border-width: 0;
+    padding: 2px 8px;
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
+    border-bottom: 1px solid @toggle-widget-handle-background-color;
+  }
+
+  .bootstrap-switch-handle-on,
+  .bootstrap-switch-handle-off {
+    color: @toggle-widget-text-color;
+    font-size: @toggle-widget-text-size;
+    background-image: none;
+    text-shadow: none;
+    border: none;
+    padding: 2px 0;
+
+    &:hover {
       text-shadow: none;
-      border-width: 0;
-      padding: 2px 8px;
-      border-left: 1px solid transparent;
-      border-right: 1px solid transparent;
-      border-bottom: 1px solid @toggle-widget-handle-background-color;
-    }
-
-    .bootstrap-switch-handle-on,
-    .bootstrap-switch-handle-off {
       color: @toggle-widget-text-color;
-      font-size: @toggle-widget-text-size;
+    }
+
+    &.bootstrap-switch-default {
+      background-color: @toggle-widget-on-background-color;
+    }
+
+    &.bootstrap-switch-success {
+      background-color: @toggle-widget-off-background-color;
+    }
+
+    &.bootstrap-switch-default,
+    &.bootstrap-switch-success {
+      color: @toggle-widget-text-color;
       background-image: none;
       text-shadow: none;
-      border: none;
-      padding: 2px 0;
-
-      &:hover {
-        text-shadow: none;
-        color: @toggle-widget-text-color;
-      }
-
-      &.bootstrap-switch-default {
-        background-color: @toggle-widget-on-background-color;
-      }
-
-      &.bootstrap-switch-success {
-        background-color: @toggle-widget-off-background-color;
-      }
     }
   }
 }
 
 .combo-widget {
-  .input-append {
+  .input-group {
     .btn-group {
       display: inline-block;
       margin-left: -1px;
@@ -448,24 +454,17 @@
 
 .checkbox-widget {
   .widget-config-label {
-    margin-left: 10px;
     width: auto;
+    padding-left: 0;
   }
-
-  .bootstrap-checkbox {
-    &>button.btn {
-      padding: 0;
-      margin-top: -7px;
-      color: @green;
-      &:focus {
-        border-color: none;
-        box-shadow: 0;
-        outline: 0 none;
+  .checkbox {
+    .ember-checkbox:not([disabled]) {
+      & + label:hover, &:checked + label {
+        &:before {
+          background-color: @green;
+          border-color: @green;
+        }
       }
-    }
-
-    .icon-check-empty {
-      margin-left: -3px;
     }
   }
 }
@@ -477,11 +476,23 @@
   }
 }
 
-.label-current.icon-ok {
+#serviceConfig {
+  .text-field-widget {
+    .with-unit input {
+      width: 75%;
+    }
+  }
+}
+
+.label-current.glyphicon-ok {
   color: white;
 }
 
 .compare-mode {
   background-color: rgba(211, 237, 247, 0.39);
-  padding: 10px 5px 0px 10px;
+  padding: 10px 5px 0 10px;
+}
+
+.input-group-btn {
+  width: auto;
 }

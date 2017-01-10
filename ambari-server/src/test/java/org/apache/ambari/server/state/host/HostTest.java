@@ -164,9 +164,11 @@ public class HostTest {
     HostRegistrationRequestEvent e =
         new HostRegistrationRequestEvent("foo", agentVersion, currentTime,
             info, agentEnv);
+
     if (!firstReg) {
-      Assert.assertTrue(host.isPersisted());
+      Assert.assertNotNull(host.getHostId());
     }
+
     host.handleEvent(e);
     Assert.assertEquals(currentTime, host.getLastRegistrationTime());
 
@@ -365,7 +367,7 @@ public class HostTest {
 
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     c1.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
     Assert.assertEquals("c1", c1.getClusterName());
     Assert.assertEquals(1, c1.getClusterId());
     clusters.addHost("h1");
@@ -378,12 +380,11 @@ public class HostTest {
     hostAttributes.put("os_release_version", "6.3");
     host.setHostAttributes(hostAttributes);
 
-    host.persist();
     c1.setDesiredStackVersion(stackId);
     clusters.mapHostToCluster("h1", "c1");
 
     ConfigFactory configFactory = injector.getInstance(ConfigFactory.class);
-    Config config = configFactory.createNew(c1, "global",
+    Config config = configFactory.createNew(c1, "global", "v1",
         new HashMap<String,String>() {{ put("a", "b"); put("x", "y"); }}, new HashMap<String, Map<String,String>>());
 
     try {
@@ -395,16 +396,14 @@ public class HostTest {
     }
 
 
-    config.setTag("v1");
     host.addDesiredConfig(c1.getClusterId(), true, "_test", config);
 
     Map<String, DesiredConfig> map = host.getDesiredConfigs(c1.getClusterId());
     Assert.assertTrue("Expect desired config to contain global", map.containsKey("global"));
     Assert.assertEquals("Expect global user to be '_test'", "_test", map.get("global").getUser());
 
-    config = configFactory.createNew(c1, "global",
+    config = configFactory.createNew(c1, "global", "v2",
         new HashMap<String,String>() {{ put("c", "d"); }}, new HashMap<String, Map<String,String>>());
-    config.setTag("v2");
     host.addDesiredConfig(c1.getClusterId(), true, "_test1", config);
 
     map = host.getDesiredConfigs(c1.getClusterId());
@@ -437,11 +436,9 @@ public class HostTest {
     hostAttributes.put("os_release_version", "6.3");
     host.setHostAttributes(hostAttributes);
 
-    host.persist();
-
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
     c1.createClusterVersion(stackId, stackId.getStackVersion(), "admin",
-        RepositoryVersionState.UPGRADING);
+        RepositoryVersionState.INSTALLING);
     c1.setDesiredStackVersion(stackId);
     clusters.mapHostToCluster("h1", "c1");
 
@@ -456,5 +453,20 @@ public class HostTest {
     stateEntity = entity.getHostStateEntity();
     Assert.assertNotNull(stateEntity.getMaintenanceState());
     Assert.assertEquals(MaintenanceState.ON, host.getMaintenanceState(c1.getClusterId()));
+  }
+
+  @Test
+  public void testHostPersist() throws Exception {
+    clusters.addHost("foo");
+    Host host = clusters.getHost("foo");
+
+    String rackInfo = "rackInfo";
+    long lastRegistrationTime = System.currentTimeMillis();
+
+    host.setRackInfo(rackInfo);
+    host.setLastRegistrationTime(lastRegistrationTime);
+
+    Assert.assertEquals(rackInfo, host.getRackInfo());
+    Assert.assertEquals(lastRegistrationTime, host.getLastRegistrationTime());
   }
 }

@@ -25,6 +25,7 @@ import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.verify;
 
 import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -125,10 +126,10 @@ public class AgentHeartbeatAlertRunnableTest {
     // mock the cluster
     expect(m_cluster.getClusterId()).andReturn(CLUSTER_ID).atLeastOnce();
     expect(m_cluster.getClusterName()).andReturn(CLUSTER_NAME).atLeastOnce();
+    expect(m_cluster.getHosts()).andReturn(Collections.singleton(m_host)).atLeastOnce();
 
     // mock clusters
     expect(m_clusters.getClusters()).andReturn(clusterMap).atLeastOnce();
-    expect(m_clusters.getHostsForCluster(CLUSTER_NAME)).andReturn(hostMap).atLeastOnce();
 
     // mock the definition DAO
     expect(m_definitionDao.findByName(CLUSTER_ID, DEFINITION_NAME)).andReturn(
@@ -152,7 +153,9 @@ public class AgentHeartbeatAlertRunnableTest {
         m_listener.getAlertEventReceivedCount(AlertReceivedEvent.class));
 
     // instantiate and inject mocks
-    AgentHeartbeatAlertRunnable runnable = new AgentHeartbeatAlertRunnable();
+    AgentHeartbeatAlertRunnable runnable = new AgentHeartbeatAlertRunnable(
+        m_definition.getDefinitionName());
+
     m_injector.injectMembers(runnable);
 
     // run the alert
@@ -176,7 +179,7 @@ public class AgentHeartbeatAlertRunnableTest {
   }
 
   @Test
-  public void testUnhealthyAlert() {
+  public void testLostHeartbeatAlert() {
     EasyMock.reset(m_host);
     expect(m_host.getState()).andReturn(HostState.HEARTBEAT_LOST).atLeastOnce();
     replay(m_host);
@@ -186,7 +189,44 @@ public class AgentHeartbeatAlertRunnableTest {
         m_listener.getAlertEventReceivedCount(AlertReceivedEvent.class));
 
     // instantiate and inject mocks
-    AgentHeartbeatAlertRunnable runnable = new AgentHeartbeatAlertRunnable();
+    AgentHeartbeatAlertRunnable runnable = new AgentHeartbeatAlertRunnable(
+        m_definition.getDefinitionName());
+
+    m_injector.injectMembers(runnable);
+
+    // run the alert
+    runnable.run();
+
+    assertEquals(1,
+        m_listener.getAlertEventReceivedCount(AlertReceivedEvent.class));
+
+    List<AlertEvent> events = m_listener.getAlertEventInstances(AlertReceivedEvent.class);
+    assertEquals(1, events.size());
+
+    AlertReceivedEvent event = (AlertReceivedEvent) events.get(0);
+    Alert alert = event.getAlert();
+    assertEquals("AMBARI", alert.getService());
+    assertEquals("AMBARI_SERVER", alert.getComponent());
+    assertEquals(AlertState.CRITICAL, alert.getState());
+    assertEquals(DEFINITION_NAME, alert.getName());
+
+    verify(m_definition, m_host, m_cluster, m_clusters, m_definitionDao);
+  }
+
+  @Test
+  public void testUnhealthyHostAlert() {
+    EasyMock.reset(m_host);
+    expect(m_host.getState()).andReturn(HostState.UNHEALTHY).atLeastOnce();
+    replay(m_host);
+
+    // precondition that no events were fired
+    assertEquals(0,
+        m_listener.getAlertEventReceivedCount(AlertReceivedEvent.class));
+
+    // instantiate and inject mocks
+    AgentHeartbeatAlertRunnable runnable = new AgentHeartbeatAlertRunnable(
+        m_definition.getDefinitionName());
+
     m_injector.injectMembers(runnable);
 
     // run the alert

@@ -17,6 +17,15 @@
  */
 package org.apache.ambari.server.controller.metrics.timeline.cache;
 
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import net.sf.ehcache.CacheException;
 import net.sf.ehcache.Ehcache;
 import net.sf.ehcache.Element;
@@ -24,14 +33,6 @@ import net.sf.ehcache.constructs.blocking.LockTimeoutException;
 import net.sf.ehcache.constructs.blocking.UpdatingCacheEntryFactory;
 import net.sf.ehcache.constructs.blocking.UpdatingSelfPopulatingCache;
 import net.sf.ehcache.statistics.StatisticsGateway;
-import org.apache.ambari.server.AmbariException;
-import org.apache.hadoop.metrics2.sink.timeline.TimelineMetric;
-import org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class TimelineMetricCache extends UpdatingSelfPopulatingCache {
 
@@ -54,7 +55,7 @@ public class TimelineMetricCache extends UpdatingSelfPopulatingCache {
    * @param key @TimelineAppMetricCacheKey
    * @return @org.apache.hadoop.metrics2.sink.timeline.TimelineMetrics
    */
-  public TimelineMetrics getAppTimelineMetricsFromCache(TimelineAppMetricCacheKey key) throws IllegalArgumentException {
+  public TimelineMetrics getAppTimelineMetricsFromCache(TimelineAppMetricCacheKey key) throws IllegalArgumentException, IOException {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Fetching metrics with key: " + key);
     }
@@ -62,14 +63,30 @@ public class TimelineMetricCache extends UpdatingSelfPopulatingCache {
     // Make sure key is valid
     validateKey(key);
 
-    Element element = get(key);
+    Element element = null;
+    try {
+      element = get(key);
+    } catch (LockTimeoutException le) {
+      // Ehcache masks the Socket Timeout to look as a LockTimeout
+      Throwable t = le.getCause();
+      if (t instanceof CacheException) {
+        t = t.getCause();
+        if (t instanceof SocketTimeoutException) {
+          throw new SocketTimeoutException(t.getMessage());
+        }
+        if (t instanceof ConnectException) {
+          throw new ConnectException(t.getMessage());
+        }
+      }
+    }
+
     TimelineMetrics timelineMetrics = new TimelineMetrics();
     if (element != null && element.getObjectValue() != null) {
       TimelineMetricsCacheValue value = (TimelineMetricsCacheValue) element.getObjectValue();
       if (LOG.isDebugEnabled()) {
         LOG.debug("Returning value from cache: " + value);
       }
-      timelineMetrics.setMetrics(new ArrayList<TimelineMetric>(value.getTimelineMetrics().values()));
+      timelineMetrics = value.getTimelineMetrics();
     }
 
     if (LOG.isDebugEnabled()) {
@@ -117,6 +134,12 @@ public class TimelineMetricCache extends UpdatingSelfPopulatingCache {
 
       LOG.debug("New temporal info: " + newKey.getTemporalInfo() +
         " for : " + existingKey.getMetricNames());
+
+      if (existingKey.getSpec() == null || !existingKey.getSpec().equals(newKey.getSpec())) {
+        existingKey.setSpec(newKey.getSpec());
+        LOG.debug("New spec: " + newKey.getSpec() +
+          " for : " + existingKey.getMetricNames());
+      }
     }
 
     return super.get(key);

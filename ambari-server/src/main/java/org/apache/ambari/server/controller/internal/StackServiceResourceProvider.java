@@ -19,30 +19,39 @@
 
 package org.apache.ambari.server.controller.internal;
 
-import com.google.inject.Inject;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.StaticallyInject;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.StackServiceRequest;
 import org.apache.ambari.server.controller.StackServiceResponse;
-import org.apache.ambari.server.controller.spi.*;
+import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
+import org.apache.ambari.server.controller.spi.NoSuchResourceException;
+import org.apache.ambari.server.controller.spi.Predicate;
+import org.apache.ambari.server.controller.spi.Request;
+import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.spi.Resource.Type;
+import org.apache.ambari.server.controller.spi.SystemException;
+import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
-import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.*;
+import com.google.inject.Inject;
+
 
 @StaticallyInject
 public class StackServiceResourceProvider extends ReadOnlyResourceProvider {
 
   protected static final String SERVICE_NAME_PROPERTY_ID = PropertyHelper.getPropertyId(
       "StackServices", "service_name");
-  
+
   protected static final String SERVICE_TYPE_PROPERTY_ID = PropertyHelper.getPropertyId(
-		  "StackServices", "service_type"); 
+		  "StackServices", "service_type");
 
   public static final String STACK_NAME_PROPERTY_ID = PropertyHelper.getPropertyId(
       "StackServices", "stack_name");
@@ -59,12 +68,15 @@ public class StackServiceResourceProvider extends ReadOnlyResourceProvider {
   private static final String COMMENTS_PROPERTY_ID = PropertyHelper.getPropertyId(
       "StackServices", "comments");
 
+  private static final String SELECTION_PROPERTY_ID = PropertyHelper.getPropertyId(
+      "StackServices", "selection");
+
   private static final String VERSION_PROPERTY_ID = PropertyHelper.getPropertyId(
       "StackServices", "service_version");
 
   private static final String CONFIG_TYPES = PropertyHelper.getPropertyId(
       "StackServices", "config_types");
-  
+
   private static final String REQUIRED_SERVICES_ID = PropertyHelper.getPropertyId(
       "StackServices", "required_services");
 
@@ -74,9 +86,18 @@ public class StackServiceResourceProvider extends ReadOnlyResourceProvider {
   private static final String CUSTOM_COMMANDS_PROPERTY_ID = PropertyHelper.getPropertyId(
       "StackServices", "custom_commands");
 
+  private static final String SERVICE_PROPERTIES_PROPERTY_ID = PropertyHelper.getPropertyId(
+    "StackServices", "properties");
+
+  private static final String CREDENTIAL_STORE_SUPPORTED = PropertyHelper.getPropertyId(
+          "StackServices", "credential_store_supported");
+
+  private static final String CREDENTIAL_STORE_ENABLED = PropertyHelper.getPropertyId(
+          "StackServices", "credential_store_enabled");
+
   private static Set<String> pkPropertyIds = new HashSet<String>(
-      Arrays.asList(new String[] { STACK_NAME_PROPERTY_ID,
-          STACK_VERSION_PROPERTY_ID, SERVICE_NAME_PROPERTY_ID }));
+      Arrays.asList(new String[]{STACK_NAME_PROPERTY_ID,
+        STACK_VERSION_PROPERTY_ID, SERVICE_NAME_PROPERTY_ID}));
 
   /**
    * KerberosServiceDescriptorFactory used to create KerberosServiceDescriptor instances
@@ -93,7 +114,7 @@ public class StackServiceResourceProvider extends ReadOnlyResourceProvider {
   @Override
   public Set<Resource> getResources(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException,
-      NoSuchResourceException, NoSuchParentResourceException {
+    NoSuchResourceException, NoSuchParentResourceException {
 
     final Set<StackServiceRequest> requests = new HashSet<StackServiceRequest>();
 
@@ -117,43 +138,7 @@ public class StackServiceResourceProvider extends ReadOnlyResourceProvider {
     Set<Resource> resources = new HashSet<Resource>();
 
     for (StackServiceResponse response : responses) {
-      Resource resource = new ResourceImpl(Resource.Type.StackService);
-
-      setResourceProperty(resource, STACK_NAME_PROPERTY_ID,
-          response.getStackName(), requestedIds);
-
-      setResourceProperty(resource, STACK_VERSION_PROPERTY_ID,
-          response.getStackVersion(), requestedIds);
-
-      setResourceProperty(resource, SERVICE_NAME_PROPERTY_ID,
-          response.getServiceName(), requestedIds);
-      
-      setResourceProperty(resource, SERVICE_TYPE_PROPERTY_ID,
-    		  response.getServiceType(), requestedIds); 
-
-      setResourceProperty(resource, SERVICE_DISPLAY_NAME_PROPERTY_ID,
-          response.getServiceDisplayName(), requestedIds);
-
-      setResourceProperty(resource, USER_NAME_PROPERTY_ID,
-          response.getUserName(), requestedIds);
-
-      setResourceProperty(resource, COMMENTS_PROPERTY_ID,
-          response.getComments(), requestedIds);
-
-      setResourceProperty(resource, VERSION_PROPERTY_ID,
-          response.getServiceVersion(), requestedIds);
-
-      setResourceProperty(resource, CONFIG_TYPES,
-          response.getConfigTypes(), requestedIds);
-
-      setResourceProperty(resource, REQUIRED_SERVICES_ID,
-          response.getRequiredServices(), requestedIds);
-
-      setResourceProperty(resource, SERVICE_CHECK_SUPPORTED_PROPERTY_ID,
-          response.isServiceCheckSupported(), requestedIds);
-
-      setResourceProperty(resource, CUSTOM_COMMANDS_PROPERTY_ID,
-          response.getCustomCommands(), requestedIds);
+      Resource resource = createResource(response, requestedIds);
 
       resources.add(resource);
     }
@@ -161,11 +146,70 @@ public class StackServiceResourceProvider extends ReadOnlyResourceProvider {
     return resources;
   }
 
+  private Resource createResource(StackServiceResponse response, Set<String> requestedIds) {
+    Resource resource = new ResourceImpl(Type.StackService);
+
+    setResourceProperty(resource, STACK_NAME_PROPERTY_ID,
+        response.getStackName(), requestedIds);
+
+      setResourceProperty(resource, SERVICE_NAME_PROPERTY_ID,
+          response.getServiceName(), requestedIds);
+
+      setResourceProperty(resource, SERVICE_TYPE_PROPERTY_ID,
+		  response.getServiceType(), requestedIds);
+
+    setResourceProperty(resource, STACK_VERSION_PROPERTY_ID,
+        response.getStackVersion(), requestedIds);
+
+    setResourceProperty(resource, SERVICE_NAME_PROPERTY_ID,
+        response.getServiceName(), requestedIds);
+
+    setResourceProperty(resource, SERVICE_DISPLAY_NAME_PROPERTY_ID,
+        response.getServiceDisplayName(), requestedIds);
+
+    setResourceProperty(resource, USER_NAME_PROPERTY_ID,
+        response.getUserName(), requestedIds);
+
+    setResourceProperty(resource, COMMENTS_PROPERTY_ID,
+        response.getComments(), requestedIds);
+
+    setResourceProperty(resource, VERSION_PROPERTY_ID,
+        response.getServiceVersion(), requestedIds);
+
+    setResourceProperty(resource, SELECTION_PROPERTY_ID,
+        response.getSelection(), requestedIds);
+
+    setResourceProperty(resource, CONFIG_TYPES,
+        response.getConfigTypes(), requestedIds);
+
+    setResourceProperty(resource, REQUIRED_SERVICES_ID,
+        response.getRequiredServices(), requestedIds);
+
+    setResourceProperty(resource, SERVICE_CHECK_SUPPORTED_PROPERTY_ID,
+        response.isServiceCheckSupported(), requestedIds);
+
+    setResourceProperty(resource, CUSTOM_COMMANDS_PROPERTY_ID,
+        response.getCustomCommands(), requestedIds);
+
+    setResourceProperty(resource, SERVICE_PROPERTIES_PROPERTY_ID,
+      response.getServiceProperties(), requestedIds);
+
+    setResourceProperty(resource, CREDENTIAL_STORE_SUPPORTED,
+      response.isCredentialStoreSupported(), requestedIds);
+
+    setResourceProperty(resource, CREDENTIAL_STORE_ENABLED,
+      response.isCredentialStoreEnabled(), requestedIds);
+
+    return resource;
+  }
+
   private StackServiceRequest getRequest(Map<String, Object> properties) {
     return new StackServiceRequest(
         (String) properties.get(STACK_NAME_PROPERTY_ID),
         (String) properties.get(STACK_VERSION_PROPERTY_ID),
-        (String) properties.get(SERVICE_NAME_PROPERTY_ID));
+        (String) properties.get(SERVICE_NAME_PROPERTY_ID),
+        (String) properties.get(CREDENTIAL_STORE_SUPPORTED),
+        (String) properties.get(CREDENTIAL_STORE_ENABLED));
   }
 
   @Override

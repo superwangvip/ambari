@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -51,11 +51,12 @@ import org.apache.ambari.server.orm.entities.PrincipalTypeEntity;
 import org.apache.ambari.server.orm.entities.PrivilegeEntity;
 import org.apache.ambari.server.orm.entities.ResourceEntity;
 import org.apache.ambari.server.orm.entities.UserEntity;
+import org.apache.commons.lang.StringUtils;
 
 /**
  * Abstract resource provider for privilege resources.
  */
-public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvider {
+public abstract class PrivilegeResourceProvider<T> extends AbstractAuthorizedResourceProvider {
 
   /**
    * Data access object used to obtain privilege entities.
@@ -92,6 +93,7 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
    */
   public static final String PRIVILEGE_ID_PROPERTY_ID    = "PrivilegeInfo/privilege_id";
   public static final String PERMISSION_NAME_PROPERTY_ID = "PrivilegeInfo/permission_name";
+  public static final String PERMISSION_LABEL_PROPERTY_ID = "PrivilegeInfo/permission_label";
   public static final String PRINCIPAL_NAME_PROPERTY_ID  = "PrivilegeInfo/principal_name";
   public static final String PRINCIPAL_TYPE_PROPERTY_ID  = "PrivilegeInfo/principal_type";
 
@@ -159,7 +161,7 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
   // ----- ResourceProvider --------------------------------------------------
 
   @Override
-  public RequestStatus createResources(Request request)
+  public RequestStatus createResourcesAuthorized(Request request)
       throws SystemException, UnsupportedPropertyException,
       ResourceAlreadyExistsException, NoSuchParentResourceException {
     for (Map<String, Object> properties : request.getProperties()) {
@@ -171,7 +173,7 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
   }
 
   @Override
-  public Set<Resource> getResources(Request request, Predicate predicate)
+  public Set<Resource> getResourcesAuthorized(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     Set<Resource> resources    = new HashSet<Resource>();
     Set<String>   requestedIds = getRequestPropertyIds(request, predicate);
@@ -193,35 +195,58 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
 
       resourceIds.addAll(resourceEntities.keySet());
 
-      Set<PrivilegeEntity>  entitySet     = new HashSet<PrivilegeEntity>();
-      List<PrincipalEntity> principalList = new LinkedList<PrincipalEntity>();
+      Set<PrivilegeEntity> entitySet = new HashSet<PrivilegeEntity>();
+      List<PrincipalEntity> userPrincipals = new LinkedList<PrincipalEntity>();
+      List<PrincipalEntity> groupPrincipals = new LinkedList<PrincipalEntity>();
+      List<PrincipalEntity> rolePrincipals = new LinkedList<PrincipalEntity>();
 
       List<PrivilegeEntity> entities = privilegeDAO.findAll();
 
       for(PrivilegeEntity privilegeEntity : entities){
         if (resourceIds.contains(privilegeEntity.getResource().getId())) {
           PrincipalEntity principal = privilegeEntity.getPrincipal();
+          String principalType = principal.getPrincipalType().getName();
+
           entitySet.add(privilegeEntity);
-          principalList.add(principal);
+
+          if(PrincipalTypeEntity.USER_PRINCIPAL_TYPE_NAME.equals(principalType)) {
+            userPrincipals.add(principal);
+          }
+          else if(PrincipalTypeEntity.GROUP_PRINCIPAL_TYPE_NAME.equals(principalType)) {
+            groupPrincipals.add(principal);
+          }
+          else if(PrincipalTypeEntity.ROLE_PRINCIPAL_TYPE_NAME.equals(principalType)) {
+            rolePrincipals.add(principal);
+          }
         }
       }
 
       Map<Long, UserEntity> userEntities = new HashMap<Long, UserEntity>();
-      List<UserEntity>      userList     = userDAO.findUsersByPrincipal(principalList);
-
-      for (UserEntity userEntity : userList) {
-        userEntities.put(userEntity.getPrincipal().getId(), userEntity);
+      if(!userPrincipals.isEmpty()) {
+        List<UserEntity> userList = userDAO.findUsersByPrincipal(userPrincipals);
+        for (UserEntity userEntity : userList) {
+          userEntities.put(userEntity.getPrincipal().getId(), userEntity);
+        }
       }
 
       Map<Long, GroupEntity> groupEntities = new HashMap<Long, GroupEntity>();
-      List<GroupEntity>      groupList     = groupDAO.findGroupsByPrincipal(principalList);
+      if(!groupPrincipals.isEmpty()) {
+        List<GroupEntity> groupList = groupDAO.findGroupsByPrincipal(groupPrincipals);
+        for (GroupEntity groupEntity : groupList) {
+          groupEntities.put(groupEntity.getPrincipal().getId(), groupEntity);
+        }
+      }
 
-      for (GroupEntity groupEntity : groupList) {
-        groupEntities.put(groupEntity.getPrincipal().getId(), groupEntity);
+      Map<Long, PermissionEntity> roleEntities = new HashMap<Long, PermissionEntity>();
+      if (!rolePrincipals.isEmpty()){
+        List<PermissionEntity> roleList = permissionDAO.findPermissionsByPrincipal(rolePrincipals);
+        for (PermissionEntity roleEntity : roleList) {
+          roleEntities.put(roleEntity.getPrincipal().getId(), roleEntity);
+        }
       }
 
       for(PrivilegeEntity privilegeEntity : entitySet){
-        Resource resource = toResource(privilegeEntity, userEntities, groupEntities, resourceEntities, requestedIds);
+        Resource resource = toResource(privilegeEntity, userEntities, groupEntities, roleEntities, resourceEntities, requestedIds);
         if (resource != null && (predicate == null || predicate.evaluate(resource))) {
           resources.add(resource);
         }
@@ -232,7 +257,7 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
   }
 
   @Override
-  public RequestStatus updateResources(Request request, Predicate predicate)
+  public RequestStatus updateResourcesAuthorized(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     modifyResources(getUpdateCommand(request, predicate));
     notifyUpdate(resourceType, request, predicate);
@@ -240,7 +265,7 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
   }
 
   @Override
-  public RequestStatus deleteResources(Predicate predicate)
+  public RequestStatus deleteResourcesAuthorized(Request request, Predicate predicate)
       throws SystemException, UnsupportedPropertyException, NoSuchResourceException, NoSuchParentResourceException {
     modifyResources(getDeleteCommand(predicate));
     notifyDelete(resourceType, predicate);
@@ -279,6 +304,7 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
    * @param privilegeEntity   the privilege entity to be converted
    * @param userEntities      the map of user entities keyed by resource id
    * @param groupEntities     the map of group entities keyed by resource id
+   * @param roleEntities      the map of role entities keyed by resource id
    * @param resourceEntities  the map of resource entities keyed by resource id
    * @param requestedIds      the requested property ids
    *
@@ -287,27 +313,48 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
   protected Resource toResource(PrivilegeEntity privilegeEntity,
                                 Map<Long, UserEntity> userEntities,
                                 Map<Long, GroupEntity> groupEntities,
+                                Map<Long, PermissionEntity> roleEntities,
                                 Map<Long, T> resourceEntities,
                                 Set<String> requestedIds) {
     Resource resource = new ResourceImpl(resourceType);
 
-    setResourceProperty(resource, PRIVILEGE_ID_PROPERTY_ID,
-        privilegeEntity.getId(), requestedIds);
-    setResourceProperty(resource, PERMISSION_NAME_PROPERTY_ID,
-        privilegeEntity.getPermission().getPermissionName(), requestedIds);
+    PrincipalEntity principal = privilegeEntity.getPrincipal();
+    String principalTypeName = null;
+    String resourcePropertyName = null;
 
-    PrincipalEntity principal   = privilegeEntity.getPrincipal();
-    Long            principalId = principal.getId();
+    if(principal != null) {
+      PrincipalTypeEntity principalType = principal.getPrincipalType();
 
-    if (userEntities.containsKey(principalId)) {
-      UserEntity userEntity = userEntities.get(principalId);
-      setResourceProperty(resource, PRINCIPAL_NAME_PROPERTY_ID, userEntity.getUserName(), requestedIds);
-    } else if (groupEntities.containsKey(principalId)){
-      GroupEntity groupEntity = groupEntities.get(principalId);
-      setResourceProperty(resource, PRINCIPAL_NAME_PROPERTY_ID, groupEntity.getGroupName(), requestedIds);
+      if (principalType != null) {
+        Long principalId = principal.getId();
+
+        principalTypeName = principalType.getName();
+
+        if (StringUtils.equalsIgnoreCase(PrincipalTypeEntity.GROUP_PRINCIPAL_TYPE_NAME, principalTypeName)) {
+          GroupEntity groupEntity = groupEntities.get(principalId);
+          if (groupEntity != null) {
+            resourcePropertyName = groupEntity.getGroupName();
+          }
+        } else if (StringUtils.equalsIgnoreCase(PrincipalTypeEntity.ROLE_PRINCIPAL_TYPE_NAME, principalTypeName)) {
+          PermissionEntity roleEntity = roleEntities.get(principalId);
+          if (roleEntity != null) {
+            resourcePropertyName = roleEntity.getPermissionName();
+          }
+        } else if (StringUtils.equalsIgnoreCase(PrincipalTypeEntity.USER_PRINCIPAL_TYPE_NAME, principalTypeName)) {
+          UserEntity userEntity = userEntities.get(principalId);
+          if (userEntity != null) {
+            resourcePropertyName = userEntity.getUserName();
+          }
+        }
+      }
     }
 
-    setResourceProperty(resource, PRINCIPAL_TYPE_PROPERTY_ID, principal.getPrincipalType().getName(), requestedIds);
+    setResourceProperty(resource, PRIVILEGE_ID_PROPERTY_ID, privilegeEntity.getId(), requestedIds);
+    setResourceProperty(resource, PERMISSION_NAME_PROPERTY_ID, privilegeEntity.getPermission().getPermissionName(), requestedIds);
+    setResourceProperty(resource, PERMISSION_LABEL_PROPERTY_ID, privilegeEntity.getPermission().getPermissionLabel(), requestedIds);
+    setResourceProperty(resource, PRINCIPAL_NAME_PROPERTY_ID, resourcePropertyName, requestedIds);
+    setResourceProperty(resource, PRINCIPAL_TYPE_PROPERTY_ID, principalTypeName, requestedIds);
+
     return resource;
   }
 
@@ -335,12 +382,17 @@ public abstract class PrivilegeResourceProvider<T> extends AbstractResourceProvi
 
     String principalName = (String) properties.get(PRINCIPAL_NAME_PROPERTY_ID);
     String principalType = (String) properties.get(PRINCIPAL_TYPE_PROPERTY_ID);
-    if (PrincipalTypeEntity.GROUP_PRINCIPAL_TYPE_NAME.equalsIgnoreCase(principalType)) {
+    if (StringUtils.equalsIgnoreCase(PrincipalTypeEntity.GROUP_PRINCIPAL_TYPE_NAME, principalType)) {
       GroupEntity groupEntity = groupDAO.findGroupByName(principalName);
       if (groupEntity != null) {
         entity.setPrincipal(principalDAO.findById(groupEntity.getPrincipal().getId()));
       }
-    } else if (PrincipalTypeEntity.USER_PRINCIPAL_TYPE_NAME.equalsIgnoreCase(principalType)) {
+    } else if (StringUtils.equalsIgnoreCase(PrincipalTypeEntity.ROLE_PRINCIPAL_TYPE_NAME, principalType)) {
+      PermissionEntity permissionEntity = permissionDAO.findByName(principalName);
+      if (permissionEntity != null) {
+        entity.setPrincipal(principalDAO.findById(permissionEntity.getPrincipal().getId()));
+      }
+    } else if (StringUtils.equalsIgnoreCase(PrincipalTypeEntity.USER_PRINCIPAL_TYPE_NAME, principalType)) {
       UserEntity userEntity = userDAO.findUserByName(principalName);
       if (userEntity != null) {
         entity.setPrincipal(principalDAO.findById(userEntity.getPrincipal().getId()));

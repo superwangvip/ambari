@@ -115,7 +115,7 @@ public class ClusterEntity {
   @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.ALL)
   private Collection<ClusterConfigEntity> configEntities;
 
-  @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.ALL)
+  @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.REMOVE)
   private Collection<ClusterConfigMappingEntity> configMappingEntities;
 
   @OneToMany(mappedBy = "clusterEntity", cascade = CascadeType.ALL)
@@ -144,6 +144,13 @@ public class ClusterEntity {
       @JoinColumn(name = "resource_id", referencedColumnName = "resource_id", nullable = false)
   })
   private ResourceEntity resource;
+
+  @OneToOne(cascade = CascadeType.ALL)
+  @JoinColumn(name = "upgrade_id", referencedColumnName = "upgrade_id")
+  /**
+   * {@code null} when there is no upgrade/downgrade in progress.
+   */
+  private UpgradeEntity upgradeEntity = null;
 
   public Long getClusterId() {
     return clusterId;
@@ -248,7 +255,7 @@ public class ClusterEntity {
 
   @Override
   public int hashCode() {
-    int result = clusterId.hashCode();
+    int result = null == clusterId ? 0 : clusterId.hashCode();
     result = 31 * result + clusterName.hashCode();
     return result;
   }
@@ -350,5 +357,13 @@ public class ClusterEntity {
    */
   public void setResource(ResourceEntity resource) {
     this.resource = resource;
+  }
+
+  public UpgradeEntity getUpgradeEntity() {
+    return upgradeEntity;
+  }
+
+  public void setUpgradeEntity(UpgradeEntity upgradeEntity) {
+    this.upgradeEntity = upgradeEntity;
   }
 }

@@ -18,19 +18,23 @@
 
 package org.apache.ambari.server.serveraction;
 
+import java.util.Collections;
+import java.util.Map;
+
 import org.apache.ambari.server.RoleCommand;
 import org.apache.ambari.server.actionmanager.ExecutionCommandWrapper;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
 import org.apache.ambari.server.actionmanager.HostRoleStatus;
 import org.apache.ambari.server.agent.CommandReport;
 import org.apache.ambari.server.agent.ExecutionCommand;
+import org.apache.ambari.server.audit.AuditLogger;
+import org.apache.ambari.server.audit.event.AuditEvent;
 import org.apache.ambari.server.utils.StageUtils;
 
-import java.util.Collections;
-import java.util.Map;
+import com.google.inject.Inject;
 
 /**
- * AbstractServerActionImpl is an abstract implementation of a ServerAction.
+ * AbstractServerAction is an abstract implementation of a ServerAction.
  * <p/>
  * This abstract implementation provides common facilities for all ServerActions, such as
  * maintaining the ExecutionCommand and HostRoleCommand properties. It also provides a convenient
@@ -51,6 +55,9 @@ public abstract class AbstractServerAction implements ServerAction {
    * The ActionLog that used to log execution progress of ServerAction
    */
   protected ActionLog actionLog = new ActionLog();
+
+  @Inject
+  private AuditLogger auditLogger;
 
   @Override
   public ExecutionCommand getExecutionCommand() {
@@ -173,6 +180,10 @@ public abstract class AbstractServerAction implements ServerAction {
    */
   protected Map<String, String> getConfiguration(String configurationName) {
     return getConfigurations().get(configurationName);
+  }
+
+  protected void auditLog(AuditEvent ae) {
+    auditLogger.log(ae);
   }
 
 }

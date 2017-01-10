@@ -18,24 +18,27 @@
 
 package org.apache.ambari.server.serveraction.kerberos;
 
-import com.google.inject.Inject;
-import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.actionmanager.HostRoleStatus;
-import org.apache.ambari.server.agent.CommandReport;
-import org.apache.ambari.server.agent.ExecutionCommand;
-import org.apache.ambari.server.controller.KerberosHelper;
-import org.apache.ambari.server.serveraction.AbstractServerAction;
-import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.Clusters;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import static org.apache.ambari.server.serveraction.kerberos.KerberosIdentityDataFileReader.DATA_FILE_NAME;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.actionmanager.HostRoleStatus;
+import org.apache.ambari.server.agent.CommandReport;
+import org.apache.ambari.server.agent.ExecutionCommand;
+import org.apache.ambari.server.controller.KerberosHelper;
+import org.apache.ambari.server.security.credential.PrincipalKeyCredential;
+import org.apache.ambari.server.serveraction.AbstractServerAction;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.Clusters;
+import org.apache.ambari.server.utils.StageUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.inject.Inject;
 
 /**
  * KerberosServerAction is an abstract class to be implemented by Kerberos-related
@@ -68,6 +71,11 @@ public abstract class KerberosServerAction extends AbstractServerAction {
    * A (command parameter) property name used to hold the (serialized) service/component filter map.
    */
   public static final String SERVICE_COMPONENT_FILTER = "service_component_filter";
+
+  /**
+   * A (command parameter) property name used to hold the (serialized) host filter list.
+   */
+  public static final String HOST_FILTER = "host_filter";
 
   /**
    * A (command parameter) property name used to hold the (serialized) identity filter list.
@@ -117,6 +125,12 @@ public abstract class KerberosServerAction extends AbstractServerAction {
   * for all principals ("true") or only those that are missing ("false")
   */
   public static final String REGENERATE_ALL = "regenerate_all";
+
+  /*
+  * Key used in kerberosCommandParams in ExecutionCommand to indicate whether to include Ambari server indetity
+  * ("true") or ignore it ("false")
+  */
+  public static final String INCLUDE_AMBARI_IDENTITY = "include_ambari_identity";
 
   private static final Logger LOG = LoggerFactory.getLogger(KerberosServerAction.class);
 
@@ -341,7 +355,7 @@ public abstract class KerberosServerAction extends AbstractServerAction {
 
     if (commandParameters != null) {
       // Grab the relevant data from this action's command parameters map
-      KerberosCredential administratorCredential = kerberosHelper.getKDCCredentials();
+      PrincipalKeyCredential administratorCredential = kerberosHelper.getKDCAdministratorCredentials(getClusterName());
       String defaultRealm = getDefaultRealm(commandParameters);
       KDCType kdcType = getKDCType(commandParameters);
       String dataDirectoryPath = getDataDirectoryPath(commandParameters);
@@ -502,12 +516,19 @@ public abstract class KerberosServerAction extends AbstractServerAction {
 
     if (record != null) {
       String principal = record.get(KerberosIdentityDataFileReader.PRINCIPAL);
-      String host = record.get(KerberosIdentityDataFileReader.HOSTNAME);
 
       if (principal != null) {
+        String hostname = record.get(KerberosIdentityDataFileReader.HOSTNAME);
+
+        if(KerberosHelper.AMBARI_SERVER_HOST_NAME.equals(hostname)) {
+          // Replace KerberosHelper.AMBARI_SERVER_HOST_NAME with the actual hostname where the Ambari
+          // server is... this host
+          hostname = StageUtils.getHostName();
+        }
+
         // Evaluate the principal "pattern" found in the record to generate the "evaluated principal"
         // by replacing the _HOST and _REALM variables.
-        String evaluatedPrincipal = principal.replace("_HOST", host).replace("_REALM", defaultRealm);
+        String evaluatedPrincipal = principal.replace("_HOST", hostname).replace("_REALM", defaultRealm);
 
         commandReport = processIdentity(record, evaluatedPrincipal, operationHandler, kerberosConfiguration, requestSharedDataContext);
       }

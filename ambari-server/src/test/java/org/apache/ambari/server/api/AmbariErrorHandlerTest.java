@@ -18,26 +18,29 @@
 
 package org.apache.ambari.server.api;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
-import com.sun.jersey.api.client.*;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.servlet.DefaultServlet;
-import org.eclipse.jetty.servlet.ServletContextHandler;
-import org.eclipse.jetty.servlet.ServletHandler;
-import org.eclipse.jetty.servlet.ServletHolder;
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.util.Map;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
+import org.apache.ambari.server.configuration.Configuration;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.DefaultServlet;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.junit.Test;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.ClientResponse;
+import com.sun.jersey.api.client.WebResource;
 
 public class AmbariErrorHandlerTest {
   Gson gson = new Gson();
@@ -51,13 +54,14 @@ public class AmbariErrorHandlerTest {
   @Test
   public void testErrorWithJetty() throws Exception {
     Server server = new Server(0);
+    Configuration configuration = new Configuration();
 
     ServletContextHandler root = new ServletContextHandler(server, "/",
       ServletContextHandler.SECURITY | ServletContextHandler.SESSIONS);
 
     root.addServlet(HelloServlet.class, "/hello");
     root.addServlet(DefaultServlet.class, "/");
-    root.setErrorHandler(new AmbariErrorHandler(gson));
+    root.setErrorHandler(new AmbariErrorHandler(gson, configuration));
 
     server.start();
 

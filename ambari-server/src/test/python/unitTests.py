@@ -20,6 +20,7 @@ import unittest
 import multiprocessing
 import os
 import sys
+import traceback
 from Queue import Empty
 from random import shuffle
 import fnmatch
@@ -85,27 +86,31 @@ def get_stack_name():
 def get_stack_name():
   return "HDP"
 
-def stack_test_executor(base_folder, service, stack, custom_tests, executor_result):
+def stack_test_executor(base_folder, service, stack, test_mask, executor_result):
   """
   Stack tests executor. Must be executed in separate process to prevent module
   name conflicts in different stacks.
   """
   #extract stack scripts folders
-  if custom_tests:
-    test_mask = CUSTOM_TEST_MASK
-  else:
-    test_mask = TEST_MASK
-
   server_src_dir = get_parent_path(base_folder, 'src')
-
-  base_stack_folder = os.path.join(server_src_dir,
-                                   "main", "resources", "stacks", get_stack_name(), stack)
-
   script_folders = set()
-  for root, subFolders, files in os.walk(os.path.join(base_stack_folder,
-                                                      "services", service)):
-    if os.path.split(root)[-1] in ["scripts", "files"] and service in root:
-      script_folders.add(root)
+
+  if stack is not None:
+    base_stack_folder = os.path.join(server_src_dir,
+                                     "main", "resources", "stacks", get_stack_name(), stack)
+
+    for root, subFolders, files in os.walk(os.path.join(base_stack_folder,
+                                                        "services", service)):
+      if os.path.split(root)[-1] in ["scripts", "files"] and service in root:
+        script_folders.add(root)
+
+  # Add the common-services scripts directories to the PATH
+  base_commserv_folder = os.path.join(server_src_dir, "main", "resources", "common-services")
+  for folder, subFolders, files in os.walk(os.path.join(base_commserv_folder, service)):
+    # folder will return the versions of the services
+    scripts_dir = os.path.join(folder, "package", "scripts")
+    if os.path.exists(scripts_dir):
+      script_folders.add(scripts_dir)
 
   sys.path.extend(script_folders)
 
@@ -114,8 +119,17 @@ def stack_test_executor(base_folder, service, stack, custom_tests, executor_resu
   #TODO Add an option to randomize the tests' execution
   #shuffle(tests)
   modules = [os.path.basename(s)[:-3] for s in tests]
-  suites = [unittest.defaultTestLoader.loadTestsFromName(name) for name in
-    modules]
+  try:
+    suites = [unittest.defaultTestLoader.loadTestsFromName(name) for name in
+      modules]
+  except:
+    executor_result.put({'exit_code': 1,
+                         'tests_run': 0,
+                         'errors': [("Failed to load test files {0}".format(str(modules)), traceback.format_exc(), "ERROR")],
+                         'failures': []})
+    executor_result.put(1)
+    return
+
   testSuite = unittest.TestSuite(suites)
   textRunner = unittest.TextTestRunner(verbosity=2).run(testSuite)
 
@@ -133,10 +147,14 @@ def stack_test_executor(base_folder, service, stack, custom_tests, executor_resu
 
 def main():
   if not os.path.exists(newtmpdirpath): os.makedirs(newtmpdirpath)
-  custom_tests = False
-  if len(sys.argv) > 1:
-    if sys.argv[1] == "true":
-      custom_tests = True
+
+  if len(sys.argv) > 1 and sys.argv[1] == "true": # handle custom_tests for backward-compatibility
+    test_mask = CUSTOM_TEST_MASK
+  elif len(sys.argv) > 2:
+    test_mask = sys.argv[2]
+  else:
+    test_mask = TEST_MASK
+
   pwd = os.path.abspath(os.path.dirname(__file__))
 
   ambari_server_folder = get_parent_path(pwd, 'ambari-server')
@@ -145,7 +163,7 @@ def main():
   sys.path.append(os.path.join(ambari_common_folder, "src/main/python"))
   sys.path.append(os.path.join(ambari_common_folder, "src/main/python/ambari_jinja2"))
   sys.path.append(os.path.join(ambari_common_folder, "src/test/python"))
-  sys.path.append(os.path.join(ambari_agent_folder, "src/main/python"))
+  sys.path.append(os.path.join(ambari_agent_folder,  "src/main/python"))
   sys.path.append(os.path.join(ambari_server_folder, "src/test/python"))
   sys.path.append(os.path.join(ambari_server_folder, "src/main/python"))
   sys.path.append(os.path.join(ambari_server_folder, "src/main/resources/scripts"))
@@ -171,6 +189,15 @@ def main():
                                   'service': service,
                                   'stack': stack})
 
+  #add tests for services under common-services
+  comm_serv_folder = os.path.join(pwd, 'common-services')
+  for service in os.listdir(comm_serv_folder):
+    current_service_dir = os.path.join(comm_serv_folder, service)
+    if os.path.isdir(current_service_dir) and service not in SERVICE_EXCLUDE:
+      test_variants.append({'directory': current_service_dir,
+                          'service': service,
+                          'stack': None})
+
   #run tests for every service in every stack in separate process
   has_failures = False
   test_runs = 0
@@ -184,7 +211,7 @@ def main():
                                       args=(variant['directory'],
                                             variant['service'],
                                             variant['stack'],
-                                            custom_tests,
+                                            test_mask,
                                             executor_result)
           )
     process.start()
@@ -210,10 +237,6 @@ def main():
 
   #run base ambari-server tests
   sys.stderr.write("Running tests for ambari-server\n")
-  if custom_tests:
-    test_mask = CUSTOM_TEST_MASK
-  else:
-    test_mask = TEST_MASK
 
   test_dirs = [
     (os.path.join(pwd, 'custom_actions'), "\nRunning tests for custom actions\n"),

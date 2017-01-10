@@ -21,64 +21,41 @@ var App = require('app');
 require('views/main/dashboard/widget');
 require('views/main/dashboard/widgets/text_widget');
 
+function getView() {
+  return App.TextDashboardWidgetView.create({thresholdMin:40, thresholdMax:70});
+}
+
 describe('App.TextDashboardWidgetView', function() {
 
   var tests = [
     {
       data: 100,
       e: {
-        isRed: false,
-        isOrange: false,
-        isGreen: true,
-        isNA: false
-      }
-    },
-    {
-      data: 1,
-      e: {
-        isRed: true,
-        isOrange: false,
-        isGreen: false,
-        isNA: false
-      }
-    },
-    {
-      data: 50,
-      e: {
-        isRed: false,
-        isOrange: true,
-        isGreen: false,
         isNA: false
       }
     },
     {
       data: null,
       e: {
-        isRed: true,
-        isOrange: false,
-        isGreen: false,
         isNA: true
       }
     }
   ];
 
   tests.forEach(function(test) {
-    describe('data - ' + test.data + ' | thresh1 - 40 | thresh2 - 70', function() {
-      var textDashboardWidgetView = App.TextDashboardWidgetView.create({thresh1:40, thresh2:70});
+    describe('data - ' + test.data + ' | thresholdMin - 40 | thresholdMax - 70', function() {
+      var textDashboardWidgetView = App.TextDashboardWidgetView.create({thresholdMin:40, thresholdMax:70});
       textDashboardWidgetView.set('data', test.data);
-      it('isRed', function() {
-        expect(textDashboardWidgetView.get('isRed')).to.equal(test.e.isRed);
-      });
-      it('isOrange', function() {
-        expect(textDashboardWidgetView.get('isOrange')).to.equal(test.e.isOrange);
-      });
-      it('isGreen', function() {
-        expect(textDashboardWidgetView.get('isGreen')).to.equal(test.e.isGreen);
-      });
       it('isNA', function() {
         expect(textDashboardWidgetView.get('isNA')).to.equal(test.e.isNA);
       });
     });
   });
+
+  App.TestAliases.testAsComputedGtProperties(getView(), 'isGreen', 'data', 'thresholdMax');
+
+  App.TestAliases.testAsComputedLteProperties(getView(), 'isRed', 'data', 'thresholdMin');
+
+  App.TestAliases.testAsComputedAnd(getView(), 'isOrange', ['!isGreen', '!isRed']);
 
 });

@@ -100,7 +100,47 @@ public abstract class AmbariEvent {
     /**
      * Received a final command report for some action
      */
-    ACTION_EXECUTION_FINISHED
+    ACTION_EXECUTION_FINISHED,
+
+    /**
+     * Sent when request finishes
+     */
+    REQUEST_FINISHED,
+
+    /**
+     * The cluster was renamed.
+     */
+    CLUSTER_RENAME,
+
+    /**
+     * The service component recovery enabled field changed.
+     */
+    SERVICE_COMPONENT_RECOVERY_CHANGED,
+
+    /**
+     * Stack upgrade or downgrade finishes
+     */
+    FINALIZE_UPGRADE_FINISH,
+
+    /**
+     * Cluster configuration changed.
+     */
+    CLUSTER_CONFIG_CHANGED,
+
+    /**
+     * Cluster configuration finished.
+     */
+    CLUSTER_CONFIG_FINISHED,
+
+    /**
+     * Metrics Collector force refresh needed.
+     */
+    METRICS_COLLECTOR_HOST_DOWN,
+
+    /**
+     * Local user has been created.
+     */
+    USER_CREATED;
   }
 
   /**
@@ -125,5 +165,16 @@ public abstract class AmbariEvent {
    */
   public AmbariEventType getType() {
     return m_eventType;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  @Override
+  public String toString() {
+    StringBuilder buffer = new StringBuilder(getClass().getSimpleName());
+    buffer.append("{eventType=").append(m_eventType);
+    buffer.append("}");
+    return buffer.toString();
   }
 }

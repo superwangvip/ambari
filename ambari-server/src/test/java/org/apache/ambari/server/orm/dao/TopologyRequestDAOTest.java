@@ -17,10 +17,10 @@
  */
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
-import junit.framework.Assert;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
@@ -31,11 +31,12 @@ import org.apache.ambari.server.orm.entities.TopologyRequestEntity;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
 
-import static org.apache.ambari.server.orm.OrmTestHelper.CLUSTER_NAME;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
+
+import junit.framework.Assert;
 
 public class TopologyRequestDAOTest {
   private Injector injector;
@@ -63,7 +64,7 @@ public class TopologyRequestDAOTest {
     requestEntity.setBlueprintName("bp1");
     requestEntity.setClusterAttributes("attributes");
     requestEntity.setClusterProperties("properties");
-    requestEntity.setClusterName(CLUSTER_NAME);
+    requestEntity.setClusterId(clusterId);
     requestEntity.setDescription("description");
     TopologyHostGroupEntity hostGroupEntity = new TopologyHostGroupEntity();
     hostGroupEntity.setName("hg1");
@@ -113,8 +114,22 @@ public class TopologyRequestDAOTest {
   }
 
   @Test
-  public void testFindByClusterName() throws Exception {
+  public void testFindByClusterId() throws Exception {
     create();
-    testRequestEntity(requestDAO.findByCluster(CLUSTER_NAME));
+    testRequestEntity(requestDAO.findByClusterId(clusterId));
+  }
+
+  @Test
+  public void testRemoveAll() throws Exception {
+    // Given
+    create();
+
+    // When
+    requestDAO.removeAll(clusterId);
+
+
+    // Then
+    List<TopologyRequestEntity> requestEntities = requestDAO.findByClusterId(clusterId);
+    Assert.assertEquals("All topology request entities associated with cluster should be removed !", 0, requestEntities.size());
   }
 }

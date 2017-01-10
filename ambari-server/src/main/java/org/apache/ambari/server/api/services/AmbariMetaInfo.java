@@ -18,15 +18,34 @@
 
 package org.apache.ambari.server.api.services;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import com.google.inject.Inject;
-import com.google.inject.Singleton;
+import static org.apache.ambari.server.controller.spi.Resource.InternalType.Component;
+import static org.apache.ambari.server.controller.spi.Resource.InternalType.HostComponent;
+import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGREGATE_FUNCTION_IDENTIFIERS;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.FilenameFilter;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
+
+import javax.xml.bind.JAXBException;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.ParentObjectNotFoundException;
 import org.apache.ambari.server.StackAccessException;
 import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.RootServiceResponseFactory.Services;
+import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.apache.ambari.server.customactions.ActionDefinition;
 import org.apache.ambari.server.customactions.ActionDefinitionManager;
 import org.apache.ambari.server.events.AlertDefinitionDisabledEvent;
@@ -44,6 +63,7 @@ import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.ComponentInfo;
 import org.apache.ambari.server.state.DependencyInfo;
+import org.apache.ambari.server.state.ExtensionInfo;
 import org.apache.ambari.server.state.OperatingSystemInfo;
 import org.apache.ambari.server.state.PropertyInfo;
 import org.apache.ambari.server.state.RepositoryInfo;
@@ -57,32 +77,20 @@ import org.apache.ambari.server.state.kerberos.KerberosDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosDescriptorFactory;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptor;
 import org.apache.ambari.server.state.kerberos.KerberosServiceDescriptorFactory;
+import org.apache.ambari.server.state.repository.VersionDefinitionXml;
+import org.apache.ambari.server.state.stack.ConfigUpgradePack;
 import org.apache.ambari.server.state.stack.Metric;
 import org.apache.ambari.server.state.stack.MetricDefinition;
 import org.apache.ambari.server.state.stack.OsFamily;
 import org.apache.ambari.server.state.stack.UpgradePack;
+import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.xml.bind.JAXBException;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Scanner;
-import java.util.Set;
-
-import static org.apache.ambari.server.controller.spi.Resource.InternalType.Component;
-import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGREGATE_FUNCTION_IDENTIFIERS;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
 
 
 /**
@@ -91,19 +99,22 @@ import static org.apache.ambari.server.controller.utilities.PropertyHelper.AGGRE
 @Singleton
 public class AmbariMetaInfo {
   public static final String SERVICE_CONFIG_FOLDER_NAME = "configuration";
+  public static final String SERVICE_PROPERTIES_FOLDER_NAME = "properties";
   public static final String SERVICE_THEMES_FOLDER_NAME = "themes";
+  public static final String SERVICE_QUICKLINKS_CONFIGURATIONS_FOLDER_NAME = "quicklinks";
   public static final String SERVICE_CONFIG_FILE_NAME_POSTFIX = ".xml";
   public static final String RCO_FILE_NAME = "role_command_order.json";
   public static final String SERVICE_METRIC_FILE_NAME = "metrics.json";
   public static final String SERVICE_ALERT_FILE_NAME = "alerts.json";
+  public static final String SERVICE_ADVISOR_FILE_NAME = "service_advisor.py";
 
   /**
-   * The filename name for a Kerberos descriptor file at either the stack or service level
+   * The filename for a Kerberos descriptor file at either the stack or service level
    */
   public static final String KERBEROS_DESCRIPTOR_FILE_NAME = "kerberos.json";
 
   /**
-   * The filename name for a Widgets descriptor file at either the stack or service level
+   * The filename for a Widgets descriptor file at either the stack or service level
    */
   public static final String WIDGETS_DESCRIPTOR_FILE_NAME = "widgets.json";
 
@@ -129,7 +140,16 @@ public class AmbariMetaInfo {
     }
   };
   private final static Logger LOG = LoggerFactory.getLogger(AmbariMetaInfo.class);
+
+  /**
+   * Repository XML base url property name
+   */
   public static final String REPOSITORY_XML_PROPERTY_BASEURL = "baseurl";
+
+  /**
+   * Repository XML mirrors list property name
+   */
+  public static final String REPOSITORY_XML_PROPERTY_MIRRORSLIST = "mirrorslist";
 
   // all the supported OS'es
   @Inject
@@ -146,8 +166,11 @@ public class AmbariMetaInfo {
 
   private File stackRoot;
   private File commonServicesRoot;
+  private File extensionsRoot;
   private File serverVersionFile;
   private File customActionRoot;
+  private Map<String, VersionDefinitionXml> versionDefinitions = null;
+
 
   @Inject
   private MetainfoDAO metaInfoDAO;
@@ -225,6 +248,11 @@ public class AmbariMetaInfo {
       commonServicesRoot = new File(commonServicesPath);
     }
 
+    String extensionsPath = conf.getExtensionsPath();
+    if (extensionsPath != null && !extensionsPath.isEmpty()) {
+      extensionsRoot = new File(extensionsPath);
+    }
+
     String serverVersionFilePath = conf.getServerVersionFilePath();
     serverVersionFile = new File(serverVersionFilePath);
 
@@ -243,8 +271,8 @@ public class AmbariMetaInfo {
 
     readServerVersion();
 
-    stackManager = stackManagerFactory.create(stackRoot, commonServicesRoot,
-        osFamily);
+    stackManager = stackManagerFactory.create(stackRoot, commonServicesRoot, extensionsRoot,
+        osFamily, false);
 
     getCustomActionDefinitions(customActionRoot);
   }
@@ -333,7 +361,7 @@ public class AmbariMetaInfo {
 
     DependencyInfo foundDependency = null;
     List<DependencyInfo> componentDependencies = getComponentDependencies(
-        stackName, version, service, component);
+      stackName, version, service, component);
     Iterator<DependencyInfo> iter = componentDependencies.iterator();
     while (foundDependency == null && iter.hasNext()) {
       DependencyInfo dependency = iter.next();
@@ -361,7 +389,7 @@ public class AmbariMetaInfo {
     for (RepositoryInfo repo : repository) {
       if (!reposResult.containsKey(repo.getOsType())) {
         reposResult.put(repo.getOsType(),
-            new ArrayList<RepositoryInfo>());
+          new ArrayList<RepositoryInfo>());
       }
       reposResult.get(repo.getOsType()).add(repo);
     }
@@ -521,6 +549,12 @@ public class AmbariMetaInfo {
     return service;
   }
 
+  public boolean isServiceRemovedInStack(String stackName, String version, String serviceName) throws AmbariException{
+    StackInfo stack = getStack(stackName, version);
+    List<String> removedServices = stack.getRemovedServices();
+    return removedServices.contains(serviceName);
+  }
+
   public Collection<String> getMonitoringServiceNames(String stackName, String version)
     throws AmbariException{
 
@@ -617,6 +651,30 @@ public class AmbariMetaInfo {
     return parents;
   }
 
+  public Collection<ExtensionInfo> getExtensions() {
+    return stackManager.getExtensions();
+  }
+
+  public Collection<ExtensionInfo> getExtensions(String extensionName) throws AmbariException {
+    Collection<ExtensionInfo> extensions = stackManager.getExtensions(extensionName);
+
+    if (extensions.isEmpty()) {
+      throw new StackAccessException("extensionName=" + extensionName);
+    }
+
+    return extensions;
+  }
+
+  public ExtensionInfo getExtension(String extensionName, String version) throws AmbariException {
+    ExtensionInfo result = stackManager.getExtension(extensionName, version);
+
+    if (result == null) {
+      throw new StackAccessException("Extension " + extensionName + " " + version + " is not found in Ambari metainfo");
+    }
+
+    return result;
+  }
+
   public Set<PropertyInfo> getServiceProperties(String stackName, String version, String serviceName)
       throws AmbariException {
 
@@ -687,7 +745,6 @@ public class AmbariMetaInfo {
 
     return propertyResult;
   }
-
 
   /**
    * Lists operatingsystems supported by stack
@@ -815,9 +872,10 @@ public class AmbariMetaInfo {
    * @param osType the os
    * @param repoId the repo id
    * @param newBaseUrl the new base url
+   * @param newMirrorsList the new mirrors list
    */
-  public void updateRepoBaseURL(String stackName,
-      String stackVersion, String osType, String repoId, String newBaseUrl) throws AmbariException {
+  public void updateRepo(String stackName,
+                         String stackVersion, String osType, String repoId, String newBaseUrl, String newMirrorsList) throws AmbariException {
 
     // validate existing
     RepositoryInfo ri = getRepository(stackName, stackVersion, osType, repoId);
@@ -826,28 +884,56 @@ public class AmbariMetaInfo {
       throw new StackAccessException("Stack root does not exist.");
     }
 
-    ri.setBaseUrl(newBaseUrl);
-
+    if (null != newMirrorsList) {
+      ri.setMirrorsList(newMirrorsList);
+    }
+    if (null != newBaseUrl) {
+      ri.setBaseUrl(newBaseUrl);
+    }
     if (null != metaInfoDAO) {
-      String metaKey = generateRepoMetaKey(stackName, stackVersion, osType,
-          repoId, REPOSITORY_XML_PROPERTY_BASEURL);
-
-      MetainfoEntity entity = new MetainfoEntity();
-      entity.setMetainfoName(metaKey);
-      entity.setMetainfoValue(newBaseUrl);
-
-      // !!! need a way to remove
-      if (newBaseUrl.equals("")) {
-        metaInfoDAO.remove(entity);
-      } else {
-        metaInfoDAO.merge(entity);
-        ri.setBaseUrlFromSaved(true);
+      if (null != newBaseUrl) {
+        updateRepoInMetaInfo(stackName, stackVersion, osType, repoId, newBaseUrl, ri, REPOSITORY_XML_PROPERTY_BASEURL);
       }
+      if (null != newMirrorsList) {
+        updateRepoInMetaInfo(stackName, stackVersion, osType, repoId, newMirrorsList, ri, REPOSITORY_XML_PROPERTY_MIRRORSLIST);
+      }
+    }
+  }
+
+  /**
+   * Update repo property repositoryXmlProperty in metaInfo with new value
+   *
+   * @param stackName             the stack name
+   * @param stackVersion          the stack version
+   * @param osType                the os
+   * @param repoId                the repo id
+   * @param value                 new value
+   * @param ri                    repositoryInfo
+   * @param repositoryXmlProperty repository.xml property name
+   */
+  private void updateRepoInMetaInfo(String stackName, String stackVersion, String osType, String repoId, String value, RepositoryInfo ri, String repositoryXmlProperty) {
+    String metaKey = generateRepoMetaKey(stackName, stackVersion, osType,
+        repoId, repositoryXmlProperty);
+
+    MetainfoEntity entity = new MetainfoEntity();
+    entity.setMetainfoName(metaKey);
+    entity.setMetainfoValue(value);
+
+    // !!! need a way to remove
+    if (StringUtils.isBlank(value)) { // This block should get removed someday, we aren't supporting this mechanism anymore
+      metaInfoDAO.remove(entity);
+    } else {
+      metaInfoDAO.merge(entity);
+      ri.setRepoSaved(true);
     }
   }
 
   public File getStackRoot() {
     return stackRoot;
+  }
+
+  public File getExtensionsRoot() {
+    return extensionsRoot;
   }
 
   /**
@@ -877,7 +963,7 @@ public class AmbariMetaInfo {
       try {
         map = gson.fromJson(new FileReader(svc.getMetricsFile()), type);
 
-        svc.setMetrics(updateComponentMetricMapWithAggregateFunctionIds(map));
+        svc.setMetrics(processMetricDefinition(map));
 
       } catch (Exception e) {
         LOG.error ("Could not read the metrics file", e);
@@ -890,44 +976,47 @@ public class AmbariMetaInfo {
 
   /**
    * Add aggregate function support for all stack defined metrics.
+   *
+   * Refactor Namenode RPC metrics for different kinds of ports.
    */
-  private Map<String, Map<String, List<MetricDefinition>>> updateComponentMetricMapWithAggregateFunctionIds(
-      Map<String, Map<String, List<MetricDefinition>>> metricMap) {
+  private Map<String, Map<String, List<MetricDefinition>>> processMetricDefinition(
+    Map<String, Map<String, List<MetricDefinition>>> metricMap) {
 
     if (!metricMap.isEmpty()) {
         // For every Component
-      for (Map<String, List<MetricDefinition>> componentMetricDef :  metricMap.values()) {
+      for (Map.Entry<String, Map<String, List<MetricDefinition>>> componentMetricDefEntry : metricMap.entrySet()) {
+        String componentName = componentMetricDefEntry.getKey();
         // For every Component / HostComponent category
-        for (Map.Entry<String, List<MetricDefinition>> metricDefEntry : componentMetricDef.entrySet()) {
-          // NOTE: Only Component aggregates supported for now.
-          if (metricDefEntry.getKey().equals(Component.name())) {
-            //For every metric definition
-            for (MetricDefinition metricDefinition : metricDefEntry.getValue()) {
-              // Metrics System metrics only
-              if (metricDefinition.getType().equals("ganglia")) {
-                // Create a new map for each category
-                for (Map<String, Metric> metricByCategory : metricDefinition.getMetricsByCategory().values()) {
-                  Map<String, Metric> newMetrics = new HashMap<String, Metric>();
+        for (Map.Entry<String, List<MetricDefinition>> metricDefEntry : componentMetricDefEntry.getValue().entrySet()) {
+          //For every metric definition
+          for (MetricDefinition metricDefinition : metricDefEntry.getValue()) {
+            for (Map.Entry<String, Map<String, Metric>> metricByCategory : metricDefinition.getMetricsByCategory().entrySet()) {
+              Iterator<Map.Entry<String, Metric>> iterator = metricByCategory.getValue().entrySet().iterator();
+              Map<String, Metric> newMetricsToAdd = new HashMap<>();
 
-                  // For every function id
-                  for (String identifierToAdd : AGGREGATE_FUNCTION_IDENTIFIERS) {
+              while (iterator.hasNext()) {
+                Map.Entry<String, Metric> metricEntry = iterator.next();
+                // Process Namenode rpc metrics
+                Map<String, Metric> processedMetrics = PropertyHelper.processRpcMetricDefinition(metricDefinition.getType(),
+                  componentName, metricEntry.getKey(), metricEntry.getValue());
+                if (processedMetrics != null) {
+                  iterator.remove(); // Remove current metric entry
+                  newMetricsToAdd.putAll(processedMetrics);
+                } else {
+                  processedMetrics = Collections.singletonMap(metricEntry.getKey(), metricEntry.getValue());
+                }
 
-                    for (Map.Entry<String, Metric> metricEntry : metricByCategory.entrySet()) {
-                      String newMetricKey = metricEntry.getKey() + identifierToAdd;
-                      Metric currentMetric = metricEntry.getValue();
-                      Metric newMetric = new Metric(
-                        currentMetric.getName() + identifierToAdd,
-                        currentMetric.isPointInTime(),
-                        currentMetric.isTemporal(),
-                        currentMetric.isAmsHostMetric(),
-                        currentMetric.getUnit()
-                      );
-                      newMetrics.put(newMetricKey, newMetric);
-                    }
+                // NOTE: Only Component aggregates for AMS supported for now.
+                if (metricDefinition.getType().equals("ganglia") &&
+                  (metricDefEntry.getKey().equals(Component.name()) ||
+                    metricDefEntry.getKey().equals(HostComponent.name()))) {
+                  for (Map.Entry<String, Metric> processedMetric : processedMetrics.entrySet()) {
+                    newMetricsToAdd.putAll(getAggregateFunctionMetrics(processedMetric.getKey(),
+                      processedMetric.getValue()));
                   }
-                  metricByCategory.putAll(newMetrics);
                 }
               }
+              metricByCategory.getValue().putAll(newMetricsToAdd);
             }
           }
         }
@@ -935,6 +1024,26 @@ public class AmbariMetaInfo {
     }
 
     return metricMap;
+  }
+
+  private Map<String, Metric> getAggregateFunctionMetrics(String metricName, Metric currentMetric) {
+    Map<String, Metric> newMetrics = new HashMap<String, Metric>();
+    if (!PropertyHelper.hasAggregateFunctionSuffix(currentMetric.getName())) {
+      // For every function id
+      for (String identifierToAdd : AGGREGATE_FUNCTION_IDENTIFIERS) {
+        String newMetricKey = metricName + identifierToAdd;
+        Metric newMetric = new Metric(
+          currentMetric.getName() + identifierToAdd,
+          currentMetric.isPointInTime(),
+          currentMetric.isTemporal(),
+          currentMetric.isAmsHostMetric(),
+          currentMetric.getUnit()
+        );
+        newMetrics.put(newMetricKey, newMetric);
+      }
+    }
+
+    return newMetrics;
   }
 
   /**
@@ -945,8 +1054,8 @@ public class AmbariMetaInfo {
       String serviceName, String componentName, String metricType)
       throws AmbariException {
 
-    Map<String, Map<String, List<MetricDefinition>>> map =
-      getServiceMetrics(stackName, stackVersion, serviceName);
+    Map<String, Map<String, List<MetricDefinition>>> map = getServiceMetrics(
+      stackName, stackVersion, serviceName);
 
     if (map != null && map.containsKey(componentName)) {
       if (map.get(componentName).containsKey(metricType)) {
@@ -997,7 +1106,7 @@ public class AmbariMetaInfo {
     }
 
     return alertDefinitionFactory.getAlertDefinitions(alertsFile,
-        service.getName());
+            service.getName());
   }
 
   /**
@@ -1206,6 +1315,24 @@ public class AmbariMetaInfo {
   }
 
   /**
+   * Get all upgrade config pack if it is available for a stack.
+   *
+   * @param stackName the stack name
+   * @param stackVersion the stack version
+   * @return config upgrade pack for stack or null if it is
+   * not defined for stack
+   */
+  public ConfigUpgradePack getConfigUpgradePack(String stackName, String stackVersion) {
+    try {
+      StackInfo stack = getStack(stackName, stackVersion);
+      return stack.getConfigUpgradePack();
+    } catch (AmbariException e) {
+      LOG.debug("Cannot load config upgrade pack for non-existent stack {}-{}", stackName, stackVersion, e);
+      return null;
+    }
+  }
+
+  /**
    * Gets the fully compiled Kerberos descriptor for the relevant stack and version.
    * <p/>
    * All of the kerberos.json files from the specified stack (and version) are read, parsed and
@@ -1297,4 +1424,61 @@ public class AmbariMetaInfo {
   public Map<String, String> getAmbariServerProperties() {
     return conf.getAmbariProperties();
   }
+
+  /**
+   * Ensures that the map of version definition files is populated
+   */
+  private void ensureVersionDefinitions() {
+    if (null != versionDefinitions) {
+      return;
+    }
+
+    versionDefinitions = new HashMap<>();
+
+    for (StackInfo stack : getStacks()) {
+      for (VersionDefinitionXml definition : stack.getVersionDefinitions()) {
+        versionDefinitions.put(String.format("%s-%s-%s", stack.getName(),
+            stack.getVersion(), definition.release.version), definition);
+      }
+
+      if (stack.isActive() && stack.isValid()) {
+        try {
+          VersionDefinitionXml xml = VersionDefinitionXml.build(stack);
+          versionDefinitions.put(String.format("%s-%s", stack.getName(), stack.getVersion()), xml);
+        } catch (Exception e) {
+          LOG.warn("Could not make a stack VDF for {}-{}: {}",
+              stack.getName(), stack.getVersion(), e.getMessage());
+        }
+      } else {
+        StackId stackId = new StackId(stack);
+        if (!stack.isValid()) {
+          LOG.info("Stack {} is not valid, skipping VDF: {}", stackId, StringUtils.join(stack.getErrors(), "; "));
+        } else if (!stack.isActive()) {
+          LOG.info("Stack {} is not active, skipping VDF", stackId);
+        }
+      }
+
+    }
+  }
+
+  /**
+   * @param versionDefinitionId the version definition id
+   * @return the definition, or {@code null} if not found
+   */
+  public VersionDefinitionXml getVersionDefinition(String versionDefinitionId) {
+    ensureVersionDefinitions();
+
+    return versionDefinitions.get(versionDefinitionId);
+  }
+
+  /**
+   * @return the version definitions found for stacks
+   */
+  public Map<String, VersionDefinitionXml> getVersionDefinitions() {
+    ensureVersionDefinitions();
+
+    return versionDefinitions;
+  }
+
+
 }

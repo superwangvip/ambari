@@ -23,20 +23,21 @@ var App = require('app');
  *
  * @type {Em.Mixin}
  */
-App.GroupsMappingMixin = Em.Mixin.create({
+App.GroupsMappingMixin = Em.Mixin.create(App.TrackRequestMixin, {
 
   /**
    * Load config groups
    * @param {String[]} serviceNames
-   * @returns {$.Deferred()}
+   * @returns {$.Deferred}
    * @method loadConfigGroups
    */
   loadConfigGroups: function (serviceNames) {
     var dfd = $.Deferred();
     if (!serviceNames || serviceNames.length === 0) {
+      this.set('configGroupsAreLoaded', true);
       dfd.resolve();
     } else {
-      App.ajax.send({
+      this.trackRequest(App.ajax.send({
         name: 'configs.config_groups.load.services',
         sender: this,
         data: {
@@ -44,7 +45,7 @@ App.GroupsMappingMixin = Em.Mixin.create({
           dfd: dfd
         },
         success: 'saveConfigGroupsToModel'
-      });
+      }));
     }
     return dfd.promise();
   },
@@ -59,6 +60,7 @@ App.GroupsMappingMixin = Em.Mixin.create({
   saveConfigGroupsToModel: function (data, opt, params) {
     App.store.commit();
     App.configGroupsMapper.map(data, false, params.serviceNames.split(','));
+    this.set('configGroupsAreLoaded', true);
     params.dfd.resolve();
   }
 

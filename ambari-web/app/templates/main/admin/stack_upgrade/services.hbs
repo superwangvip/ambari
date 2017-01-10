@@ -17,7 +17,10 @@
 }}
 
 
-<table class="table table-striped">
+<div class="row">
+  <h2 class="table-title col-sm-1">{{t common.stack}}</h2>
+</div>
+<table class="table table-hover">
   <thead>
   <tr>
     <th>{{t common.service}}</th>
@@ -30,7 +33,7 @@
     {{#each service in view.services}}
     <tr>
       <td class="service-display-name">{{service.displayName}}</td>
-      <td class="service-stack-version">{{service.serviceVersion}}</td>
+      <td class="service-stack-version">{{service.serviceVersionDisplay}}</td>
       <td class="stack-version-state">
         {{#if service.isInstalled}}
           <span class="label label-success">{{t common.installed}}</span>
@@ -78,17 +81,17 @@
                   <!--edit mode for current url-->
                   {{#if repository.onEdit}}
                     <div {{bindAttr class=":url-td repository.empty-error:textfield-error repository.invalid-error:textfield-error"}}>
-                      {{view Ember.TextField valueBinding="repository.baseUrl"}}
+                      {{view Ember.TextField valueBinding="repository.baseUrl" class="form-control"}}
                     </div>
                     <div class="clear-td">
                       {{#if repository.clearAll}}
                         <a {{action "clearGroupLocalRepository" repository target="view" }}>
-                          <i class="icon-remove-sign"></i>
+                          <i class="glyphicon glyphicon-remove-sign"></i>
                         </a>
                       {{/if}}
                     </div>
                     <div class="edit-buttons-td">
-                      <a class="btn" {{action doCancel repository target="view"}}>{{t common.cancel}}</a>
+                      <a class="btn btn-default" {{action doCancel repository target="view"}}>{{t common.cancel}}</a>
                     </div>
                     <div class="edit-buttons-td">
                       {{#if repository.empty-error}}
@@ -104,7 +107,7 @@
                     </div>
                     <div class="edit-td">
                       <a {{action "onEditClick" repository target="view" }}>
-                        <i class="icon-edit"></i> {{t common.edit}}
+                        <i class="glyphicon glyphicon-edit"></i> {{t common.edit}}
                       </a>
                     </div>
                   {{/if}}

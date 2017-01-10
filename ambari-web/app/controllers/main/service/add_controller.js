@@ -25,6 +25,11 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   totalSteps: 8,
 
   /**
+   * @type {string}
+   */
+  displayName: Em.I18n.t('services.add.header'),
+
+  /**
    * Used for hiding back button in wizard
    */
   hideBackButton: true,
@@ -66,8 +71,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     configGroups: [],
     clients: [],
     additionalClients: [],
-    smokeuser: "ambari-qa",
-    group: "hadoop"
+    installedHosts: {}
   }),
 
   loadMap: {
@@ -86,10 +90,11 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
           var dfd = $.Deferred();
           var self = this;
           this.loadHosts().done(function () {
-            self.loadMasterComponentHosts();
-            self.load('hosts');
-            self.loadRecommendations();
-            dfd.resolve();
+            self.loadMasterComponentHosts().done(function () {
+              self.load('hosts');
+              self.loadRecommendations();
+              dfd.resolve();
+            });
           });
           return dfd.promise();
         }
@@ -118,14 +123,13 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
           var self = this;
           var dfd = $.Deferred();
           this.loadKerberosDescriptorConfigs().done(function() {
-            var serviceNames = App.StackService.find().filter(function(s) {
-              return s.get('isSelected') || s.get('isInstalled');
-            }).mapProperty('serviceName');
-            self.loadConfigThemes().then(function() {
-              dfd.resolve();
-            });
             self.loadServiceConfigGroups();
-            self.loadServiceConfigProperties();
+            self.loadConfigThemes().then(function() {
+              self.loadServiceConfigProperties().always(function() {
+                self.loadCurrentHostGroups();
+                dfd.resolve();
+              });
+            });
           });
           return dfd.promise();
         }
@@ -153,40 +157,59 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     });
   },
 
+  loadCurrentHostGroups: function () {
+    this.set("content.recommendationsHostGroups", this.getDBProperty('recommendationsHostGroups'));
+  },
+
   /**
    * Load services data. Will be used at <code>Select services(step4)</code> step
    */
   loadServices: function () {
     var services = this.getDBProperty('services');
-    if (!services) {
-      services = {
-        selectedServices: [],
-        installedServices: []
-      };
-      App.StackService.find().forEach(function (item) {
-        var isInstalled = App.Service.find().someProperty('id', item.get('serviceName'));
-        var isSelected = (item.get('serviceName') == this.get('serviceToInstall')) || item.get('coSelectedServices').contains(this.get('serviceToInstall'));
-        item.set('isSelected', isInstalled || isSelected);
-        item.set('isInstalled', isInstalled);
-        if (isInstalled) {
-          services.selectedServices.push(item.get('serviceName'));
-          services.installedServices.push(item.get('serviceName'));
-        } else if(isSelected) {
-          services.selectedServices.push(item.get('serviceName'));
-        }
-      }, this);
-      this.setDBProperty('services', services);
-    } else {
-      App.StackService.find().forEach(function (item) {
+    var stackServices = App.StackService.find();
+    if (services) {
+      stackServices.forEach(function (item) {
         var isSelected = services.selectedServices.contains(item.get('serviceName')) || item.get('serviceName') == this.get('serviceToInstall');
         var isInstalled = services.installedServices.contains(item.get('serviceName'));
         item.set('isSelected', isSelected || (this.get("currentStep") == "1" ? isInstalled : isSelected));
         item.set('isInstalled', isInstalled);
       }, this);
       this.setSkipSlavesStep(App.StackService.find().filterProperty('isSelected').filterProperty('isInstalled', false), 3);
+    } else {
+      services = {
+        selectedServices: [],
+        installedServices: []
+      };
+      stackServices.forEach(function (item) {
+        var isInstalled = App.Service.find().someProperty('id', item.get('serviceName'));
+        var isSelected = item.get('serviceName') === this.get('serviceToInstall') || item.get('coSelectedServices').contains(this.get('serviceToInstall'));
+        item.set('isSelected', isInstalled || isSelected);
+        item.set('isInstalled', isInstalled);
+        var serviceName = item.get('serviceName');
+        if (isInstalled) {
+          services.selectedServices.push(serviceName);
+          services.installedServices.push(serviceName);
+        }
+        else {
+          if (isSelected) {
+            services.selectedServices.push(serviceName);
+          }
+        }
+      }, this);
+      this.setDBProperty('services', services);
     }
+    App.store.commit();
     this.set('serviceToInstall', null);
-    this.set('content.services', App.StackService.find());
+    this.set('content.services', stackServices);
+    var self = this;
+    this.loadServiceVersionFromVersionDefinitions().complete(function () {
+      var serviceVersionsMap = self.get('serviceVersionsMap');
+      stackServices.forEach(function (stackService) {
+        var serviceName = stackService.get('serviceName');
+        Em.set(stackService, 'serviceVersionDisplay', serviceVersionsMap[serviceName]);
+      });
+      self.set('content.services', stackServices);
+    });
   },
 
   /**
@@ -208,7 +231,6 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       return !services.installedServices.contains(serviceName);
     }));
     this.setDBProperty('services', services);
-    console.log('AddServiceController.saveServices: saved data', stepController.get('content'));
 
     this.set('content.selectedServiceNames', selectedServiceNames);
     this.setDBProperty('selectedServiceNames', selectedServiceNames);
@@ -236,7 +258,6 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       });
     });
 
-    console.log("AddServiceController.saveMasterComponentHosts: saved hosts ", masterComponentHosts);
     this.setDBProperty('masterComponentHosts', masterComponentHosts);
     this.set('content.masterComponentHosts', masterComponentHosts);
 
@@ -248,9 +269,14 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
    * Load master component hosts data for using in required step controllers
    */
   loadMasterComponentHosts: function () {
-    this._super();
-    this.set('content.skipMasterStep', App.StackService.find().filterProperty('isSelected').filterProperty('hasMaster').everyProperty('isInstalled', true));
-    this.get('isStepDisabled').findProperty('step', 2).set('value', this.get('content.skipMasterStep') || (this.get('currentStep') == 7 || this.get('currentStep') == 8));
+    var self = this,
+      dfd = $.Deferred();
+    this._super().done(function () {
+      self.set('content.skipMasterStep', App.StackService.find().filterProperty('isSelected').filterProperty('hasMaster').everyProperty('isInstalled', true));
+      self.get('isStepDisabled').findProperty('step', 2).set('value', self.get('content.skipMasterStep') || (self.get('currentStep') == 7 || self.get('currentStep') == 8));
+      dfd.resolve();
+    });
+    return dfd.promise();
   },
 
   /**
@@ -276,14 +302,19 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   },
 
   loadServiceConfigProperties: function () {
-    this._super();
-    if (!this.get('content.services')) {
-      this.loadServices();
-    }
-    if (this.get('currentStep') > 1 && this.get('currentStep') < 6) {
-      this.set('content.skipConfigStep', this.skipConfigStep());
-      this.get('isStepDisabled').findProperty('step', 4).set('value', this.get('content.skipConfigStep'));
-    }
+    var self = this;
+    var dfd = $.Deferred();
+    this._super().always(function() {
+      if (!self.get('content.services')) {
+        self.loadServices();
+      }
+      if (self.get('currentStep') > 1 && self.get('currentStep') < 6) {
+        self.set('content.skipConfigStep', self.skipConfigStep());
+        self.get('isStepDisabled').findProperty('step', 4).set('value', self.get('content.skipConfigStep'));
+      }
+      dfd.resolve();
+    });
+    return dfd.promise();
   },
 
   /**
@@ -294,8 +325,8 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     var self = this,
         dfd = $.Deferred();
     if (App.get('isKerberosEnabled')) {
-      this.getDescriptorConfigs().then(function(properties) {
-        self.set('kerberosDescriptorConfigs', properties);
+      this.loadClusterDescriptorConfigs().then(function(properties) {
+        self.set('kerberosDescriptorConfigs', self.createServicesStackDescriptorConfigs(properties));
       }).always(function(){
         dfd.resolve();
       });
@@ -306,11 +337,16 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   },
 
   saveServiceConfigProperties: function (stepController) {
-    this._super(stepController);
-    if (this.get('currentStep') > 1 && this.get('currentStep') < 6) {
-      this.set('content.skipConfigStep', this.skipConfigStep());
-      this.get('isStepDisabled').findProperty('step', 4).set('value', this.get('content.skipConfigStep'));
-    }
+    var dfd = $.Deferred();
+    var self = this;
+    this._super(stepController).always(function() {
+      if (self.get('currentStep') > 1 && self.get('currentStep') < 6) {
+        self.set('content.skipConfigStep', self.skipConfigStep());
+        self.get('isStepDisabled').findProperty('step', 4).set('value', self.get('content.skipConfigStep'));
+      }
+      dfd.resolve();
+    });
+    return dfd.promise();
   },
 
   /**
@@ -320,111 +356,29 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     var props = this.getDBProperties(['slaveComponentHosts', 'hosts']);
     var slaveComponentHosts = props.slaveComponentHosts,
       hosts = props.hosts || {},
-      host_names = Em.keys(hosts);
+      hostNames = Em.keys(hosts);
     if (!Em.isNone(slaveComponentHosts)) {
       slaveComponentHosts.forEach(function (component) {
         component.hosts.forEach(function (host) {
           //Em.set(host, 'hostName', hosts[host.host_id].name);
-          for (var i = 0; i < host_names.length; i++) {
-            if (hosts[host_names[i]].id === host.host_id) {
-              host.hostName = host_names[i];
+          for (var i = 0; i < hostNames.length; i++) {
+            if (hosts[hostNames[i]].id === host.host_id) {
+              host.hostName = hostNames[i];
               break;
             }
           }
         });
       });
     }
-    if (!slaveComponentHosts) {
-      slaveComponentHosts = this.getSlaveComponentHosts();
-    }
+
+    this.set('content.installedHosts', this.getDBProperty('hosts') || this.get('content.hosts'));
     this.set("content.slaveComponentHosts", slaveComponentHosts);
-    console.log("AddServiceController.loadSlaveComponentHosts: loaded hosts ", slaveComponentHosts);
-  },
-
-  /**
-   * return slaveComponents bound to hosts
-   * @return {Array}
-   */
-  getSlaveComponentHosts: function () {
-    var components = this.get('slaveComponents');
-    var result = [];
-    var installedServices = App.Service.find().mapProperty('serviceName');
-    var selectedServices = this.get('content.services').filterProperty('isSelected', true).mapProperty('serviceName');
-    var installedComponentsMap = {};
-    var uninstalledComponents = [];
-    var hosts = this.getDBProperty('hosts') || this.get('content.hosts');
-    var masterComponents = App.get('components.masters');
-    var nonMasterComponentHosts = [];
-
-    components.forEach(function (component) {
-      if (installedServices.contains(component.get('serviceName'))) {
-        installedComponentsMap[component.get('componentName')] = [];
-      } else if (selectedServices.contains(component.get('serviceName'))) {
-        uninstalledComponents.push(component);
-      }
-    }, this);
-
-    for (var hostName in hosts) {
-      if (hosts[hostName].isInstalled) {
-        var isMasterComponentHosted = false;
-        hosts[hostName].hostComponents.forEach(function (component) {
-          if (installedComponentsMap[component.HostRoles.component_name]) {
-            installedComponentsMap[component.HostRoles.component_name].push(hostName);
-          }
-          if (masterComponents.contains(component.HostRoles.component_name)) {
-            isMasterComponentHosted = true;
-          }
-        }, this);
-        if (!isMasterComponentHosted) {
-          nonMasterComponentHosts.push(hostName);
-        }
-      }
-    }
-
-    for (var componentName in installedComponentsMap) {
-      var component = {
-        componentName: componentName,
-        displayName: App.format.role(componentName),
-        hosts: [],
-        isInstalled: true
-      };
-      installedComponentsMap[componentName].forEach(function (hostName) {
-        component.hosts.push({
-          group: "Default",
-          hostName: hostName,
-          isInstalled: true
-        });
-      }, this);
-      result.push(component);
-    }
-
-    if (!nonMasterComponentHosts.length) {
-      nonMasterComponentHosts.push(Object.keys(hosts)[0]);
-    }
-    var uninstalledComponentHosts =  nonMasterComponentHosts.map(function(_hostName){
-      return {
-        group: "Default",
-        hostName: _hostName,
-        isInstalled: false
-      }
-    });
-    uninstalledComponents.forEach(function (component) {
-      result.push({
-        componentName: component.get('componentName'),
-        displayName: App.format.role(component.get('componentName')),
-        hosts: uninstalledComponentHosts,
-        isInstalled: false
-      })
-    });
-
-    return result;
   },
 
   /**
    * Generate clients list for selected services and save it to model
-   * @param stepController step4WizardController
    */
-  saveClients: function (stepController) {
+  saveClients: function () {
     var clients = [];
     var serviceComponents = App.StackServiceComponent.find();
     this.get('content.services').filterProperty('isSelected').filterProperty('isInstalled',false).forEach(function (_service) {
@@ -440,7 +394,18 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
 
     this.setDBProperty('clientInfo', clients);
     this.set('content.clients', clients);
-    console.log("AddServiceController.saveClients: saved list ", clients);
+  },
+
+  /**
+   * Load information about hosts with clients components
+   */
+  loadClients: function () {
+    var clients = this.getDBProperty('clientInfo');
+    if (clients) {
+      this.set('content.clients', clients);
+    } else {
+      this.saveClients();
+    }
   },
 
   /**
@@ -459,6 +424,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   finish: function () {
     this.clearAllSteps();
     this.clearStorageData();
+    this.clearServiceConfigProperties();
     this.resetDbNamespace();
     App.router.get('updateController').updateAll();
   },
@@ -476,7 +442,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
     return {
       "context": Em.I18n.t('requestInfo.installServices'),
       "ServiceInfo": {"state": "INSTALLED"},
-      "urlParams": "ServiceInfo/service_name.in(" + selectedServices.join(',')  + ")"
+      "urlParams": "ServiceInfo/service_name.in(" + selectedServices.join(',') + ")"
     };
   },
 
@@ -501,7 +467,8 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
   installSelectedServices: function (callback) {
     var name = 'common.services.update';
     var selectedServices = this.get('content.services').filterProperty('isInstalled', false).filterProperty('isSelected', true).mapProperty('serviceName');
-    var data = this.generateDataForInstallServices(selectedServices);
+    var dependentServices = this.getServicesBySelectedSlaves();
+    var data = this.generateDataForInstallServices(selectedServices.concat(dependentServices));
     this.installServicesRequest(name, data, callback.bind(this));
   },
 
@@ -514,6 +481,23 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
       success: 'installServicesSuccessCallback',
       error: 'installServicesErrorCallback'
     }).then(callback, callback);
+  },
+
+  /**
+   * return list of services by selected and not installed slave components
+   * @returns {Array}
+   */
+  getServicesBySelectedSlaves: function () {
+    var result = [];
+    this.get('content.slaveComponentHosts').forEach(function (slaveComponent) {
+      if (slaveComponent.hosts.someProperty('isInstalled', false)) {
+        var stackComponent = App.StackServiceComponent.find().findProperty('componentName', slaveComponent.componentName);
+        if (stackComponent) {
+          result.push(stackComponent.get('serviceName'));
+        }
+      }
+    });
+    return result.uniq();
   },
 
   /**
@@ -533,7 +517,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
             sender: this,
             data: {
               query: queryStr,
-              context: 'Install ' + App.format.role(c.componentName),
+              context: 'Install ' + App.format.role(c.componentName, false),
               HostRoles: {
                 state: 'INSTALLED'
               },
@@ -545,13 +529,12 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
           });
         }
       }, this);
-      if (this.get('installClietsQueue.queue.length') == 0) {
+      if (!this.get('installClietsQueue.queue.length')) {
         return dfd.resolve();
-      } else {
-        this.set('installClientQueueLength', this.get('installClietsQueue.queue.length'));
-        App.get('router.wizardStep8Controller').set('servicesInstalled', true);
-        this.get('installClietsQueue').start();
       }
+      this.set('installClientQueueLength', this.get('installClietsQueue.queue.length'));
+      App.get('router.wizardStep8Controller').set('servicesInstalled', true);
+      this.get('installClietsQueue').start();
     } else {
       dfd.resolve();
     }
@@ -566,7 +549,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
    * @method installClientComplete
    */
   installClientSuccess: function(data, opt, params) {
-    if (this.get('installClientQueueLength') - 1 == params.counter) {
+    if (this.get('installClientQueueLength') - 1 === params.counter) {
       params.deferred.resolve();
     }
   },
@@ -580,7 +563,7 @@ App.AddServiceController = App.WizardController.extend(App.AddSecurityConfigs, {
    * @param params
    */
   installClientError: function(request, ajaxOptions, error, opt, params) {
-    if (this.get('installClientQueueLength') - 1 == params.counter) {
+    if (this.get('installClientQueueLength') - 1 === params.counter) {
       params.deferred.resolve();
     }
   },

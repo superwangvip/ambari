@@ -18,8 +18,20 @@
 
 package org.apache.ambari.server.topology;
 
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.reset;
+import static org.easymock.EasyMock.verify;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -47,6 +59,7 @@ import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
+import org.apache.ambari.server.state.ConfigFactory;
 import org.apache.ambari.server.state.ConfigHelper;
 import org.apache.ambari.server.state.DesiredConfig;
 import org.apache.ambari.server.state.Host;
@@ -54,22 +67,14 @@ import org.apache.ambari.server.state.Service;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.configgroup.ConfigGroup;
 import org.easymock.Capture;
-import org.easymock.EasyMockSupport;
+import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.easymock.EasyMock.capture;
-import static org.easymock.EasyMock.createMock;
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.createStrictMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.expectLastCall;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.reset;
-import static org.easymock.EasyMock.verify;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 
 /**
  * AmbariContext unit tests
@@ -79,6 +84,7 @@ public class AmbariContextTest {
 
   private static final String BP_NAME = "testBP";
   private static final String CLUSTER_NAME = "testCluster";
+  private static final long CLUSTER_ID = 1L;
   private static final String STACK_NAME = "testStack";
   private static final String STACK_VERSION = "testVersion";
   private static final String HOST_GROUP_1 = "group1";
@@ -88,7 +94,7 @@ public class AmbariContextTest {
   StackId stackId = new StackId(STACK_NAME, STACK_VERSION);
 
   private static final AmbariContext context = new AmbariContext();
-  private static final AmbariManagementController controller = createStrictMock(AmbariManagementController.class);
+  private static final AmbariManagementController controller = createNiceMock(AmbariManagementController.class);
   private static final ClusterController clusterController = createStrictMock(ClusterController.class);
   private static final HostResourceProvider hostResourceProvider = createStrictMock(HostResourceProvider.class);
   private static final ServiceResourceProvider serviceResourceProvider = createStrictMock(ServiceResourceProvider.class);
@@ -98,14 +104,15 @@ public class AmbariContextTest {
   private static final ClusterTopology topology = createNiceMock(ClusterTopology.class);
   private static final Blueprint blueprint = createNiceMock(Blueprint.class);
   private static final Stack stack = createNiceMock(Stack.class);
-  private static final Clusters clusters = createStrictMock(Clusters.class);
-  private static final Cluster cluster = createStrictMock(Cluster.class);
+  private static final Clusters clusters = createNiceMock(Clusters.class);
+  private static final Cluster cluster = createNiceMock(Cluster.class);
   private static final HostGroupInfo group1Info = createNiceMock(HostGroupInfo.class);
   private static final ConfigHelper configHelper = createNiceMock(ConfigHelper.class);
   private static final ConfigGroup configGroup1 = createMock(ConfigGroup.class);
   private static final ConfigGroup configGroup2 = createMock(ConfigGroup.class);
   private static final Host host1 = createNiceMock(Host.class);
   private static final Host host2 = createNiceMock(Host.class);
+  private static final ConfigFactory configFactory = createNiceMock(ConfigFactory.class);
 
   private static final Collection<String> blueprintServices = new HashSet<String>();
   private static final Map<String, Service> clusterServices = new HashMap<String, Service>();
@@ -114,7 +121,7 @@ public class AmbariContextTest {
   private Configuration group1Configuration = null;
   private static final Collection<String> group1Hosts = Arrays.asList(HOST1, HOST2);
 
-  private Capture<Set<ConfigGroupRequest>> configGroupRequestCapture = new Capture<Set<ConfigGroupRequest>>();
+  private Capture<Set<ConfigGroupRequest>> configGroupRequestCapture = EasyMock.newCapture();
 
   @Before
   public void setUp() throws Exception {
@@ -160,6 +167,9 @@ public class AmbariContextTest {
     type1Props.put("prop3", "val3");
     group1Configuration = new Configuration(group1Properties, null, bpConfiguration);
 
+    Map<String, String> group1ResolvedProperties = new HashMap<String, String>(bpType1Props);
+    group1ResolvedProperties.putAll(type1Props);
+
     // config type -> service mapping
     Map<String, String> configTypeServiceMapping = new HashMap<String, String>();
     configTypeServiceMapping.put("type1", "service1");
@@ -168,10 +178,32 @@ public class AmbariContextTest {
     configGroups.put(1L, configGroup1);
     configGroups.put(2L, configGroup2);
 
+    // config factory mock
+    Config type1Group1 = createNiceMock(Config.class);
+    expect(type1Group1.getType()).andReturn("type1").anyTimes();
+    expect(type1Group1.getTag()).andReturn("group1").anyTimes();
+    expect(type1Group1.getProperties()).andReturn(group1ResolvedProperties).anyTimes();
+    expect(configFactory.createReadOnly(EasyMock.eq("type1"), EasyMock.eq("group1"),
+        EasyMock.<Map<String, String>> anyObject(),
+        EasyMock.<Map<String, Map<String, String>>> anyObject())).andReturn(type1Group1).anyTimes();
+    replay(type1Group1);
+
+    Config type1Service1 = createNiceMock(Config.class);
+    expect(type1Service1.getType()).andReturn("type1").anyTimes();
+    expect(type1Service1.getTag()).andReturn("service1").anyTimes();
+    expect(type1Service1.getProperties()).andReturn(type1Props).anyTimes();
+    expect(configFactory.createReadOnly(EasyMock.eq("type1"), EasyMock.eq("service1"),
+        EasyMock.<Map<String, String>> anyObject(),
+        EasyMock.<Map<String, Map<String, String>>> anyObject())).andReturn(
+            type1Service1).anyTimes();
+    replay(type1Service1);
+
+    context.configFactory = configFactory;
+
     blueprintServices.add("service1");
     blueprintServices.add("service2");
 
-    expect(topology.getClusterName()).andReturn(CLUSTER_NAME).anyTimes();
+    expect(topology.getClusterId()).andReturn(CLUSTER_ID).anyTimes();
     expect(topology.getBlueprint()).andReturn(blueprint).anyTimes();
     expect(topology.getHostGroupInfo()).andReturn(Collections.singletonMap(HOST_GROUP_1, group1Info)).anyTimes();
 
@@ -181,6 +213,7 @@ public class AmbariContextTest {
     expect(blueprint.getComponents("service1")).andReturn(Arrays.asList("s1Component1", "s1Component2")).anyTimes();
     expect(blueprint.getComponents("service2")).andReturn(Collections.singleton("s2Component1")).anyTimes();
     expect(blueprint.getConfiguration()).andReturn(bpConfiguration).anyTimes();
+    expect(blueprint.getCredentialStoreEnabled("service1")).andReturn("true").anyTimes();
 
     expect(stack.getName()).andReturn(STACK_NAME).anyTimes();
     expect(stack.getVersion()).andReturn(STACK_VERSION).anyTimes();
@@ -193,8 +226,15 @@ public class AmbariContextTest {
     expect(controller.getConfigHelper()).andReturn(configHelper).anyTimes();
 
     expect(clusters.getCluster(CLUSTER_NAME)).andReturn(cluster).anyTimes();
+    expect(clusters.getClusterById(CLUSTER_ID)).andReturn(cluster).anyTimes();
     expect(clusters.getHost(HOST1)).andReturn(host1).anyTimes();
     expect(clusters.getHost(HOST2)).andReturn(host2).anyTimes();
+
+    Map<String, Host> clusterHosts = ImmutableMap.of(HOST1, host1, HOST2, host2);
+    expect(clusters.getHostsForCluster(CLUSTER_NAME)).andReturn(clusterHosts).anyTimes();
+
+    expect(cluster.getClusterId()).andReturn(CLUSTER_ID).anyTimes();
+    expect(cluster.getClusterName()).andReturn(CLUSTER_NAME).anyTimes();
 
     expect(host1.getHostId()).andReturn(1L).anyTimes();
     expect(host2.getHostId()).andReturn(2L).anyTimes();
@@ -210,41 +250,39 @@ public class AmbariContextTest {
   public void tearDown() throws Exception {
     verify(controller, clusterController, hostResourceProvider, serviceResourceProvider, componentResourceProvider,
         hostComponentResourceProvider, configGroupResourceProvider, topology, blueprint, stack, clusters,
-        cluster, group1Info, configHelper, configGroup1, configGroup2, host1, host2);
+        cluster, group1Info, configHelper, configGroup1, configGroup2, host1, host2, configFactory);
 
     reset(controller, clusterController, hostResourceProvider, serviceResourceProvider, componentResourceProvider,
         hostComponentResourceProvider, configGroupResourceProvider, topology, blueprint, stack, clusters,
-        cluster, group1Info, configHelper, configGroup1, configGroup2, host1, host2);
+        cluster, group1Info, configHelper, configGroup1, configGroup2, host1, host2, configFactory);
   }
 
   private void replayAll() {
     replay(controller, clusterController, hostResourceProvider, serviceResourceProvider, componentResourceProvider,
         hostComponentResourceProvider, configGroupResourceProvider, topology, blueprint, stack, clusters,
-        cluster, group1Info, configHelper, configGroup1, configGroup2, host1, host2);
+        cluster, group1Info, configHelper, configGroup1, configGroup2, host1, host2, configFactory);
   }
 
   @Test
   public void testCreateAmbariResources() throws Exception {
     // expectations
-    Capture<ClusterRequest> clusterRequestCapture = new Capture<ClusterRequest>();
+    Capture<ClusterRequest> clusterRequestCapture = EasyMock.newCapture();
     controller.createCluster(capture(clusterRequestCapture));
     expectLastCall().once();
-    expect(controller.getClusters()).andReturn(clusters).anyTimes();
-    expect(clusters.getCluster(CLUSTER_NAME)).andReturn(cluster).anyTimes();
     expect(cluster.getServices()).andReturn(clusterServices).anyTimes();
 
-    Capture<Set<ServiceRequest>> serviceRequestCapture = new Capture<Set<ServiceRequest>>();
-    Capture<Set<ServiceComponentRequest>> serviceComponentRequestCapture = new Capture<Set<ServiceComponentRequest>>();
+    Capture<Set<ServiceRequest>> serviceRequestCapture = EasyMock.newCapture();
+    Capture<Set<ServiceComponentRequest>> serviceComponentRequestCapture = EasyMock.newCapture();
 
     serviceResourceProvider.createServices(capture(serviceRequestCapture));
     expectLastCall().once();
     componentResourceProvider.createComponents(capture(serviceComponentRequestCapture));
     expectLastCall().once();
 
-    Capture<Request> serviceInstallRequestCapture = new Capture<Request>();
-    Capture<Request> serviceStartRequestCapture = new Capture<Request>();
-    Capture<Predicate> installPredicateCapture = new Capture<Predicate>();
-    Capture<Predicate> startPredicateCapture = new Capture<Predicate>();
+    Capture<Request> serviceInstallRequestCapture = EasyMock.newCapture();
+    Capture<Request> serviceStartRequestCapture = EasyMock.newCapture();
+    Capture<Predicate> installPredicateCapture = EasyMock.newCapture();
+    Capture<Predicate> startPredicateCapture = EasyMock.newCapture();
 
     expect(serviceResourceProvider.updateResources(capture(serviceInstallRequestCapture),
         capture(installPredicateCapture))).andReturn(null).once();
@@ -254,7 +292,7 @@ public class AmbariContextTest {
     replayAll();
 
     // test
-    context.createAmbariResources(topology);
+    context.createAmbariResources(topology, CLUSTER_NAME, null, null);
 
     // assertions
     ClusterRequest clusterRequest = clusterRequestCapture.getValue();
@@ -320,7 +358,7 @@ public class AmbariContextTest {
     expect(clusterController.ensureResourceProvider(Resource.Type.ConfigGroup)).andReturn(configGroupResourceProvider).once();
     //todo: for now not using return value so just returning null
     expect(configGroupResourceProvider.createResources(capture(configGroupRequestCapture))).andReturn(null).once();
-    configHelper.moveDeprecatedGlobals(stackId, group1Configuration.getFullProperties(1), CLUSTER_NAME);
+
     // replay all mocks
     replayAll();
 
@@ -354,13 +392,59 @@ public class AmbariContextTest {
   }
 
   @Test
+  public void testRegisterHostWithConfigGroup_createNewConfigGroupWithPendingHosts() throws Exception {
+    // test specific expectations
+    expect(cluster.getConfigGroups()).andReturn(Collections.<Long, ConfigGroup>emptyMap()).once();
+    expect(clusterController.ensureResourceProvider(Resource.Type.ConfigGroup)).andReturn(configGroupResourceProvider).once();
+    //todo: for now not using return value so just returning null
+    expect(configGroupResourceProvider.createResources(capture(configGroupRequestCapture))).andReturn(null).once();
+
+    reset(group1Info);
+    expect(group1Info.getConfiguration()).andReturn(group1Configuration).anyTimes();
+    Collection<String> groupHosts = ImmutableList.of(HOST1, HOST2, "pending_host"); // pending_host is not registered with the cluster
+    expect(group1Info.getHostNames()).andReturn(groupHosts).anyTimes(); // there are 3 hosts for the host group
+    // replay all mocks
+    replayAll();
+
+    // test
+    context.registerHostWithConfigGroup(HOST1, topology, HOST_GROUP_1);
+
+    // assertions
+    Set<ConfigGroupRequest> configGroupRequests = configGroupRequestCapture.getValue();
+    assertEquals(1, configGroupRequests.size());
+    ConfigGroupRequest configGroupRequest = configGroupRequests.iterator().next();
+    assertEquals(CLUSTER_NAME, configGroupRequest.getClusterName());
+    assertEquals("testBP:group1", configGroupRequest.getGroupName());
+    assertEquals("service1", configGroupRequest.getTag());
+    assertEquals("Host Group Configuration", configGroupRequest.getDescription());
+    Collection<String> requestHosts = configGroupRequest.getHosts();
+
+    // we expect only HOST1 and HOST2 in the config group request as the third host "pending_host" hasn't registered yet with the cluster
+    assertEquals(2, requestHosts.size());
+    assertTrue(requestHosts.contains(HOST1));
+    assertTrue(requestHosts.contains(HOST2));
+
+    Map<String, Config> requestConfig = configGroupRequest.getConfigs();
+    assertEquals(1, requestConfig.size());
+    Config type1Config = requestConfig.get("type1");
+    //todo: other properties such as cluster name are not currently being explicitly set on config
+    assertEquals("type1", type1Config.getType());
+    assertEquals("group1", type1Config.getTag());
+    Map<String, String> requestProps = type1Config.getProperties();
+    assertEquals(3, requestProps.size());
+    // 1.2 is overridden value
+    assertEquals("val1.2", requestProps.get("prop1"));
+    assertEquals("val2", requestProps.get("prop2"));
+    assertEquals("val3", requestProps.get("prop3"));
+  }
+
+  @Test
   public void testRegisterHostWithConfigGroup_registerWithExistingConfigGroup() throws Exception {
     // test specific expectations
     expect(cluster.getConfigGroups()).andReturn(configGroups).once();
 
     expect(configGroup1.getHosts()).andReturn(Collections.singletonMap(2L, host2)).once();
     configGroup1.addHost(host1);
-    configGroup1.persistHostMapping();
 
     // replay all mocks
     replayAll();
@@ -424,6 +508,110 @@ public class AmbariContextTest {
     // verify that wait returns successfully with non-empty list
     // with all configuration types tagged as "TOPOLOGY_RESOLVED"
     context.waitForConfigurationResolution(CLUSTER_NAME, testUpdatedConfigTypes);
+  }
+
+  @Test
+  public void testIsTopologyResolved_True() throws Exception {
+
+    // Given
+    DesiredConfig testHdfsDesiredConfig1 = new DesiredConfig();
+    testHdfsDesiredConfig1.setTag(TopologyManager.INITIAL_CONFIG_TAG);
+    testHdfsDesiredConfig1.setVersion(1L);
+
+    DesiredConfig testHdfsDesiredConfig2 = new DesiredConfig();
+    testHdfsDesiredConfig2.setTag(TopologyManager.TOPOLOGY_RESOLVED_TAG);
+    testHdfsDesiredConfig2.setVersion(2L);
+
+    DesiredConfig testHdfsDesiredConfig3 = new DesiredConfig();
+    testHdfsDesiredConfig3.setTag("ver123");
+    testHdfsDesiredConfig3.setVersion(3L);
+
+    DesiredConfig testCoreSiteDesiredConfig = new DesiredConfig();
+    testCoreSiteDesiredConfig.setTag("ver123");
+    testCoreSiteDesiredConfig.setVersion(1L);
+
+
+    Map<String, Set<DesiredConfig>> testDesiredConfigs = ImmutableMap.<String, Set<DesiredConfig>>builder()
+      .put("hdfs-site", ImmutableSet.of(testHdfsDesiredConfig2, testHdfsDesiredConfig3, testHdfsDesiredConfig1))
+      .put("core-site", ImmutableSet.of(testCoreSiteDesiredConfig))
+      .build();
+
+    expect(cluster.getAllDesiredConfigVersions()).andReturn(testDesiredConfigs).atLeastOnce();
+
+    replayAll();
+
+    // When
+    boolean topologyResolved = context.isTopologyResolved(CLUSTER_ID);
+
+    // Then
+    assertTrue(topologyResolved);
+  }
+
+  @Test
+  public void testIsTopologyResolved_WrongOrder_False() throws Exception {
+
+    // Given
+    DesiredConfig testHdfsDesiredConfig1 = new DesiredConfig();
+    testHdfsDesiredConfig1.setTag(TopologyManager.INITIAL_CONFIG_TAG);
+    testHdfsDesiredConfig1.setVersion(2L);
+
+    DesiredConfig testHdfsDesiredConfig2 = new DesiredConfig();
+    testHdfsDesiredConfig2.setTag(TopologyManager.TOPOLOGY_RESOLVED_TAG);
+    testHdfsDesiredConfig2.setVersion(1L);
+
+    DesiredConfig testHdfsDesiredConfig3 = new DesiredConfig();
+    testHdfsDesiredConfig3.setTag("ver123");
+    testHdfsDesiredConfig3.setVersion(3L);
+
+    DesiredConfig testCoreSiteDesiredConfig = new DesiredConfig();
+    testCoreSiteDesiredConfig.setTag("ver123");
+    testCoreSiteDesiredConfig.setVersion(1L);
+
+
+    Map<String, Set<DesiredConfig>> testDesiredConfigs = ImmutableMap.<String, Set<DesiredConfig>>builder()
+      .put("hdfs-site", ImmutableSet.of(testHdfsDesiredConfig2, testHdfsDesiredConfig3, testHdfsDesiredConfig1))
+      .put("core-site", ImmutableSet.of(testCoreSiteDesiredConfig))
+      .build();
+
+    expect(cluster.getAllDesiredConfigVersions()).andReturn(testDesiredConfigs).atLeastOnce();
+
+    replayAll();
+
+    // When
+    boolean topologyResolved = context.isTopologyResolved(CLUSTER_ID);
+
+    // Then due to INITIAL -> TOPOLOGY_RESOLVED not honored
+    assertFalse(topologyResolved);
+  }
+
+  @Test
+  public void testIsTopologyResolved_False() throws Exception {
+
+    // Given
+    DesiredConfig testHdfsDesiredConfig1 = new DesiredConfig();
+    testHdfsDesiredConfig1.setTag("ver1222");
+    testHdfsDesiredConfig1.setVersion(1L);
+
+
+    DesiredConfig testCoreSiteDesiredConfig = new DesiredConfig();
+    testCoreSiteDesiredConfig.setTag("ver123");
+    testCoreSiteDesiredConfig.setVersion(1L);
+
+
+    Map<String, Set<DesiredConfig>> testDesiredConfigs = ImmutableMap.<String, Set<DesiredConfig>>builder()
+      .put("hdfs-site", ImmutableSet.of(testHdfsDesiredConfig1))
+      .put("core-site", ImmutableSet.of(testCoreSiteDesiredConfig))
+      .build();
+
+    expect(cluster.getAllDesiredConfigVersions()).andReturn(testDesiredConfigs).atLeastOnce();
+
+    replayAll();
+
+    // When
+    boolean topologyResolved = context.isTopologyResolved(CLUSTER_ID);
+
+    // Then
+    assertFalse(topologyResolved);
   }
 
 

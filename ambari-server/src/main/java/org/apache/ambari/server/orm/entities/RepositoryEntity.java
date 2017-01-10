@@ -25,6 +25,8 @@ public class RepositoryEntity {
   private String name;
   private String baseUrl;
   private String repositoryId;
+  private String mirrorsList;
+  private boolean unique;
 
   public String getName() {
     return name;
@@ -72,4 +74,19 @@ public class RepositoryEntity {
     return result;
   }
 
+  public String getMirrorsList() {
+    return mirrorsList;
+  }
+
+  public void setMirrorsList(String mirrorsList) {
+    this.mirrorsList = mirrorsList;
+  }
+
+  public boolean isUnique() {
+    return unique;
+  }
+
+  public void setUnique(boolean unique) {
+    this.unique = unique;
+  }
 }

@@ -17,10 +17,10 @@
  */
 package org.apache.ambari.server.orm.dao;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
-import junit.framework.Assert;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.orm.GuiceJpaInitializer;
 import org.apache.ambari.server.orm.InMemoryDefaultTestModule;
@@ -37,11 +37,11 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 
-import static org.apache.ambari.server.orm.OrmTestHelper.CLUSTER_NAME;
+import junit.framework.Assert;
 
 public class TopologyLogicalRequestDAOTest {
   private Injector injector;
@@ -73,7 +73,7 @@ public class TopologyLogicalRequestDAOTest {
     requestEntity.setBlueprintName("bp1");
     requestEntity.setClusterAttributes("attributes");
     requestEntity.setClusterProperties("properties");
-    requestEntity.setClusterName(CLUSTER_NAME);
+    requestEntity.setClusterId(clusterId);
     requestEntity.setDescription("description");
     requestDAO.create(requestEntity);
     List<TopologyRequestEntity> requestEntities = requestDAO.findAll();

@@ -25,7 +25,8 @@ from resource_management.core.resources.system import Execute, File
 from resource_management.core.source import InlineTemplate, StaticFile
 from resource_management.libraries.functions.copy_tarball import copy_to_hdfs
 from resource_management.libraries.functions.format import format
-from resource_management.libraries.functions.version import compare_versions
+from resource_management.libraries.functions import StackFeature
+from resource_management.libraries.functions.stack_features import check_stack_feature
 from resource_management.libraries.resources.execute_hadoop import ExecuteHadoop
 from resource_management.libraries.resources.hdfs_resource import HdfsResource
 from resource_management.libraries.script.script import Script
@@ -44,6 +45,13 @@ class PigServiceCheckLinux(PigServiceCheck):
     input_file = format('/user/{smokeuser}/passwd')
     output_dir = format('/user/{smokeuser}/pigsmoke.out')
 
+    params.HdfsResource(format("/user/{smokeuser}"),
+                        type="directory",
+                        action="create_on_execute",
+                        owner=params.smokeuser,
+                        mode=params.smoke_hdfs_user_mode,
+                        )
+
     params.HdfsResource(output_dir,
                         type="directory",
                         action="delete_on_execute",
@@ -57,7 +65,11 @@ class PigServiceCheckLinux(PigServiceCheck):
     )
     params.HdfsResource(None, action="execute")
  
-
+    if params.security_enabled:
+      kinit_cmd = format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal};")
+      Execute(kinit_cmd,
+        user=params.smokeuser
+      )
 
     File( format("{tmp_dir}/pigSmoke.sh"),
       content = StaticFile("pigSmoke.sh"),
@@ -80,7 +92,7 @@ class PigServiceCheckLinux(PigServiceCheck):
       bin_dir = params.hadoop_bin_dir
     )
 
-    if params.hdp_stack_version != "" and compare_versions(params.hdp_stack_version, '2.2') >= 0:
+    if params.stack_version_formatted and check_stack_feature(StackFeature.PIG_ON_TEZ, params.stack_version_formatted):
       # cleanup results from previous test
       params.HdfsResource(output_dir,
                           type="directory",
@@ -98,15 +110,9 @@ class PigServiceCheckLinux(PigServiceCheck):
       resource_created = copy_to_hdfs(
         "tez", params.user_group,
         params.hdfs_user,
-        host_sys_prepped=params.host_sys_prepped)
+        skip=params.sysprep_skip_copy_tarballs_hdfs)
       if resource_created:
         params.HdfsResource(None, action="execute")
-
-      if params.security_enabled:
-        kinit_cmd = format("{kinit_path_local} -kt {smoke_user_keytab} {smokeuser_principal};")
-        Execute(kinit_cmd,
-                user=params.smokeuser
-        )
 
       Execute(format("pig -x tez {tmp_dir}/pigSmoke.sh"),
         tries     = 3,
@@ -127,7 +133,7 @@ class PigServiceCheckWindows(PigServiceCheck):
   def service_check(self, env):
     import params
     env.set_params(params)
-    smoke_cmd = os.path.join(params.hdp_root,"Run-SmokeTests.cmd")
+    smoke_cmd = os.path.join(params.stack_root,"Run-SmokeTests.cmd")
     service = "PIG"
     Execute(format("cmd /C {smoke_cmd} {service}", smoke_cmd=smoke_cmd, service=service), logoutput=True, user=params.pig_user, timeout=300)
 

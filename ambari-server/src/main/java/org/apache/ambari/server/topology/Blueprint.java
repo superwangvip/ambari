@@ -18,11 +18,11 @@
 
 package org.apache.ambari.server.topology;
 
-import org.apache.ambari.server.controller.internal.Stack;
-import org.apache.ambari.server.orm.entities.BlueprintEntity;
-
 import java.util.Collection;
 import java.util.Map;
+
+import org.apache.ambari.server.controller.internal.Stack;
+import org.apache.ambari.server.orm.entities.BlueprintEntity;
 
 /**
  * Blueprint representation.
@@ -62,6 +62,15 @@ public interface Blueprint {
   public Configuration getConfiguration();
 
   /**
+   * Get the Blueprint cluster scoped setting.
+   * The blueprint cluster scoped setting has the setting properties
+   * with the setting names associated with the blueprint.
+   *
+   * @return blueprint cluster scoped setting
+   */
+  public Setting getSetting();
+
+  /**
    * Get all of the services represented in the blueprint.
    *
    * @return collection of all represented service names
@@ -76,6 +85,31 @@ public interface Blueprint {
    * @return collection of component names for the service.  Will not return null.
    */
   public Collection<String> getComponents(String service);
+
+  /**
+   * Get whether a component is enabled for auto start.
+   *
+   * @param serviceName - Service name.
+   * @param componentName - Component name.
+   *
+   * @return null if value is not specified; true or false if specified.
+   */
+  public String getRecoveryEnabled(String serviceName, String componentName);
+
+  /**
+   * Get whether a service is enabled for credential store use.
+   *
+   * @param serviceName - Service name.
+   *
+   * @return null if value is not specified; true or false if specified.
+   */
+  public String getCredentialStoreEnabled(String serviceName);
+
+  /**
+   * Check if auto skip failure is enabled.
+   * @return true if enabled, otherwise false.
+   */
+  public boolean shouldSkipFailure();
 
   /**
    * Get the stack associated with the blueprint.
@@ -102,6 +136,8 @@ public interface Blueprint {
    * @return collection of host groups containing the specified component; will not return null
    */
   public Collection<HostGroup> getHostGroupsForComponent(String component);
+
+  public SecurityConfiguration getSecurity();
 
   /**
    * Validate the blueprint topology.

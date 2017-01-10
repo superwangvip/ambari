@@ -21,13 +21,14 @@ package org.apache.ambari.server.controller.gsinstaller;
 import java.util.HashMap;
 import java.util.Set;
 
-import junit.framework.Assert;
-
+import org.apache.ambari.server.controller.internal.RequestImpl;
 import org.apache.ambari.server.controller.spi.Predicate;
 import org.apache.ambari.server.controller.spi.Resource;
 import org.apache.ambari.server.controller.utilities.PredicateBuilder;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.junit.Test;
+
+import junit.framework.Assert;
 
 /**
  * Tests for GSInstallerComponentProvider.
@@ -92,7 +93,7 @@ public class GSInstallerComponentProviderTest {
     GSInstallerResourceProvider provider = new GSInstallerComponentProvider(clusterDefinition);
 
     try {
-      provider.deleteResources(null);
+      provider.deleteResources(new RequestImpl(null, null, null, null), null);
       Assert.fail("Expected UnsupportedOperationException.");
     } catch (UnsupportedOperationException e) {
       //expected

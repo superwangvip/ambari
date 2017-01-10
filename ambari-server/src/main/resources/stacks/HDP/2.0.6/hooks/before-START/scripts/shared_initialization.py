@@ -35,22 +35,23 @@ def setup_hadoop():
   )
 
   #directories
-  if params.has_namenode:
+  if params.has_namenode or params.dfs_type == 'HCFS':
     Directory(params.hdfs_log_dir_prefix,
-              recursive=True,
+              create_parents = True,
               owner='root',
               group=params.user_group,
               mode=0775,
               cd_access='a',
     )
-    Directory(params.hadoop_pid_dir_prefix,
-              recursive=True,
+    if params.has_namenode:
+      Directory(params.hadoop_pid_dir_prefix,
+              create_parents = True,
               owner='root',
               group='root',
               cd_access='a',
-    )
+      )
     Directory(params.hadoop_tmp_dir,
-              recursive=True,
+              create_parents = True,
               owner=params.hdfs_user,
               cd_access='a',
               )
@@ -60,8 +61,10 @@ def setup_hadoop():
     else:
       tc_owner = params.hdfs_user
       
-    # if WebHDFS is not enabled we need this jar to create hadoop folders.
-    if not WebHDFSUtil.is_webhdfs_available(params.is_webhdfs_enabled, params.default_fs):
+    # if WebHDFS is not enabled we need this jar to create hadoop folders and copy tarballs to HDFS.
+    if params.sysprep_skip_copy_fast_jar_hdfs:
+      print "Skipping copying of fast-hdfs-resource.jar as host is sys prepped"
+    elif params.dfs_type == 'HCFS' or not WebHDFSUtil.is_webhdfs_available(params.is_webhdfs_enabled, params.default_fs):
       # for source-code of jar goto contrib/fast-hdfs-resource
       File(format("{ambari_libs_dir}/fast-hdfs-resource.jar"),
            mode=0644,
@@ -86,7 +89,7 @@ def setup_hadoop():
              mode=0644,
              group=params.user_group,
              owner=params.hdfs_user,
-             content=params.log4j_props
+             content=InlineTemplate(params.log4j_props)
         )
       elif (os.path.exists(format("{params.hadoop_conf_dir}/log4j.properties"))):
         File(log4j_filename,
@@ -97,8 +100,14 @@ def setup_hadoop():
 
       File(os.path.join(params.hadoop_conf_dir, "hadoop-metrics2.properties"),
            owner=params.hdfs_user,
-           content=Template("hadoop-metrics2.properties.j2")
+           group=params.user_group,
+           content=InlineTemplate(params.hadoop_metrics2_properties_content)
       )
+
+    if params.dfs_type == 'HCFS' and params.has_core_site and 'ECS_CLIENT' in params.component_list:
+       create_dirs()
+
+    create_microsoft_r_dir()
 
 
 def setup_configs():
@@ -107,7 +116,7 @@ def setup_configs():
   """
   import params
 
-  if params.has_namenode:
+  if params.has_namenode or params.dfs_type == 'HCFS':
     if os.path.exists(params.hadoop_conf_dir):
       File(params.task_log4j_properties_location,
            content=StaticFile("task-log4j.properties"),
@@ -142,9 +151,41 @@ def generate_include_file():
 def create_javahome_symlink():
   if os.path.exists("/usr/jdk/jdk1.6.0_31") and not os.path.exists("/usr/jdk64/jdk1.6.0_31"):
     Directory("/usr/jdk64/",
-         recursive=True,
+         create_parents = True,
     )
     Link("/usr/jdk/jdk1.6.0_31",
          to="/usr/jdk64/jdk1.6.0_31",
     )
+
+def create_dirs():
+   import params
+   params.HdfsResource(params.hdfs_tmp_dir,
+                       type="directory",
+                       action="create_on_execute",
+                       owner=params.hdfs_user,
+                       mode=0777
+   )
+   params.HdfsResource(params.smoke_hdfs_user_dir,
+                       type="directory",
+                       action="create_on_execute",
+                       owner=params.smoke_user,
+                       mode=params.smoke_hdfs_user_mode
+   )
+   params.HdfsResource(None,
+                      action="execute"
+   )
+
+def create_microsoft_r_dir():
+  import params
+  if 'MICROSOFT_R_NODE_CLIENT' in params.component_list and params.default_fs:
+    directory = '/user/RevoShare'
+    try:
+      params.HdfsResource(directory,
+                          type="directory",
+                          action="create_on_execute",
+                          owner=params.hdfs_user,
+                          mode=0777)
+      params.HdfsResource(None, action="execute")
+    except Exception as exception:
+      Logger.warning("Could not check the existence of {0} on DFS while starting {1}, exception: {2}".format(directory, params.current_service, str(exception)))
 

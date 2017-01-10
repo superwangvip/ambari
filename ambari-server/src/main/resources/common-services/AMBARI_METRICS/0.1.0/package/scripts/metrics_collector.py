@@ -18,7 +18,7 @@ limitations under the License.
 
 """
 
-from resource_management import *
+from resource_management.libraries.script import Script
 from resource_management.libraries.functions.security_commons import build_expectations, \
   cached_kinit_executor, get_params_from_filesystem, validate_security_config_properties, \
   FILE_TYPE_XML
@@ -31,17 +31,23 @@ from ambari_commons.os_family_impl import OsFamilyImpl
 
 class AmsCollector(Script):
   def install(self, env):
+    import params
+    env.set_params(params)
     self.install_packages(env)
 
   def configure(self, env, action = None):
     import params
     env.set_params(params)
+    if action == 'start' and params.embedded_mode_multiple_instances:
+      raise Fail("AMS in embedded mode cannot have more than 1 instance. Delete all but 1 instances or switch to Distributed mode ")
     hbase('master', action)
     hbase('regionserver', action)
     ams(name='collector')
 
   def start(self, env):
     self.configure(env, action = 'start') # for security
+    # stop hanging components before start
+    ams_service('collector', action = 'stop')
     ams_service('collector', action = 'start')
 
   def stop(self, env):
@@ -54,7 +60,19 @@ class AmsCollector(Script):
   def status(self, env):
     import status_params
     env.set_params(status_params)
-    check_service_status(name='collector')
+    check_service_status(env, name='collector')
+    
+  def get_log_folder(self):
+    import params
+    return params.ams_collector_log_dir
+  
+  def get_user(self):
+    import params
+    return params.ams_user
+
+  def get_pid_files(self):
+    import status
+    return status.get_collector_pid_files()
 
 
 @OsFamilyImpl(os_family=OsFamilyImpl.DEFAULT)
@@ -83,7 +101,12 @@ class AmsCollectorDefault(AmsCollector):
     security_params = get_params_from_filesystem(status_params.ams_hbase_conf_dir,
                                                  {'hbase-site.xml': FILE_TYPE_XML})
 
-    is_hbase_distributed = security_params['hbase-site']['hbase.rootdir'].startswith('hdfs://')
+    # In case of blueprint deployment security_status might be called before AMS collector is installed.
+    if ('hbase-site' not in security_params or 'hbase.cluster.distributed' not in security_params['hbase-site']) :
+      self.put_structured_out({"securityState": "UNKNOWN"})
+      return
+
+    is_hbase_distributed = security_params['hbase-site']['hbase.cluster.distributed']
     # for embedded mode, when HBase is backed by file, security state is SECURED_KERBEROS by definition when cluster is secured
     if status_params.security_enabled and not is_hbase_distributed:
       self.put_structured_out({"securityState": "SECURED_KERBEROS"})

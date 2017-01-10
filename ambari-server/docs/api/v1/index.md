@@ -142,7 +142,7 @@ Start the HDFS service (update the state of the HDFS service to be ‘STARTED’
 
     {
       "ServiceInfo": {
-        "state" : "STARTED”
+        "state" : "STARTED"
       }
     }
 
@@ -361,6 +361,16 @@ Alert resources contain the relationships between definitions, history, and the 
 - [Alert Dispatching](alert-dispatching.md) Dispatching involves creating groups of alert definitions and adding notification targets to those groups.
 
 - [Alert History](alerts.md) The current state of an alert and all of its historical events are available for querying.
+
+#### credentials
+Credential resources are principal (or username) and password pairs that are tagged with an alias and stored either in a _temporary_ or _persisted_ storage facility.  These resources may be created, updated, and deleted; however (for security reasons) when getting credential resources, only the alias and an indicator of whether the credential is stored in the temporary or persisted store is returned.  Credentials are sub-resources of Clusters.
+
+[Credential Resources](credential-resources.md)
+
+#### permissions
+Permission resources are used to help determine authorization rights for a user.  A permission is assigned to a user by setting up a privilege relationship between a user and the permission to be projected onto some resource.  
+
+[Permission Resources](permission-resources.md)
 
 Partial Response
 ----
@@ -826,7 +836,7 @@ Operator functions behave like relational operators and provide additional funct
 	PUT /api/v1/clusters/c1/services?ServiceInfo/state=INSTALLED 
     {
       "ServiceInfo": {
-        "state" : "STARTED”
+        "state" : "STARTED"
       }
     }
 
@@ -882,7 +892,7 @@ RequestInfo allows the user to specify additional properties in the body of a re
 ###query
 
 
-The query property allows the user to specify yhe query string as part of the request body.  This is sometimes required in the case of a very long query string that causes the request to exceed the limits of the URL.
+The query property allows the user to specify the query string as part of the request body.  This is sometimes required in the case of a very long query string that causes the request to exceed the limits of the URL.
 
 **Example – Specifying the query string in the request body**
 

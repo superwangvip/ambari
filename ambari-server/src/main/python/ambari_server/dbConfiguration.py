@@ -19,16 +19,19 @@ limitations under the License.
 '''
 import glob
 import os
+import shutil
 
-from ambari_commons import OSConst
+from ambari_commons import OSConst, OSCheck
 from ambari_commons.exceptions import FatalException
 from ambari_commons.logging_utils import get_silent, print_error_msg, print_info_msg, print_warning_msg, set_silent
 from ambari_commons.os_family_impl import OsFamilyImpl
 from ambari_commons.str_utils import cbool
+from ambari_server.serverClassPath import JDBC_DRIVER_PATH_PROPERTY
 from ambari_server.serverConfiguration import decrypt_password_for_alias, get_ambari_properties, get_is_secure, \
   get_resources_location, get_value_from_properties, is_alias_string, \
-  JDBC_PASSWORD_PROPERTY, JDBC_RCA_PASSWORD_ALIAS, PRESS_ENTER_MSG, DEFAULT_DBMS_PROPERTY
-from ambari_server.userInput import get_validated_string_input
+  JDBC_PASSWORD_PROPERTY, JDBC_RCA_PASSWORD_ALIAS, PRESS_ENTER_MSG, DEFAULT_DBMS_PROPERTY, JDBC_DATABASE_PROPERTY, \
+  PERSISTENCE_TYPE_PROPERTY, update_properties, configDefaults
+from ambari_server.userInput import get_YN_input, get_validated_string_input
 
 
 #Database settings
@@ -39,12 +42,23 @@ SETUP_DB_CONNECT_ATTEMPTS = 3
 
 USERNAME_PATTERN = "^[a-zA-Z_][a-zA-Z0-9_\-]*$"
 PASSWORD_PATTERN = "^[a-zA-Z0-9_-]*$"
-DATABASE_NAMES = ["postgres", "oracle", "mysql", "mssql", "sqlanywhere"]
+CUSTOM_JDBC_DB_NAMES = ["postgres", "mysql", "mssql", "oracle", "hsqldb", "sqlanywhere", "bdb"]
+DATABASE_NAMES = ["postgres", "oracle", "mysql", "mssql", "sqlanywhere", "bdb"]
 DATABASE_FULL_NAMES = {"oracle": "Oracle", "mysql": "MySQL", "mssql": "Microsoft SQL Server", "postgres":
-  "PostgreSQL", "sqlanywhere": "SQL Anywhere"}
-
+  "PostgreSQL", "sqlanywhere": "SQL Anywhere", "bdb" : "Berkeley DB"}
+LINUX_DBMS_KEYS_LIST = [ 'embedded', 'oracle', 'mysql', 'postgres', 'mssql', 'sqlanywhere', 'bdb']
 AMBARI_DATABASE_NAME = "ambari"
 AMBARI_DATABASE_TITLE = "ambari"
+
+TAR_GZ_ARCHIVE_TYPE = ".tar.gz"
+
+default_connectors_map = { "mssql":"sqljdbc4.jar",
+                           "mysql":"mysql-connector-java.jar",
+                           "postgres":"postgresql-jdbc.jar",
+                           "oracle":"ojdbc.jar",
+                           "sqlanywhere":"sajdbc4.jar",
+                           "hsqldb":"hsqldb.jar",
+                           "bdb": 'je-5.0.73.jar'}
 
 STORAGE_TYPE_LOCAL = 'local'
 STORAGE_TYPE_REMOTE = 'remote'
@@ -117,14 +131,17 @@ class DBMSConfig(object):
   #
   # Main method. Configures the database according to the options and the existing properties.
   #
-  def configure_database(self, properties):
+  def configure_database(self, properties, options):
     result = self._prompt_db_properties()
     if result:
       #DB setup should be done last after doing any setup.
       if self._is_local_database():
-        self._setup_local_server(properties)
+        self._setup_local_server(properties, options)
+        # this issue appears only for Suse. Postgres need /var/run/postgresql dir but do not create it
+        if OSCheck.is_suse_family():
+          self._create_postgres_lock_directory()
       else:
-        self._setup_remote_server(properties)
+        self._setup_remote_server(properties, options)
     return result
 
   def setup_database(self):
@@ -145,14 +162,46 @@ class DBMSConfig(object):
     pass
 
   def ensure_jdbc_driver_installed(self, properties):
-    (result, msg) = self._prompt_jdbc_driver_install(properties)
-    if result == -1:
-      print_error_msg(msg)
-      raise FatalException(-1, msg)
+    server_jdbc_path = properties.get_property(JDBC_DRIVER_PATH_PROPERTY)
+    if server_jdbc_path and os.path.isfile(server_jdbc_path):
+      return True
 
-    if result != 1:
-      result = self._install_jdbc_driver(properties, result)
-    return cbool(result)
+    default_driver_path = self._get_default_driver_path(properties)
+    if default_driver_path and os.path.isfile(default_driver_path):
+      ambari_should_use_existing_default_jdbc = get_YN_input("Should ambari use existing default jdbc {0} [y/n] (y)? ".format(default_driver_path), True)
+      if ambari_should_use_existing_default_jdbc:
+        properties.process_pair(JDBC_DRIVER_PATH_PROPERTY, default_driver_path)
+        update_properties(properties)
+        return True
+
+    path_to_custom_jdbc_driver = get_validated_string_input("Enter full path to custom jdbc driver: ", None, None, None, False, False)
+    if path_to_custom_jdbc_driver and os.path.isfile(path_to_custom_jdbc_driver):
+      try:
+        custom_jdbc_name = os.path.basename(path_to_custom_jdbc_driver)
+        if not path_to_custom_jdbc_driver == os.path.join(configDefaults.JAVA_SHARE_PATH, custom_jdbc_name):
+          if os.path.isfile(os.path.join(configDefaults.JAVA_SHARE_PATH, custom_jdbc_name)):
+            replace_jdbc_in_share_dir = get_YN_input("You already have file {0} in /usr/share/java/. Should it be replaced? [y/n] (y)? ".format(custom_jdbc_name), True)
+            if replace_jdbc_in_share_dir:
+              try:
+                os.remove(os.path.join(configDefaults.JAVA_SHARE_PATH, custom_jdbc_name))
+              except Exception, ee:
+                err = 'ERROR: Could not remove jdbc file. %s' % os.path.join(configDefaults.JAVA_SHARE_PATH, custom_jdbc_name)
+                raise FatalException(1, err)
+          shutil.copy(path_to_custom_jdbc_driver, configDefaults.JAVA_SHARE_PATH)
+          print "Copying {0} to {1}".format(path_to_custom_jdbc_driver, configDefaults.JAVA_SHARE_PATH)
+      except Exception, e:
+        err = "Can not copy file {0} to {1} due to: {2} . Please check file " \
+          "permissions and free disk space.".format(path_to_custom_jdbc_driver, configDefaults.JAVA_SHARE_PATH, str(e))
+        raise FatalException(1, err)
+
+      properties.process_pair(JDBC_DRIVER_PATH_PROPERTY, path_to_custom_jdbc_driver)
+      update_properties(properties)
+      return True
+    else:
+      print_error_msg("Custom jdbc connector path is unavailable. Please put correct path to jdbc connector.")
+
+    return False
+
 
   def change_db_files_owner(self):
     if self._is_local_database():
@@ -165,12 +214,12 @@ class DBMSConfig(object):
   #
 
   @staticmethod
-  def _read_password_from_properties(properties):
+  def _read_password_from_properties(properties, options):
     database_password = DEFAULT_PASSWORD
     password_file = get_value_from_properties(properties, JDBC_PASSWORD_PROPERTY, "")
     if password_file:
       if is_alias_string(password_file):
-        database_password = decrypt_password_for_alias(properties, JDBC_RCA_PASSWORD_ALIAS)
+        database_password = decrypt_password_for_alias(properties, JDBC_RCA_PASSWORD_ALIAS, options)
       else:
         if os.path.isabs(password_file) and os.path.exists(password_file):
           with open(password_file, 'r') as file:
@@ -211,7 +260,10 @@ class DBMSConfig(object):
     #linux_prompt_db_properties(args)
     return False
 
-  def _setup_local_server(self, properties):
+  def _create_postgres_lock_directory(self):
+    pass
+
+  def _setup_local_server(self, properties, options):
     pass
 
   def _setup_local_database(self):
@@ -220,7 +272,7 @@ class DBMSConfig(object):
   def _reset_local_database(self):
     pass
 
-  def _setup_remote_server(self, properties):
+  def _setup_remote_server(self, properties, options):
     pass
 
   def _setup_remote_database(self):
@@ -326,16 +378,9 @@ class DBMSConfigFactoryWindows(DBMSConfigFactory):
 class DBMSConfigFactoryLinux(DBMSConfigFactory):
   def __init__(self):
     from ambari_server.dbConfiguration_linux import createPGConfig, createOracleConfig, createMySQLConfig, \
-      createMSSQLConfig, createSQLAConfig
+      createMSSQLConfig, createSQLAConfig, createBDBConfig
 
-    self.DBMS_KEYS_LIST = [
-      'embedded',
-      'oracle',
-      'mysql',
-      'postgres',
-      'mssql',
-      'sqlanywhere'
-    ]
+    self.DBMS_KEYS_LIST = LINUX_DBMS_KEYS_LIST
 
     self.DRIVER_KEYS_LIST = [
       'oracle',
@@ -343,16 +388,19 @@ class DBMSConfigFactoryLinux(DBMSConfigFactory):
       'postgres',
       'mssql',
       'hsqldb',
-      'sqlanywhere'
+      'sqlanywhere',
+      'bdb'
     ]
 
     self.DBMS_LIST = [
       DBMSDesc(self.DBMS_KEYS_LIST[3], STORAGE_TYPE_LOCAL, 'PostgreSQL', 'Embedded', createPGConfig),
       DBMSDesc(self.DBMS_KEYS_LIST[1], STORAGE_TYPE_REMOTE, 'Oracle', '', createOracleConfig),
-      DBMSDesc(self.DBMS_KEYS_LIST[2], STORAGE_TYPE_REMOTE, 'MySQL', '', createMySQLConfig),
+      DBMSDesc(self.DBMS_KEYS_LIST[2], STORAGE_TYPE_REMOTE, 'MySQL / MariaDB', '', createMySQLConfig),
       DBMSDesc(self.DBMS_KEYS_LIST[3], STORAGE_TYPE_REMOTE, 'PostgreSQL', '', createPGConfig),
       DBMSDesc(self.DBMS_KEYS_LIST[4], STORAGE_TYPE_REMOTE, 'Microsoft SQL Server', 'Tech Preview', createMSSQLConfig),
-      DBMSDesc(self.DBMS_KEYS_LIST[5], STORAGE_TYPE_REMOTE, 'SQL Anywhere', '', createSQLAConfig)
+      DBMSDesc(self.DBMS_KEYS_LIST[5], STORAGE_TYPE_REMOTE, 'SQL Anywhere', '', createSQLAConfig),
+      DBMSDesc(self.DBMS_KEYS_LIST[6], STORAGE_TYPE_REMOTE, 'BDB', '', createBDBConfig)
+
     ]
 
     self.DBMS_DICT = \
@@ -371,6 +419,8 @@ class DBMSConfigFactoryLinux(DBMSConfigFactory):
       self.DBMS_KEYS_LIST[3] + '-' + STORAGE_TYPE_REMOTE: 3,
       self.DBMS_KEYS_LIST[5] + '-': 5,
       self.DBMS_KEYS_LIST[5] + '-' + STORAGE_TYPE_REMOTE: 5,
+      self.DBMS_KEYS_LIST[6] + '-': 6,
+      self.DBMS_KEYS_LIST[6] + '-' + STORAGE_TYPE_LOCAL: 6,
     }
 
     self.DBMS_PROMPT_PATTERN = "[{0}] - {1}{2}\n"
@@ -389,7 +439,14 @@ class DBMSConfigFactoryLinux(DBMSConfigFactory):
     try:
       dbms_index = options.database_index
     except AttributeError:
-      dbms_index = self._get_default_dbms_index(options)
+      db_name = get_value_from_properties(get_ambari_properties(), JDBC_DATABASE_PROPERTY, "").strip().lower()
+      persistence_type = get_value_from_properties(get_ambari_properties(), PERSISTENCE_TYPE_PROPERTY, "").strip().lower()
+      if persistence_type == STORAGE_TYPE_LOCAL:
+        dbms_index = self.DBMS_KEYS_LIST.index("embedded")
+      elif db_name:
+        dbms_index = self.DBMS_KEYS_LIST.index(db_name)
+      else:
+        dbms_index = self._get_default_dbms_index(options)
 
     if options.must_set_database_options:
       n_dbms = 1

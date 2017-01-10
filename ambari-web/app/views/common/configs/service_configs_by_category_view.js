@@ -19,14 +19,13 @@
 var App = require('app');
 
 var validator = require('utils/validator');
-var stringUtils = require('utils/string_utils');
 require('utils/configs/modification_handlers/modification_handler');
 
 App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverridable, {
 
   templateName: require('templates/common/configs/service_config_category'),
 
-  classNames: ['accordion-group', 'common-config-category'],
+  classNames: ['panel-group', 'common-config-category'],
 
   classNameBindings: ['category.name', 'isShowBlock::hidden'],
 
@@ -49,40 +48,135 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
   serviceConfigs: null,
 
   /**
-   * Configs for current category filtered by <code>isVisible</code>
-   * and sorted by <code>displayType</code> and <code>index</code>
-   * @type {App.ServiceConfigProperty[]}
-   */
-  categoryConfigs: function () {
-    // sort content type configs, sort the rest of configs based on index and then add content array at the end (as intended)
-    var categoryConfigs = this.get('categoryConfigsAll'),
-      contentOrderedArray = this.orderContentAtLast(categoryConfigs.filterProperty('displayType','content')),
-      contentFreeConfigs = categoryConfigs.filter(function(config) {return config.get('displayType')!=='content';}),
-      indexOrdered = this.sortByIndex(contentFreeConfigs);
-
-    return indexOrdered.concat(contentOrderedArray).filterProperty('isVisible', true);
-  }.property('categoryConfigsAll.@each.isVisible').cacheable(),
-
-  /**
-   * This method provides all the properties which apply
+   * This is array of all the properties which apply
    * to this category, irrespective of visibility. This
    * is helpful in Oozie/Hive database configuration, where
    * MySQL etc. database options don't show up, because
    * they were not visible initially.
    * @type {App.ServiceConfigProperty[]}
    */
-   categoryConfigsAll: function () {
-     return this.get('serviceConfigs').filterProperty('category', this.get('category.name'));
-   }.property('serviceConfigs.@each').cacheable(),
+  categoryConfigsAll: [],
+
+  /**
+   * Configs for current category filtered by <code>isVisible</code>
+   * and sorted by <code>displayType</code> and <code>index</code>
+   * @type {App.ServiceConfigProperty[]}
+   */
+  categoryConfigs: [],
+
+  /**
+   * Link to main configs view
+   * @type {Ember.View}
+   */
+  mainView: function () {
+    //todo: Get rid of this logic. Get data from controller instead.
+    return ['mainHostServiceConfigsController', 'mainServiceInfoConfigsController'].contains(this.get('controller.name')) ? this.get('parentView.parentView') : this.get('parentView');
+  }.property('controller.name'),
+
+  didInsertElement: function () {
+    var self = this;
+    // If `this.categoryConfigsAll` is a computed property then don't set it.
+    // some extended class like `App.NotificationsConfigsView` overrides `categoryConfigsAll` as computed property
+    Em.run.next(function () {
+      if (self.get('state') !== 'inDOM') {
+        return;
+      }
+      if ($.isArray(self.categoryConfigsAll)) {
+        self.setCategoryConfigsAll();
+      }
+      self.setVisibleCategoryConfigs();
+      var isCollapsed = self.calcIsCollapsed();
+      self.set('category.isCollapsed', isCollapsed);
+      if (isCollapsed) {
+        self.$('.accordion-body').hide();
+      }
+      else {
+        self.$('.accordion-body').show();
+      }
+      $('#serviceConfig').tooltip({
+        selector: '[data-toggle=tooltip]',
+        placement: 'top'
+      });
+      self.filteredCategoryConfigs();
+      self.updateReadOnlyFlags();
+    });
+  },
+
+  willDestroyElement: function () {
+    $('[data-toggle=tooltip]').tooltip('destroy');
+  },
+
+  setVisibleCategoryConfigsOnce: function () {
+    if (this.get('controller.isChangingConfigAttributes')) {
+      this.setVisibleCategoryConfigs();
+    } else {
+      Em.run.once(this, 'addConfigToCategoryConfigs');
+    }
+  }.observes('categoryConfigsAll.@each.isVisible'),
+
+  setCategoryConfigsAll: function () {
+    // reset `categoryConfigsAll` to empty array
+    this.set('categoryConfigsAll', []);
+    var categoryConfigsAll = this.get('serviceConfigs').filterProperty('category', this.get('category.name'));
+    if (categoryConfigsAll && categoryConfigsAll.length) {
+      this.set('categoryConfigsAll',categoryConfigsAll);
+    }
+  },
+
+  setVisibleCategoryConfigs: function () {
+    var orderedCategoryConfigs = this.getOrderedCategoryConfigs();
+    this.set('categoryConfigs', orderedCategoryConfigs);
+  },
+
+  /**
+   * This method is invoked when any change in visibility of items of `categoryConfigsAll` array happens and accordingly sets `categoryConfigs` array
+   * Instead of completely resetting `categoryConfigs` array whenever this function is invoked , items are added/removed in `categoryConfigs` (which is binded in template)
+   * Doing so is observed to avoid memory leak
+   */
+  addConfigToCategoryConfigs: function () {
+    var orderedCategoryConfigs = this.getOrderedCategoryConfigs();
+    var categoryConfigs = this.get('categoryConfigs');
+    var configsToAdd = [];
+    var configsToRemove = [];
+    // If property is added or made visible then add it to visible categoryconfigs
+    orderedCategoryConfigs.forEach(function(item){
+      var isPresent = categoryConfigs.filterProperty('name', item.get('name')).findProperty('filename',item.get('filename'));
+      if (!isPresent) {
+        configsToAdd.pushObject(item);
+      }
+    }, this);
+
+    // If property is removed or made invisible, then remove it from visible categoryconfigs
+    categoryConfigs.forEach(function(item){
+      var orderedCategoryConfig = orderedCategoryConfigs.filterProperty('name', item.get('name')).findProperty('filename',item.get('filename'));
+      if (!orderedCategoryConfig) {
+        configsToRemove.pushObject(item);
+      }
+    }, this);
+
+    categoryConfigs.pushObjects(configsToAdd);
+    categoryConfigs.removeObjects(configsToRemove);
+  },
+
+  getOrderedCategoryConfigs: function() {
+    var categoryConfigsAll = this.get('categoryConfigsAll');
+    var orderedCategoryConfigs = [];
+    if (categoryConfigsAll) {
+      var contentOrderedArray = this.orderContentAtLast(categoryConfigsAll.filterProperty('displayType','content')),
+        contentFreeConfigs = categoryConfigsAll.filter(function(config) {return config.get('displayType')!=='content';}),
+        indexOrdered = this.sortByIndex(contentFreeConfigs);
+      orderedCategoryConfigs = indexOrdered.concat(contentOrderedArray).filterProperty('isVisible', true);
+    }
+    return orderedCategoryConfigs;
+  },
+
 
   /**
    * If added/removed a serverConfigObject, this property got updated.
    * Without this property, all serviceConfigs Objects will show up even if some was collapsed before.
    * @type {boolean}
    */
-  isCategoryBodyVisible: function () {
-    return this.get('category.isCollapsed') ? "display: none;" : "display: block;"
-  }.property('serviceConfigs.length'),
+  isCategoryBodyVisible: Em.computed.ifThenElse('category.isCollapsed', 'display: none;', 'display: block;'),
 
   /**
    * Should we show config group or not
@@ -93,9 +187,9 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
     var hasFilteredAdvancedConfigs = this.get('categoryConfigs').filter(function (config) {
         return config.get('isHiddenByFilter') === false && Em.isNone(config.get('widget'));
       }, this).length > 0;
-    return (isCustomPropertiesCategory && this.get('controller.filter') === '' && !this.get('parentView.columns').someProperty('selected')) ||
+    return (isCustomPropertiesCategory && this.get('controller.filter') === '' && !this.get('mainView.columns').someProperty('selected')) ||
       hasFilteredAdvancedConfigs;
-  }.property('category.customCanAddProperty', 'categoryConfigs.@each.isHiddenByFilter', 'categoryConfigs.@each.widget', 'controller.filter', 'parentView.columns.@each.selected'),
+  }.property('category.customCanAddProperty', 'categoryConfigs.@each.isHiddenByFilter', 'categoryConfigs.@each.widget', 'controller.filter', 'mainView.columns.@each.selected'),
 
   /**
    * Re-order the configs to list content displayType properties at last in the category
@@ -158,6 +252,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
       var self = this;
       return App.ModalPopup.show({
         classNames: ['modal-690px-width'],
+        modalDialogClasses: ['modal-lg'],
         showCloseButton: false,
         header: "Warning: you must also change these Service properties",
         onApply: function () {
@@ -232,8 +327,14 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
    * @method filteredCategoryConfigs
    */
   filteredCategoryConfigs: function () {
+    Em.run.once(this, 'collapseCategory');
+  }.observes('serviceConfigs.@each.isHiddenByFilter'),
+
+  collapseCategory: function () {
+    if (this.get('state') === 'destroyed') return;
     $('.popover').remove();
-    var filter = this.get('parentView.filter').toLowerCase();
+    var filter = this.get('mainView.filter');
+    filter = filter? filter.toLowerCase() : filter; // filter can be undefined in some wizard
     var filteredResult = this.get('categoryConfigs');
     var isInitialRendering = !arguments.length || arguments[1] != 'categoryConfigs';
 
@@ -246,21 +347,24 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
         this.set('category.collapsedByDefault', this.get('category.isCollapsed'));
       }
       this.set('category.isCollapsed', !filteredResult.length);
+    } else if (typeof this.get('category.collapsedByDefault') !== 'undefined') {
+      // If user clear filter -- restore defaults
+      this.set('category.isCollapsed', this.get('category.collapsedByDefault'));
+      this.set('category.collapsedByDefault', undefined);
+    } else if (isInitialRendering && !filteredResult.length) {
+      this.set('category.isCollapsed', true);
     }
-    else
-      if (typeof this.get('category.collapsedByDefault') !== 'undefined') {
-        // If user clear filter -- restore defaults
-        this.set('category.isCollapsed', this.get('category.collapsedByDefault'));
-        this.set('category.collapsedByDefault', undefined);
+    var classNames = this.get('category.name').split(' ');
+    // Escape the dots in category names
+    classNames = classNames.map(function(className) {
+      if(className.indexOf(".")) {
+        className = className.split(".").join("\\.");
       }
-      else
-        if (isInitialRendering && !filteredResult.length) {
-          this.set('category.isCollapsed', true);
-        }
-
-    var categoryBlock = $('.' + this.get('category.name').split(' ').join('.') + '>.accordion-body');
+      return className;
+    });
+    var categoryBlock = $('.' + classNames.join('.') + '>.panel-body');
     this.get('category.isCollapsed') ? categoryBlock.hide() : categoryBlock.show();
-  }.observes('categoryConfigs', 'parentView.filter', 'parentView.columns.@each.selected'),
+  },
 
   /**
    * sort configs in current category by index
@@ -294,38 +398,17 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
    * @method onToggleBlock
    */
   onToggleBlock: function () {
-    this.$('.accordion-body').toggle('blind', 500);
+    this.$('.panel-body').toggle('blind', 500);
     this.toggleProperty('category.isCollapsed');
   },
 
   /**
-   * Determines should accordion be collapsed by default
+   * Determines should panel be collapsed by default
    * @returns {boolean}
    * @method calcIsCollapsed
    */
   calcIsCollapsed: function() {
     return Em.isNone(this.get('category.isCollapsed')) ? (this.get('category.name').indexOf('Advanced') != -1 || this.get('category.name').indexOf('CapacityScheduler') != -1 || this.get('category.name').indexOf('Custom') != -1) : this.get('category.isCollapsed');
-  },
-
-  didInsertElement: function () {
-    var isCollapsed = this.calcIsCollapsed();
-    var self = this;
-    this.set('category.isCollapsed', isCollapsed);
-    if (isCollapsed) {
-      this.$('.accordion-body').hide();
-    }
-    else {
-      this.$('.accordion-body').show();
-    }
-    $('#serviceConfig').tooltip({
-      selector: '[data-toggle=tooltip]',
-      placement: 'top'
-    });
-    this.updateReadOnlyFlags();
-    this.filteredCategoryConfigs();
-    Em.run.next(function () {
-      self.updateReadOnlyFlags();
-    });
   },
 
   /**
@@ -341,27 +424,251 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
   },
 
   createProperty: function (propertyObj) {
-    var selectedConfigGroup = this.get('controller.selectedConfigGroup'),
-      isSecureConfig = this.isSecureConfig(propertyObj.name, propertyObj.filename);
-    this.get('serviceConfigs').pushObject(App.ServiceConfigProperty.create({
-      name: propertyObj.name,
-      displayName: propertyObj.displayName || propertyObj.name,
-      value: propertyObj.value,
-      displayType: stringUtils.isSingleLine(propertyObj.value) ? 'advanced' : 'multiLine',
-      isSecureConfig: isSecureConfig,
-      category: propertyObj.categoryName,
-      id: 'site property',
-      serviceName: propertyObj.serviceName,
-      savedValue: null,
-      recommendedValue: null,
-      supportsFinal: App.config.shouldSupportFinal(propertyObj.serviceName, propertyObj.filename),
-      filename: propertyObj.filename || '',
-      isUserProperty: true,
-      isNotSaved: true,
-      isRequired: false,
-      group: selectedConfigGroup.get('isDefault') ? null : selectedConfigGroup,
-      isOverridable: selectedConfigGroup.get('isDefault')
-    }));
+    var config;
+    var selectedConfigGroup = this.get('controller.selectedConfigGroup');
+    if (selectedConfigGroup.get('isDefault')) {
+      config = App.config.createDefaultConfig(propertyObj.name, propertyObj.filename, false, {
+        value: propertyObj.value,
+        propertyType: propertyObj.propertyType,
+        category: propertyObj.categoryName,
+        isNotSaved: true
+      });
+    } else {
+      config = App.config.createCustomGroupConfig({
+        propertyName: propertyObj.name,
+        filename: propertyObj.filename,
+        value: propertyObj.value,
+        propertyType: propertyObj.propertyType,
+        category: propertyObj.categoryName,
+        isNotSaved: true
+      }, selectedConfigGroup);
+    }
+    this._appendConfigToCollection(App.ServiceConfigProperty.create(config));
+  },
+
+  /**
+   * @param {App.ServiceConfigProperty} serviceConfigProperty
+   * @private
+   */
+  _appendConfigToCollection: function (serviceConfigProperty) {
+    this.get('serviceConfigs').pushObject(serviceConfigProperty);
+    this.get('categoryConfigsAll').pushObject(serviceConfigProperty);
+  },
+
+  /**
+   * Find duplications within the same confType
+   * Result in error, as no duplicated property keys are allowed in the same configType
+   * */
+  isDuplicatedConfigKey: function(name) {
+    var category = this.get('category');
+    var siteFileName = category.get('siteFileName');
+
+    var service = this.get('service');
+    var serviceName = service.get('serviceName');
+
+    var configsOfFile = service.get('configs').filterProperty('filename', siteFileName);
+    return configsOfFile.findProperty('name', name);
+  },
+
+  /**
+   * find duplications in all confTypes of the service
+   * Result in warning, to remind user the existence of a same-named property
+   * */
+  isDuplicatedConfigKeyinConfigs: function(name) {
+    var files = [];
+    var service = this.get('service');
+    var configFiles = service.get('configs').mapProperty('filename').uniq();
+    configFiles.forEach(function (configFile) {
+      var configsOfFile = service.get('configs').filterProperty('filename', configFile);
+      if (configsOfFile.findProperty('name', name)) {
+        files.push(configFile);
+      }
+    }, this);
+    return files;
+  },
+
+  processAddPropertyWindow: function(isBulkMode, modePersistKey) {
+    var self = this;
+    var category = this.get('category');
+    var siteFileName = category.get('siteFileName');
+
+    var service = this.get('service');
+    var serviceName = service.get('serviceName');
+
+    var serviceConfigObj = Em.Object.create({
+      isBulkMode: isBulkMode,
+      bulkConfigValue: '',
+      bulkConfigError: false,
+      bulkConfigErrorMessage: '',
+
+      name: '',
+      value: '',
+      propertyType: [],
+      content: ['PASSWORD', 'USER', 'GROUP', 'TEXT', 'ADDITIONAL_USER_PROPERTY', 'NOT_MANAGED_HDFS_PATH', 'VALUE_FROM_PROPERTY_FILE'],
+      isKeyError: false,
+      showFilterLink: false,
+      errorMessage: '',
+      observeAddPropertyValue: function () {
+        var name = this.get('name').trim();
+        if (name !== '') {
+          if (validator.isValidConfigKey(name)) {
+            if (!self.isDuplicatedConfigKey(name)) { //no duplication within the same confType
+              var files = self.isDuplicatedConfigKeyinConfigs(name);
+              if (files.length > 0) {
+                //still check for a warning, if there are duplications across confTypes
+                this.set('showFilterLink', true);
+                this.set('isKeyWarning', true);
+                this.set('isKeyError', false);
+                this.set('warningMessage', Em.I18n.t('services.service.config.addPropertyWindow.error.derivedKey.location').format(files.join(" ")));
+              } else {
+                this.set('showFilterLink', false);
+                this.set('isKeyError', false);
+                this.set('isKeyWarning', false);
+                this.set('errorMessage', '');
+              }
+            } else {
+              this.set('showFilterLink', true);
+              this.set('isKeyError', true);
+              this.set('isKeyWarning', false);
+              this.set('errorMessage', Em.I18n.t('services.service.config.addPropertyWindow.error.derivedKey.infile'));
+            }
+          } else {
+            this.set('showFilterLink', false);
+            this.set('isKeyError', true);
+            this.set('isKeyWarning', false);
+            this.set('errorMessage', Em.I18n.t('form.validator.configKey'));
+          }
+        } else {
+          this.set('showFilterLink', false);
+          this.set('isKeyError', true);
+          this.set('isKeyWarning', false);
+          this.set('errorMessage', Em.I18n.t('services.service.config.addPropertyWindow.error.required'));
+        }
+      }
+    });
+
+    App.ModalPopup.show({
+      classNames: ['common-modal-wrapper'],
+      modalDialogClasses: ['modal-lg'],
+      header: Em.I18n.t('installer.step7.config.addProperty'),
+      primary: Em.I18n.t('add'),
+      secondary: Em.I18n.t('common.cancel'),
+      onPrimary: function () {
+        var propertyObj = {
+          filename: siteFileName,
+          serviceName: serviceName,
+          categoryName: category.get('name')
+        };
+        if (serviceConfigObj.isBulkMode) {
+          var popup = this;
+          this.processConfig(serviceConfigObj.bulkConfigValue, function (error, parsedConfig) {
+            if (error) {
+              serviceConfigObj.set('bulkConfigError', true);
+              serviceConfigObj.set('bulkConfigErrorMessage', error);
+            } else {
+              for (var key in parsedConfig) {
+                if (parsedConfig.hasOwnProperty(key)) {
+                  propertyObj.name = key;
+                  propertyObj.value = parsedConfig[key];
+                  self.createProperty(propertyObj);
+                }
+              }
+              popup.hide();
+            }
+          });
+        } else {
+          serviceConfigObj.observeAddPropertyValue();
+          /**
+           * For the first entrance use this if (serviceConfigObj.name.trim() != '')
+           */
+          if (!serviceConfigObj.isKeyError) {
+            propertyObj.name = serviceConfigObj.get('name').trim();
+            propertyObj.value = serviceConfigObj.get('value');
+            propertyObj.propertyType = serviceConfigObj.get('propertyType');
+            self.createProperty(propertyObj);
+            this.hide();
+          }
+        }
+      },
+
+      lineNumber: function(index) {
+        return Em.I18n.t('services.service.config.addPropertyWindow.error.lineNumber').format(index + 1);
+      },
+
+      processConfig: function(config, callback) {
+        var lines = config.split('\n');
+        var errorMessages = [];
+        var parsedConfig = {};
+        var propertyCount = 0;
+        lines.forEach(function (line, index) {
+          if (line.trim() === '') {
+            return;
+          }
+          var delimiter = '=';
+          var delimiterPosition = line.indexOf(delimiter);
+          if (delimiterPosition === -1) {
+            errorMessages.push(this.lineNumber(index) + Em.I18n.t('services.service.config.addPropertyWindow.error.format'));
+            return;
+          }
+          var key = Em.Handlebars.Utils.escapeExpression(line.slice(0, delimiterPosition).trim());
+          var value = line.slice(delimiterPosition + 1);
+          if (validator.isValidConfigKey(key)) {
+            if (!self.isDuplicatedConfigKey(key) && !(key in parsedConfig)) {
+              parsedConfig[key] = value;
+              propertyCount++;
+            } else {
+              errorMessages.push(this.lineNumber(index) + Em.I18n.t('services.service.config.addPropertyWindow.error.derivedKey.specific').format(key));
+            }
+          } else {
+            errorMessages.push(this.lineNumber(index) + Em.I18n.t('form.validator.configKey.specific').format(key));
+          }
+        }, this);
+
+        if (errorMessages.length > 0) {
+          callback(errorMessages.join('<br>'), parsedConfig);
+        }
+        else if (propertyCount === 0) {
+          callback(Em.I18n.t('services.service.config.addPropertyWindow.propertiesPlaceholder', parsedConfig));
+        }
+        else {
+          callback(null, parsedConfig);
+        }
+      },
+      willDestroyElement: function () {
+        serviceConfigObj.destroy();
+        this._super();
+      },
+      bodyClass: Em.View.extend({
+        fileName: siteFileName,
+        notMisc: serviceName !== 'MISC',
+        templateName: require('templates/common/configs/addPropertyWindow'),
+        serviceConfigObj: serviceConfigObj,
+        didInsertElement: function () {
+          this._super();
+          serviceConfigObj.addObserver('name', serviceConfigObj, 'observeAddPropertyValue');
+          App.tooltip(this.$("[data-toggle=tooltip]"), {
+            placement: "top"
+          });
+        },
+        willDestroyElement: function () {
+          this.$().popover('destroy');
+          serviceConfigObj.removeObserver('name', serviceConfigObj, 'observeAddPropertyValue');
+          this.set('serviceConfigObj', null);
+          this._super();
+        },
+        toggleBulkMode: function () {
+          this.toggleProperty('serviceConfigObj.isBulkMode');
+          self.postUserPref(modePersistKey, this.get('serviceConfigObj.isBulkMode'));
+        },
+        filterByKey: function (event) {
+          var controller = (App.router.get('currentState.name') == 'configs')
+              ? App.router.get('mainServiceInfoConfigsController')
+              : App.router.get('wizardStep7Controller');
+          this.get('mainView').onClose();
+          controller.set('filter', event.view.get('serviceConfigObj.name'));
+        }
+      })
+    });
   },
 
   /**
@@ -373,178 +680,16 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
     var modePersistKey = this.persistKey();
     var selectedConfigGroup = this.get('controller.selectedConfigGroup');
 
-    persistController.getUserPref(modePersistKey).pipe(function (data) {
+    persistController.getUserPref(modePersistKey).then(function (data) {
       return !!data;
     },function () {
       return false;
     }).always((function (isBulkMode) {
-
-        var category = this.get('category');
-        var siteFileName = category.get('siteFileName');
-
-        var service = this.get('service');
-        var serviceName = service.get('serviceName');
-
-        var configsOfFile = service.get('configs').filterProperty('filename', siteFileName);
-        var siteFileProperties = App.config.get('configMapping').all().filterProperty('filename', siteFileName);
-
-        function isDuplicatedConfigKey(name) {
-          return siteFileProperties.findProperty('name', name) || configsOfFile.findProperty('name', name);
-        }
-
-        var serviceConfigObj = Ember.Object.create({
-          isBulkMode: isBulkMode,
-          bulkConfigValue: '',
-          bulkConfigError: false,
-          bulkConfigErrorMessage: '',
-
-          name: '',
-          value: '',
-          isKeyError: false,
-          showFilterLink: false,
-          errorMessage: '',
-          observeAddPropertyValue: function () {
-            var name = this.get('name');
-            if (name.trim() != '') {
-              if (validator.isValidConfigKey(name)) {
-                if (!isDuplicatedConfigKey(name)) {
-                  this.set('showFilterLink', false);
-                  this.set('isKeyError', false);
-                  this.set('errorMessage', '');
-                } else {
-                  this.set('showFilterLink', true);
-                  this.set('isKeyError', true);
-                  this.set('errorMessage', Em.I18n.t('services.service.config.addPropertyWindow.error.derivedKey'));
-                }
-              } else {
-                this.set('showFilterLink', false);
-                this.set('isKeyError', true);
-                this.set('errorMessage', Em.I18n.t('form.validator.configKey'));
-              }
-            } else {
-              this.set('showFilterLink', false);
-              this.set('isKeyError', true);
-              this.set('errorMessage', Em.I18n.t('services.service.config.addPropertyWindow.error.required'));
-            }
-          }.observes('name')
-        });
-
-        function processConfig(config, callback) {
-          var lines = config.split('\n');
-          var errorMessages = [];
-          var parsedConfig = {};
-          var propertyCount = 0;
-
-          function lineNumber(index) {
-            return Em.I18n.t('services.service.config.addPropertyWindow.error.lineNumber').format(index + 1);
-          }
-
-          lines.forEach(function (line, index) {
-            if (line.trim() === '') {
-              return;
-            }
-            var delimiter = '=';
-            var delimiterPosition = line.indexOf(delimiter);
-            if (delimiterPosition === -1) {
-              errorMessages.push(lineNumber(index) + Em.I18n.t('services.service.config.addPropertyWindow.error.format'));
-              return;
-            }
-            var key = Em.Handlebars.Utils.escapeExpression(line.slice(0, delimiterPosition).trim());
-            var value = line.slice(delimiterPosition + 1);
-            if (validator.isValidConfigKey(key)) {
-              if (!isDuplicatedConfigKey(key) && !(key in parsedConfig)) {
-                parsedConfig[key] = value;
-                propertyCount++;
-              } else {
-                errorMessages.push(lineNumber(index) + Em.I18n.t('services.service.config.addPropertyWindow.error.derivedKey.specific').format(key));
-              }
-            } else {
-              errorMessages.push(lineNumber(index) + Em.I18n.t('form.validator.configKey.specific').format(key));
-            }
-          });
-
-          if (errorMessages.length > 0) {
-            callback(errorMessages.join('<br>'), parsedConfig);
-          }
-          else if (propertyCount === 0) {
-            callback(Em.I18n.t('services.service.config.addPropertyWindow.propertiesPlaceholder', parsedConfig));
-          }
-          else {
-            callback(null, parsedConfig);
-          }
-        }
-
-        App.ModalPopup.show({
-          classNames: ['sixty-percent-width-modal'],
-          header: 'Add Property',
-          primary: 'Add',
-          secondary: 'Cancel',
-          onPrimary: function () {
-            var propertyObj = {
-              filename: siteFileName,
-              serviceName: serviceName,
-              categoryName: category.get('name')
-            };
-            if (serviceConfigObj.isBulkMode) {
-              var popup = this;
-              processConfig(serviceConfigObj.bulkConfigValue, function (error, parsedConfig) {
-                if (error) {
-                  serviceConfigObj.set('bulkConfigError', true);
-                  serviceConfigObj.set('bulkConfigErrorMessage', error);
-                } else {
-                  for (var key in parsedConfig) {
-                    if (parsedConfig.hasOwnProperty(key)) {
-                      propertyObj.name = key;
-                      propertyObj.value = parsedConfig[key];
-                      persistController.createProperty(propertyObj);
-                    }
-                  }
-                  popup.hide();
-                }
-              });
-            }
-            else {
-              serviceConfigObj.observeAddPropertyValue();
-              /**
-               * For the first entrance use this if (serviceConfigObj.name.trim() != '')
-               */
-              if (!serviceConfigObj.isKeyError) {
-                propertyObj.name = serviceConfigObj.get('name');
-                propertyObj.value = serviceConfigObj.get('value');
-                persistController.createProperty(propertyObj);
-                this.hide();
-              }
-            }
-          },
-          bodyClass: Em.View.extend({
-            fileName: siteFileName,
-            notMisc: function () {
-              return serviceName !== 'MISC';
-            }.property(),
-            templateName: require('templates/common/configs/addPropertyWindow'),
-            controllerBinding: 'App.router.mainServiceInfoConfigsController',
-            serviceConfigObj: serviceConfigObj,
-            didInsertElement: function () {
-              App.tooltip(this.$("[data-toggle=tooltip]"), {
-                placement: "top"
-              });
-            },
-            toggleBulkMode: function () {
-              this.toggleProperty('serviceConfigObj.isBulkMode');
-              persistController.postUserPref(modePersistKey, this.get('serviceConfigObj.isBulkMode'));
-            },
-            filterByKey: function (event) {
-              var controller = (App.router.get('currentState.name') == 'configs')
-                ? App.router.get('mainServiceInfoConfigsController')
-                : App.router.get('wizardStep7Controller');
-              this.get('parentView').onClose();
-              controller.set('filter', event.view.get('serviceConfigObj.name'));
-            }
-          })
-        });
-
-      }).bind(this));
+      persistController.processAddPropertyWindow(isBulkMode, modePersistKey);
+    }));
   },
+
+
 
   /**
    * Toggle <code>isFinal</code> for selected config-property if <code>isNotEditable</code> is false
@@ -557,6 +702,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
       return;
     }
     serviceConfigProperty.toggleProperty('isFinal');
+    serviceConfigProperty = null;
   },
 
   /**
@@ -566,18 +712,6 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
    */
   removeProperty: function (event) {
     var serviceConfigProperty = event.contexts[0];
-    this.get('serviceConfigs').removeObject(serviceConfigProperty);
-    if (App.get('isClusterSupportsEnhancedConfigs')) {
-      var deletedConfig = App.ConfigProperty.find().find(function(cp) {
-        return cp.get('name') === serviceConfigProperty.get('name')
-          && cp.get('fileName') === serviceConfigProperty.get('filename')
-          && cp.get('isOriginalSCP');
-      });
-      if (deletedConfig) {
-        deletedConfig.deleteRecord();
-        App.store.commit();
-      }
-    }
     // push config's file name if this config was stored on server
     if (!serviceConfigProperty.get('isNotSaved')) {
       var modifiedFileNames = this.get('controller.modifiedFileNames'),
@@ -593,6 +727,9 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
         }
       }
     }
+    this.get('serviceConfigs').removeObject(serviceConfigProperty);
+    this.get('categoryConfigsAll').removeObject(serviceConfigProperty);
+    serviceConfigProperty = null;
     Em.$('body>.tooltip').remove(); //some tooltips get frozen when their owner's DOM element is removed
   },
 
@@ -604,6 +741,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
   setRecommendedValue: function (event) {
     var serviceConfigProperty = event.contexts[0];
     serviceConfigProperty.set('value', serviceConfigProperty.get('recommendedValue'));
+    serviceConfigProperty = null;
   },
 
   /**
@@ -613,7 +751,6 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
    */
   doRestoreDefaultValue: function (event) {
     var serviceConfigProperty = event.contexts[0];
-    var value = serviceConfigProperty.get('value');
     var savedValue = serviceConfigProperty.get('savedValue');
     var supportsFinal = serviceConfigProperty.get('supportsFinal');
     var savedIsFinal = serviceConfigProperty.get('savedIsFinal');
@@ -628,6 +765,7 @@ App.ServiceConfigsByCategoryView = Em.View.extend(App.UserPref, App.ConfigOverri
       serviceConfigProperty.set('isFinal', savedIsFinal);
     }
     this.configChangeObserver(serviceConfigProperty);
+    serviceConfigProperty = null;
     Em.$('body>.tooltip').remove(); //some tooltips get frozen when their owner's DOM element is removed
   }
 

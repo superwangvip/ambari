@@ -17,14 +17,18 @@
  */
 package org.apache.ambari.server.controller.internal;
 
+import static org.easymock.EasyMock.anyLong;
 import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.eq;
 import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.replay;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,8 +37,10 @@ import java.util.Set;
 
 import org.apache.ambari.server.actionmanager.ActionManager;
 import org.apache.ambari.server.actionmanager.ExecutionCommandWrapper;
+import org.apache.ambari.server.actionmanager.ExecutionCommandWrapperFactory;
 import org.apache.ambari.server.agent.ExecutionCommand;
 import org.apache.ambari.server.agent.ExecutionCommand.KeyNames;
+import org.apache.ambari.server.configuration.Configuration;
 import org.apache.ambari.server.controller.AmbariManagementController;
 import org.apache.ambari.server.controller.AmbariServer;
 import org.apache.ambari.server.controller.spi.Request;
@@ -54,11 +60,13 @@ import org.apache.ambari.server.orm.entities.StackEntity;
 import org.apache.ambari.server.orm.entities.UpgradeEntity;
 import org.apache.ambari.server.orm.entities.UpgradeGroupEntity;
 import org.apache.ambari.server.orm.entities.UpgradeItemEntity;
+import org.apache.ambari.server.security.authorization.AuthorizationHelper;
+import org.apache.ambari.server.security.authorization.ResourceType;
+import org.apache.ambari.server.security.authorization.RoleAuthorization;
 import org.apache.ambari.server.state.Cluster;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.Config;
-import org.apache.ambari.server.state.ConfigHelper;
-import org.apache.ambari.server.state.ConfigImpl;
+import org.apache.ambari.server.state.ConfigFactory;
 import org.apache.ambari.server.state.Host;
 import org.apache.ambari.server.state.HostState;
 import org.apache.ambari.server.state.RepositoryVersionState;
@@ -69,22 +77,27 @@ import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.topology.TopologyManager;
 import org.apache.ambari.server.utils.StageUtils;
 import org.apache.ambari.server.view.ViewRegistry;
-import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.powermock.api.easymock.PowerMock;
+import org.powermock.core.classloader.annotations.PowerMockIgnore;
+import org.powermock.core.classloader.annotations.PrepareForTest;
+import org.powermock.modules.junit4.PowerMockRunner;
 
+import com.google.common.collect.ImmutableMap;
 import com.google.gson.Gson;
-import com.google.inject.Binder;
 import com.google.inject.Guice;
 import com.google.inject.Injector;
-import com.google.inject.Module;
 import com.google.inject.persist.PersistService;
-import com.google.inject.util.Modules;
 
 /**
  * UpgradeResourceDefinition tests.
  */
+@RunWith(PowerMockRunner.class)
+@PrepareForTest({AuthorizationHelper.class})
+@PowerMockIgnore({"javax.management.*", "javax.crypto.*"})
 public class UpgradeResourceProviderHDP22Test {
 
   private UpgradeDAO upgradeDao = null;
@@ -93,57 +106,23 @@ public class UpgradeResourceProviderHDP22Test {
   private Clusters clusters;
   private OrmTestHelper helper;
   private AmbariManagementController amc;
-  private ConfigHelper configHelper;
   private StackDAO stackDAO;
+  private TopologyManager topologyManager;
+  private ConfigFactory configFactory;
 
   private static final String configTagVersion1 = "version1";
   private static final String configTagVersion2 = "version2";
-  @SuppressWarnings("serial")
-  private static final Map<String, String> configTagVersion1Properties = new HashMap<String, String>() {
-    {
-      put("hive.server2.thrift.port", "10000");
-    }
-  };
 
-  @SuppressWarnings({ "serial", "unchecked" })
+  private static final Map<String, String> configTagVersion1Properties = new ImmutableMap.Builder<String, String>().put(
+      "hive.server2.thrift.port", "10000").build();
+
+  private static final Map<String, String> configTagVersion2Properties = new ImmutableMap.Builder<String, String>().put(
+      "hive.server2.thrift.port", "10010").build();
+
   @Before
   public void before() throws Exception {
-    // setup the config helper for placeholder resolution
-    configHelper = EasyMock.createNiceMock(ConfigHelper.class);
-
-    expect(configHelper.getPlaceholderValueFromDesiredConfigurations(EasyMock.anyObject(Cluster.class), EasyMock.eq("{{foo/bar}}"))).andReturn(
-        "placeholder-rendered-properly").anyTimes();
-
-    expect(configHelper.getDefaultProperties(EasyMock.anyObject(StackId.class), EasyMock.anyObject(Cluster.class))).andReturn(
-        new HashMap<String, Map<String, String>>()).anyTimes();
-
-    expect(configHelper.getEffectiveConfigAttributes(EasyMock.anyObject(Cluster.class), EasyMock.anyObject(Map.class))).andReturn(
-        new HashMap<String, Map<String, Map<String, String>>>()).anyTimes();
-
-    expect(configHelper.getEffectiveDesiredTags(EasyMock.anyObject(Cluster.class), EasyMock.eq("h1"))).andReturn(new HashMap<String, Map<String, String>>() {
-      {
-        put("hive-site", new HashMap<String, String>() {
-          {
-            put("tag", configTagVersion1);
-          }
-        });
-      }
-    }).anyTimes();
-
-    expect(configHelper.getEffectiveConfigProperties(EasyMock.anyObject(Cluster.class), EasyMock.anyObject(Map.class))).andReturn(
-        new HashMap<String, Map<String, String>>() {
-          {
-            put("hive-site", configTagVersion1Properties);
-          }
-        }).anyTimes();
-
-    expect(configHelper.getMergedConfig(EasyMock.anyObject(Map.class),
-        EasyMock.anyObject(Map.class))).andReturn(new HashMap<String, String>()).anyTimes();
-
-    EasyMock.replay(configHelper);
-
     // create an injector which will inject the mocks
-    injector = Guice.createInjector(Modules.override(new InMemoryDefaultTestModule()).with(new MockModule()));
+    injector = Guice.createInjector(new InMemoryDefaultTestModule());
 
     injector.getInstance(GuiceJpaInitializer.class);
 
@@ -158,6 +137,7 @@ public class UpgradeResourceProviderHDP22Test {
     stackDAO = injector.getInstance(StackDAO.class);
     upgradeDao = injector.getInstance(UpgradeDAO.class);
     repoVersionDao = injector.getInstance(RepositoryVersionDAO.class);
+    configFactory = injector.getInstance(ConfigFactory.class);
 
     AmbariEventPublisher publisher = createNiceMock(AmbariEventPublisher.class);
     replay(publisher);
@@ -169,7 +149,6 @@ public class UpgradeResourceProviderHDP22Test {
     repoVersionEntity.setDisplayName("For Stack Version 2.2.0");
     repoVersionEntity.setOperatingSystems("");
     repoVersionEntity.setStack(stackEntity);
-    repoVersionEntity.setUpgradePackage("upgrade_test");
     repoVersionEntity.setVersion("2.2.0.0");
     repoVersionDao.create(repoVersionEntity);
 
@@ -177,7 +156,6 @@ public class UpgradeResourceProviderHDP22Test {
     repoVersionEntity.setDisplayName("For Stack Version 2.2.4.2");
     repoVersionEntity.setOperatingSystems("");
     repoVersionEntity.setStack(stackEntity);
-    repoVersionEntity.setUpgradePackage("upgrade_test");
     repoVersionEntity.setVersion("2.2.4.2");
     repoVersionDao.create(repoVersionEntity);
 
@@ -188,7 +166,7 @@ public class UpgradeResourceProviderHDP22Test {
     Cluster cluster = clusters.getCluster("c1");
 
     helper.getOrCreateRepositoryVersion(stackId, stackId.getStackVersion());
-    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin", RepositoryVersionState.UPGRADING);
+    cluster.createClusterVersion(stackId, stackId.getStackVersion(), "admin", RepositoryVersionState.INSTALLING);
     cluster.transitionClusterVersion(stackId, stackId.getStackVersion(), RepositoryVersionState.CURRENT);
 
     clusters.addHost("h1");
@@ -198,14 +176,12 @@ public class UpgradeResourceProviderHDP22Test {
     hostAttributes.put("os_release_version", "6.3");
     host.setHostAttributes(hostAttributes);
     host.setState(HostState.HEALTHY);
-    host.persist();
 
     clusters.mapHostToCluster("h1", "c1");
 
     // add a single HIVE server
     Service service = cluster.addService("HIVE");
     service.setDesiredStackVersion(cluster.getDesiredStackVersion());
-    service.persist();
 
     ServiceComponent component = service.addServiceComponent("HIVE_SERVER");
     ServiceComponentHost sch = component.addServiceComponentHost("h1");
@@ -214,9 +190,17 @@ public class UpgradeResourceProviderHDP22Test {
     component = service.addServiceComponent("HIVE_CLIENT");
     sch = component.addServiceComponentHost("h1");
     sch.setVersion("2.2.0.0");
-    TopologyManager topologyManager = new TopologyManager();
+    topologyManager = injector.getInstance(TopologyManager.class);
     StageUtils.setTopologyManager(topologyManager);
+    StageUtils.setConfiguration(injector.getInstance(Configuration.class));
     ActionManager.setTopologyManager(topologyManager);
+
+
+    Method isAuthorizedMethod = AuthorizationHelper.class.getMethod("isAuthorized", ResourceType.class, Long.class, Set.class);
+    PowerMock.mockStatic(AuthorizationHelper.class, isAuthorizedMethod);
+    expect(AuthorizationHelper.isAuthorized(eq(ResourceType.CLUSTER), anyLong(),
+        eq(EnumSet.of(RoleAuthorization.CLUSTER_UPGRADE_DOWNGRADE_STACK)))).andReturn(true).anyTimes();
+    PowerMock.replay(AuthorizationHelper.class);
   }
 
   @After
@@ -251,16 +235,13 @@ public class UpgradeResourceProviderHDP22Test {
       }
     }
 
-    Config config = new ConfigImpl("hive-site");
-    config.setProperties(configTagVersion1Properties);
-    config.setTag(configTagVersion1);
-
-    cluster.addConfig(config);
+    Config config = configFactory.createNew(cluster, "hive-site", configTagVersion1, configTagVersion1Properties, null);
     cluster.addDesiredConfig("admin", Collections.singleton(config));
 
     Map<String, Object> requestProps = new HashMap<String, Object>();
     requestProps.put(UpgradeResourceProvider.UPGRADE_CLUSTER_NAME, "c1");
     requestProps.put(UpgradeResourceProvider.UPGRADE_VERSION, "2.2.4.2");
+    requestProps.put(UpgradeResourceProvider.UPGRADE_SKIP_PREREQUISITE_CHECKS, "true");
 
     ResourceProvider upgradeResourceProvider = createProvider(amc);
 
@@ -271,6 +252,7 @@ public class UpgradeResourceProviderHDP22Test {
     assertEquals(1, upgrades.size());
 
     UpgradeEntity upgrade = upgrades.get(0);
+    assertEquals("upgrade_test", upgrade.getUpgradePackage());
     assertEquals(3, upgrade.getUpgradeGroups().size());
 
     UpgradeGroupEntity group = upgrade.getUpgradeGroups().get(2);
@@ -279,7 +261,7 @@ public class UpgradeResourceProviderHDP22Test {
     group = upgrade.getUpgradeGroups().get(0);
     assertEquals(2, group.getItems().size());
     UpgradeItemEntity item = group.getItems().get(1);
-    assertEquals("Value is set for the source stack upgrade pack", "Goo", item.getText());
+    assertEquals("Value is set for the source stack upgrade pack", "[{\"message\":\"Goo\"}]", item.getText());
 
     assertTrue(cluster.getDesiredConfigs().containsKey("hive-site"));
 
@@ -302,13 +284,7 @@ public class UpgradeResourceProviderHDP22Test {
     // Hive service checks have generated the ExecutionCommands by now.
     // Change the new desired config tag and verify execution command picks up new tag
     assertEquals(configTagVersion1, cluster.getDesiredConfigByType("hive-site").getTag());
-    final Config newConfig = new ConfigImpl("hive-site");
-    newConfig.setProperties(new HashMap<String, String>() {
-      {
-        put("hive.server2.thrift.port", "10010");
-      }
-    });
-    newConfig.setTag(configTagVersion2);
+    final Config newConfig = configFactory.createNew(cluster, "hive-site", configTagVersion2, configTagVersion2Properties, null);
     Set<Config> desiredConfigs = new HashSet<Config>() {
       {
         add(newConfig);
@@ -325,8 +301,8 @@ public class UpgradeResourceProviderHDP22Test {
       String executionCommandJson = new String(ece.getCommand());
       Map<String, Object> commandMap = gson.<Map<String, Object>> fromJson(executionCommandJson, Map.class);
 
-      // ensure that the latest tag is being used and that "*" is forcing a
-      // refresh - this is absolutely required for upgrades
+      // ensure that the latest tag is being used - this is absolutely required
+      // for upgrades
       Set<String> roleCommandsThatMustHaveRefresh = new HashSet<String>();
       roleCommandsThatMustHaveRefresh.add("SERVICE_CHECK");
       roleCommandsThatMustHaveRefresh.add("RESTART");
@@ -336,17 +312,15 @@ public class UpgradeResourceProviderHDP22Test {
       if (roleCommandsThatMustHaveRefresh.contains(roleCommand)) {
         assertTrue(commandMap.containsKey(KeyNames.REFRESH_CONFIG_TAGS_BEFORE_EXECUTION));
         Object object = commandMap.get(KeyNames.REFRESH_CONFIG_TAGS_BEFORE_EXECUTION);
-        assertTrue(object instanceof List);
+        assertTrue(Boolean.valueOf(object.toString()));
 
-        @SuppressWarnings("unchecked")
-        List<String> tags = (List<String>) commandMap.get(KeyNames.REFRESH_CONFIG_TAGS_BEFORE_EXECUTION);
-        assertEquals(1, tags.size());
-        assertEquals("*", tags.get(0));
-
-        ExecutionCommandWrapper executionCommandWrapper = new ExecutionCommandWrapper(executionCommandJson);
+        ExecutionCommandWrapperFactory ecwFactory = injector.getInstance(ExecutionCommandWrapperFactory.class);
+        ExecutionCommandWrapper executionCommandWrapper = ecwFactory.createFromJson(executionCommandJson);
         ExecutionCommand executionCommand = executionCommandWrapper.getExecutionCommand();
         Map<String, Map<String, String>> configurationTags = executionCommand.getConfigurationTags();
         assertEquals(configTagVersion2, configurationTags.get("hive-site").get("tag"));
+        Map<String, Map<String, String>> configurations = executionCommand.getConfigurations();
+        assertEquals("10010", configurations.get("hive-site").get("hive.server2.thrift.port"));
       }
     }
   }
@@ -357,18 +331,5 @@ public class UpgradeResourceProviderHDP22Test {
    */
   private UpgradeResourceProvider createProvider(AmbariManagementController amc) {
     return new UpgradeResourceProvider(amc);
-  }
-
-  /**
-   *
-   */
-  private class MockModule implements Module {
-    /**
-   *
-   */
-    @Override
-    public void configure(Binder binder) {
-      binder.bind(ConfigHelper.class).toInstance(configHelper);
-    }
   }
 }

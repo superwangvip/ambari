@@ -19,11 +19,15 @@ package org.apache.hadoop.yarn.server.applicationhistoryservice.metrics.timeline
 
 
 import java.util.Map;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 /**
  *
  */
 public class AggregatorUtils {
+
+  private static final Log LOG = LogFactory.getLog(AggregatorUtils.class);
 
   public static double[] calculateAggregates(Map<Long, Double> metricValues) {
     double[] values = new double[4];
@@ -55,5 +59,4 @@ public class AggregatorUtils {
 
     return values;
   }
-
 }

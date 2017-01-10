@@ -17,13 +17,6 @@
  */
 package org.apache.ambari.server.stack;
 
-import org.apache.ambari.server.AmbariException;
-import org.apache.ambari.server.state.ThemeInfo;
-import org.apache.ambari.server.state.theme.Theme;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
@@ -34,16 +27,19 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.ambari.server.AmbariException;
+import org.apache.ambari.server.state.ThemeInfo;
+import org.apache.ambari.server.state.theme.Theme;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class ThemeModule extends BaseModule<ThemeModule, ThemeInfo> implements Validable {
 
   private static final Logger LOG = LoggerFactory.getLogger(ThemeModule.class);
   private static final ObjectMapper mapper = new ObjectMapper();
 
   public static final String THEME_KEY = "Theme";
-
-  static {
-  }
-
 
   private ThemeInfo moduleInfo;
   private boolean valid = true;
@@ -72,7 +68,7 @@ public class ThemeModule extends BaseModule<ThemeModule, ThemeInfo> implements V
       } catch (IOException e) {
         LOG.error("Unable to parse theme file ", e);
         setValid(false);
-        setErrors("Unable to parse theme file " + themeFile);
+        addError("Unable to parse theme file " + themeFile);
       }
     }
   }
@@ -82,7 +78,8 @@ public class ThemeModule extends BaseModule<ThemeModule, ThemeInfo> implements V
   }
 
   @Override
-  public void resolve(ThemeModule parent, Map<String, StackModule> allStacks, Map<String, ServiceModule> commonServices) throws AmbariException {
+  public void resolve(ThemeModule parent, Map<String, StackModule> allStacks,
+		  Map<String, ServiceModule> commonServices, Map<String, ExtensionModule> extensions) throws AmbariException {
     ThemeInfo parentModuleInfo = parent.getModuleInfo();
 
     if (parent.getModuleInfo() != null && !moduleInfo.isDeleted()) {
@@ -122,13 +119,13 @@ public class ThemeModule extends BaseModule<ThemeModule, ThemeInfo> implements V
   }
 
   @Override
-  public void setErrors(String error) {
+  public void addError(String error) {
     errors.add(error);
   }
 
   @Override
-  public void setErrors(Collection<String> error) {
-    errors.addAll(error);
+  public void addErrors(Collection<String> errors) {
+    errors.addAll(errors);
   }
 
   @Override

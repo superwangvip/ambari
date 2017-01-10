@@ -18,20 +18,26 @@
 
 package org.apache.ambari.server.serveraction;
 
+import java.util.concurrent.ConcurrentMap;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.HostRoleCommand;
 import org.apache.ambari.server.agent.CommandReport;
 import org.apache.ambari.server.agent.ExecutionCommand;
-
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * ServerAction is an interface to be implemented by all server-based actions/tasks.
  */
 public interface ServerAction {
 
-  public static final String ACTION_NAME      = "ACTION_NAME";
-  public static final String ACTION_USER_NAME = "ACTION_USER_NAME";
+  String ACTION_NAME = "ACTION_NAME";
+  String ACTION_USER_NAME = "ACTION_USER_NAME";
+
+  /**
+   * The default timeout (in seconds) to use for potentially long running tasks such as creating
+   * Kerberos principals and generating Kerberos keytab files
+   */
+  int DEFAULT_LONG_RUNNING_TASK_TIMEOUT_SECONDS = 36000;
 
 
   /**

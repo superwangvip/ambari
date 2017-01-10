@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -18,6 +18,7 @@
 
 package org.apache.ambari.server.orm.dao;
 
+import java.util.Collections;
 import java.util.List;
 
 import javax.persistence.EntityManager;
@@ -25,6 +26,7 @@ import javax.persistence.TypedQuery;
 
 import org.apache.ambari.server.orm.RequiresSession;
 import org.apache.ambari.server.orm.entities.PermissionEntity;
+import org.apache.ambari.server.orm.entities.PrincipalEntity;
 import org.apache.ambari.server.orm.entities.ResourceTypeEntity;
 
 import com.google.inject.Inject;
@@ -58,6 +60,16 @@ public class PermissionDAO {
   }
 
   /**
+   * Create or updates a permission.
+   *
+   * @param permissionEntity  entity to create or update
+   */
+  @Transactional
+  public PermissionEntity merge(PermissionEntity permissionEntity) {
+    return entityManagerProvider.get().merge(permissionEntity);
+  }
+
+  /**
    * Find a permission entity with the given id.
    *
    * @param id  type id
@@ -67,6 +79,37 @@ public class PermissionDAO {
   @RequiresSession
   public PermissionEntity findById(Integer id) {
     return entityManagerProvider.get().find(PermissionEntity.class, id);
+  }
+
+  /**
+   * Find a permission entity with the given name.
+   *
+   * @param name  permission name
+   *
+   * @return  a matching permission entity or null
+   */
+  @RequiresSession
+  public PermissionEntity findByName(String name) {
+    TypedQuery<PermissionEntity> query = entityManagerProvider.get().createNamedQuery("PermissionEntity.findByName", PermissionEntity.class);
+    query.setParameter("permissionName", name);
+    return daoUtils.selectSingle(query);
+  }
+
+  /**
+   * Find the permission entities for the given list of principals
+   *
+   * @param principalList  the list of principal entities
+   *
+   * @return the list of permissions (or roles) matching the query
+   */
+  @RequiresSession
+  public List<PermissionEntity> findPermissionsByPrincipal(List<PrincipalEntity> principalList) {
+    if (principalList == null || principalList.isEmpty()) {
+      return Collections.emptyList();
+    }
+    TypedQuery<PermissionEntity> query = entityManagerProvider.get().createNamedQuery("PermissionEntity.findByPrincipals", PermissionEntity.class);
+    query.setParameter("principalList", principalList);
+    return daoUtils.selectList(query);
   }
 
   /**
@@ -90,8 +133,8 @@ public class PermissionDAO {
    */
   @RequiresSession
   public PermissionEntity findPermissionByNameAndType(String name, ResourceTypeEntity resourceType) {
-    if (name.equals(PermissionEntity.VIEW_USE_PERMISSION_NAME)) {
-      // VIEW.USE permission should be available for any type of views
+    if (name.equals(PermissionEntity.VIEW_USER_PERMISSION_NAME)) {
+      // VIEW.USER permission should be available for any type of views
       return findViewUsePermission();
     }
     TypedQuery<PermissionEntity> query = entityManagerProvider.get().createQuery("SELECT p FROM PermissionEntity p WHERE p.permissionName=:permissionname AND p.resourceType=:resourcetype", PermissionEntity.class);
@@ -101,42 +144,42 @@ public class PermissionDAO {
   }
 
   /**
-   * Find AMBARI.ADMIN permission.
+   * Find AMBARI.ADMINISTRATOR permission.
    *
    * @return a matching permission entity or null
    */
   @RequiresSession
   public PermissionEntity findAmbariAdminPermission() {
-    return findById(PermissionEntity.AMBARI_ADMIN_PERMISSION);
+    return findById(PermissionEntity.AMBARI_ADMINISTRATOR_PERMISSION);
   }
 
   /**
-   * Find VIEW.USE permission.
+   * Find VIEW.USER permission.
    *
    * @return a matching permission entity or null
    */
   @RequiresSession
   public PermissionEntity findViewUsePermission() {
-    return findById(PermissionEntity.VIEW_USE_PERMISSION);
+    return findById(PermissionEntity.VIEW_USER_PERMISSION);
   }
 
   /**
-   * Find CLUSTER.OPERATE permission.
+   * Find CLUSTER.ADMINISTRATOR permission.
    *
    * @return a matching permission entity or null
    */
   @RequiresSession
   public PermissionEntity findClusterOperatePermission() {
-    return findById(PermissionEntity.CLUSTER_OPERATE_PERMISSION);
+    return findById(PermissionEntity.CLUSTER_ADMINISTRATOR_PERMISSION);
   }
 
   /**
-   * Find CLUSTER.READ permission.
+   * Find CLUSTER.USER permission.
    *
    * @return a matching permission entity or null
    */
   @RequiresSession
   public PermissionEntity findClusterReadPermission() {
-    return findById(PermissionEntity.CLUSTER_READ_PERMISSION);
+    return findById(PermissionEntity.CLUSTER_USER_PERMISSION);
   }
 }

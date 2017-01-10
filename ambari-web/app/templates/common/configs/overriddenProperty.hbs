@@ -15,44 +15,48 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 }}
-{{#each overriddenSCP in view.serviceConfigProperty.overrides}}
-  {{! Here serviceConfigBinding should ideally be serviceConfigPropertyBinding }}
-  <div {{bindAttr class="overriddenSCP.errorMessage:error: :control-group :overrideField"}}>
-    {{view overriddenSCP.viewClass serviceConfigBinding="overriddenSCP" categoryConfigsBinding="view.categoryConfigs"}}
-    {{#if overriddenSCP.supportsFinal}}
-      <a href="#" data-toggle="tooltip"
-        {{bindAttr class=":btn-small :btn-final overriddenSCP.isFinal:active overriddenSCP.hideFinalIcon:hidden" disabled="overriddenSCP.isNotEditable"}}
-        {{action "toggleFinalFlag" overriddenSCP target="view"}}
-        {{translateAttr data-original-title="services.service.config.final"}}>
-        <i class="icon-lock"></i>
-      </a>
-    {{/if}}
-    {{#if view.isDefaultGroupSelected}}
-      {{#if overriddenSCP.group}}
-        <a href="#" data-toggle="tooltip" {{bindAttr data-original-title="overriddenSCP.group.switchGroupTextFull" }} class="action" {{action selectConfigGroup overriddenSCP.group target="controller"}}>
-          {{overriddenSCP.group.switchGroupTextShort}}
+{{! Here serviceConfigBinding should ideally be serviceConfigPropertyBinding }}
+<div {{bindAttr class="view.overriddenSCP.errorMessage:has-error: :form-group :overrideField"}}>
+  <div class="row">
+    <div class="col-md-9">
+      {{view view.overriddenSCP.viewClass serviceConfigBinding="view.overriddenSCP" categoryConfigsBinding="view.parentView.categoryConfigs"}}
+    </div>
+    <div class="col-md-3">
+      {{#if view.overriddenSCP.supportsFinal}}
+        <a href="#" data-toggle="tooltip"
+          {{bindAttr class=":btn-sm :btn-final view.overriddenSCP.isFinal:active view.overriddenSCP.hideFinalIcon:hidden" disabled="view.overriddenSCP.isNotEditable"}}
+          {{action "toggleFinalFlag" view.overriddenSCP target="view.parentView"}}
+          {{translateAttr data-original-title="services.service.config.final"}}>
+          <i class="glyphicon glyphicon-lock"></i>
         </a>
       {{/if}}
-    {{else}}
-      {{#if overriddenSCP.isEditable}}
-        {{#if isNotDefaultValue}}
-          <a class="btn-small" href="#" data-toggle="tooltip"
-            {{action "doRestoreDefaultValue" overriddenSCP target="view"}}
-            {{translateAttr data-original-title="common.undo"}}>
-            <i class="icon-undo"></i>
-          </a>
+      {{#if view.parentView.isDefaultGroupSelected}}
+        {{#if view.overriddenSCP.group}}
+          {{view App.SwitchToGroupView controllerBinding="controller" groupBinding="view.overriddenSCP.group"}}
         {{/if}}
-        {{#isAccessible ADMIN}}
-          <a class="btn-small" href="#" data-toggle="tooltip"
-            {{action "removeOverride" overriddenSCP target="view"}}
-            {{translateAttr data-original-title="common.remove"}}>
-            <i class="icon-minus-sign"></i>
-          </a>
-        {{/isAccessible}}
-          <span class="help-inline">{{overriddenSCP.errorMessage}}</span>
       {{else}}
-        <a class="action">{{overriddenSCP.group.switchGroupTextShort}}</a> <i class="icon-spinner"></i>
+        {{#if view.overriddenSCP.isEditable}}
+          {{#if isNotDefaultValue}}
+            <a class="btn-sm" href="#" data-toggle="tooltip"
+              {{action "doRestoreDefaultValue" view.overriddenSCP target="view.parentView"}}
+              {{translateAttr data-original-title="common.undo"}}>
+              <i class="icon-undo"></i>
+            </a>
+          {{/if}}
+          {{#isAuthorized "SERVICE.MODIFY_CONFIGS"}}
+            <a class="btn-sm" href="#" data-toggle="tooltip"
+              {{action "removeOverride" view.overriddenSCP target="view.parentView"}}
+              {{translateAttr data-original-title="common.remove"}}>
+              <i class="icon-minus-sign"></i>
+            </a>
+          {{/isAuthorized}}
+          {{#if view.overriddenSCP.errorMessage}}
+            <span class="help-block validation-block pull-right">{{view.overriddenSCP.errorMessage}}</span>
+          {{/if}}
+        {{else}}
+          <a class="action">{{view.overriddenSCP.group.switchGroupTextShort}}</a> {{view App.SpinnerView}}
+        {{/if}}
       {{/if}}
-    {{/if}}
+    </div>
   </div>
-{{/each}}
+</div>

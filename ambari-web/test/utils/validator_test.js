@@ -232,8 +232,9 @@ describe('validator', function () {
       { obj: 1, detect: false },
       { obj: true, detect: false }
     ];
-    testable.forEach(function(value){
-      it('should ' + (value.detect ? '' : 'not') + ' detect empty value in `' + new String(value.obj) + '`', function(){
+    testable.forEach(function(value) {
+      var detect = value.detect ? '' : 'not';
+      it('should {0} detect empty value in `{1}`'.format(detect, JSON.stringify(value.obj)), function() {
         expect(validator.empty(value.obj)).to.eql(value.detect);
       });
     });
@@ -326,11 +327,15 @@ describe('validator', function () {
       {m:'"/1a2b3c" - valid',i:'/1a2b3c',e:true},
       {m:'"[ssd]/1a2b3c" - valid',i:'[ssd]/1a2b3c',e:true},
       {m:'"[DISK]/1a2b3c" - valid',i:'[DISK]/1a2b3c',e:true},
+      {m:'"[DISK]file:///1a2b3c" - valid',i:'[DISK]file:///1a2b3c',e:true},
       {m:'"[] /1a2b3c" - invalid',i:'[] /1a2b3c',e:false},
       {m:'"[ssd] /1a2b3c" - invalid',i:'[ssd] /1a2b3c',e:false},
       {m:'"[/1a2b3c]" - invalid',i:'[/1a2b3c]',e:false},
       {m:'"[s]ss /sd" - invalid',i:'[s]ss /sd',e:false},
-      {m:'" [s]ss/sd" - invalid',i:' [s]ss/sd',e:false}
+      {m:'" [s]ss/sd" - invalid',i:' [s]ss/sd',e:false},
+      {m:'"[RAM_DISK]/1a2b3c" - valid',i:'[RAM_DISK]/1a2b3c',e:true},
+      {m:'"[RAMDISK_]/1a2b3c" - invalid',i:'[RAMDISK_]/1a2b3c',e:false},
+      {m:'"[_RAMDISK]/1a2b3c" - invalid',i:'[_RAMDISK]/1a2b3c',e:false}
     ];
     tests.forEach(function(test) {
       it(test.m + ' ', function () {
@@ -366,7 +371,10 @@ describe('validator', function () {
       {m:'"-abc-" - valid',i:'-abc-',e:true},
       {m:'"abc 123" - invalid',i:'abc 123',e:false},
       {m:'"a"b" - invalid',i:'a"b',e:false},
-      {m:'"a\'b" - invalid',i:'a\'b',e:false}
+      {m:'"a\'b" - invalid',i:'a\'b',e:false},
+      {m:'" a " - valid', i: ' a ', e: true},
+      {m:'" a" - valid', i: ' a', e: true},
+      {m:'"a " - valid', i: 'a ', e: true}
     ];
     tests.forEach(function(test) {
       it(test.m + ' ', function () {
@@ -417,10 +425,11 @@ describe('validator', function () {
         { value: '[a1', expected: false },
         { value: 'a{1}', expected: true },
         { value: 'a{1,2}', expected: true },
-        { value: 'a{1,2}{', expected: false }
+        { value: 'a{1,2}{', expected: false },
+        { value: 'a(1)', expected: true }
       ];
     tests.forEach(function(test) {
-      it(message.format(test.value, (test.expected) ? 'valid' : 'not valid'), function() {
+      it(message.format(test.value, test.expected ? 'valid' : 'not valid'), function() {
         expect(validator.isValidMatchesRegexp(test.value)).to.equal(test.expected);
       })
     });
@@ -460,7 +469,7 @@ describe('validator', function () {
 
   describe('#isValidBaseUrl()', function() {
     var tests = [
-      {m: '"" - invalid', i: '', e: false},
+      {m: '"" - valid', i: '', e: true},
       {m: '"http://" - valid', i: 'http://', e: true},
       {m: '"https://" - valid', i: 'https://', e: true},
       {m: '"ftp://" - valid', i: 'ftp://', e: true},
@@ -475,4 +484,43 @@ describe('validator', function () {
       })
     });
   });
+
+  describe('#isValidLdapsURL()', function() {
+    var tests = [
+      {m: '"" - invalid', i: '', e: false},
+      {m: '"http://example.com" - invalid', i: 'http://example.com', e: false},
+      {m: '"ldap://example.com" - invalid', i: 'ldap://example.com', e: false},
+      {m: '"ldaps://example.com" - valid', i: 'ldaps://example.com', e: true},
+      {m: '"ldaps://example.com:636" - valid', i: 'ldaps://example.com:636', e: true},
+      {m: '"ldaps://example.com:636/path" - valid', i: 'ldaps://example.com:636/path', e: true},
+      {m: '"ldaps://example.com:6eeee36/path" - valid', i: 'ldaps://example.com:6eee36/path', e: false}
+    ];
+    tests.forEach(function(test) {
+      it(test.m + ' ', function () {
+        expect(validator.isValidLdapsURL(test.i)).to.equal(test.e);
+      })
+    });
+  });
+
+  describe('#isValidRackId()', function () {
+
+    [
+      {v: '', e: false},
+      {v: 'a', e: false},
+      {v: '1', e: false},
+      {v: '/', e: false},
+      {v: '/a', e: true},
+      {v: '/1', e: true},
+      {v: '/-', e: true},
+      {v: '/' + (new Array(255)).join('a'), m: 'Value bigger than 255 symbols', e: false}
+    ].forEach(function (test) {
+
+      it(test.m || test.v, function () {
+        expect(validator.isValidRackId(test.v)).to.be.equal(test.e);
+      })
+
+    });
+
+  });
+
 });

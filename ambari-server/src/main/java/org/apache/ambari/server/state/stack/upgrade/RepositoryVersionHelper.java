@@ -22,7 +22,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.regex.Pattern;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
@@ -90,13 +89,29 @@ public class RepositoryVersionHelper {
     final List<OperatingSystemEntity> operatingSystems = new ArrayList<OperatingSystemEntity>();
     final JsonArray rootJson = new JsonParser().parse(repositoriesJson).getAsJsonArray();
     for (JsonElement operatingSystemJson: rootJson) {
+      JsonObject osObj = operatingSystemJson.getAsJsonObject();
+
       final OperatingSystemEntity operatingSystemEntity = new OperatingSystemEntity();
-      operatingSystemEntity.setOsType(operatingSystemJson.getAsJsonObject().get(OperatingSystemResourceProvider.OPERATING_SYSTEM_OS_TYPE_PROPERTY_ID).getAsString());
-      for (JsonElement repositoryJson: operatingSystemJson.getAsJsonObject().get(RepositoryVersionResourceProvider.SUBRESOURCE_REPOSITORIES_PROPERTY_ID).getAsJsonArray()) {
+
+      operatingSystemEntity.setOsType(osObj.get(OperatingSystemResourceProvider.OPERATING_SYSTEM_OS_TYPE_PROPERTY_ID).getAsString());
+
+      if (osObj.has(OperatingSystemResourceProvider.OPERATING_SYSTEM_AMBARI_MANAGED_REPOS)) {
+        operatingSystemEntity.setAmbariManagedRepos(osObj.get(
+            OperatingSystemResourceProvider.OPERATING_SYSTEM_AMBARI_MANAGED_REPOS).getAsBoolean());
+      }
+
+      for (JsonElement repositoryElement: osObj.get(RepositoryVersionResourceProvider.SUBRESOURCE_REPOSITORIES_PROPERTY_ID).getAsJsonArray()) {
         final RepositoryEntity repositoryEntity = new RepositoryEntity();
-        repositoryEntity.setBaseUrl(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_BASE_URL_PROPERTY_ID).getAsString());
-        repositoryEntity.setName(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_REPO_NAME_PROPERTY_ID).getAsString());
-        repositoryEntity.setRepositoryId(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_REPO_ID_PROPERTY_ID).getAsString());
+        final JsonObject repositoryJson = repositoryElement.getAsJsonObject();
+        repositoryEntity.setBaseUrl(repositoryJson.get(RepositoryResourceProvider.REPOSITORY_BASE_URL_PROPERTY_ID).getAsString());
+        repositoryEntity.setName(repositoryJson.get(RepositoryResourceProvider.REPOSITORY_REPO_NAME_PROPERTY_ID).getAsString());
+        repositoryEntity.setRepositoryId(repositoryJson.get(RepositoryResourceProvider.REPOSITORY_REPO_ID_PROPERTY_ID).getAsString());
+        if (repositoryJson.get(RepositoryResourceProvider.REPOSITORY_MIRRORS_LIST_PROPERTY_ID) != null) {
+          repositoryEntity.setMirrorsList(repositoryJson.get(RepositoryResourceProvider.REPOSITORY_MIRRORS_LIST_PROPERTY_ID).getAsString());
+        }
+        if (repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_UNIQUE_PROPERTY_ID) != null) {
+          repositoryEntity.setUnique(repositoryJson.getAsJsonObject().get(RepositoryResourceProvider.REPOSITORY_UNIQUE_PROPERTY_ID).getAsBoolean());
+        }
         operatingSystemEntity.getRepositories().add(repositoryEntity);
       }
       operatingSystems.add(operatingSystemEntity);
@@ -144,6 +159,8 @@ public class RepositoryVersionHelper {
         repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_BASE_URL_PROPERTY_ID, repository.getBaseUrl());
         repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_REPO_NAME_PROPERTY_ID, repository.getRepoName());
         repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_REPO_ID_PROPERTY_ID, repository.getRepoId());
+        repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_MIRRORS_LIST_PROPERTY_ID, repository.getMirrorsList());
+        repositoryJson.addProperty(RepositoryResourceProvider.REPOSITORY_UNIQUE_PROPERTY_ID, repository.isUnique());
         repositoriesJson.add(repositoryJson);
       }
       operatingSystemJson.add(RepositoryVersionResourceProvider.SUBRESOURCE_REPOSITORIES_PROPERTY_ID, repositoriesJson);
@@ -153,53 +170,50 @@ public class RepositoryVersionHelper {
     return gson.toJson(rootJson);
   }
 
+  public String serializeOperatingSystemEntities(List<OperatingSystemEntity> operatingSystems) {
+    List<RepositoryInfo> repositoryInfos = new ArrayList<>();
+    for (OperatingSystemEntity os: operatingSystems) {
+      for (RepositoryEntity repositoryEntity: os.getRepositories()) {
+        RepositoryInfo repositoryInfo = new RepositoryInfo();
+        repositoryInfo.setRepoId(repositoryEntity.getRepositoryId());
+        repositoryInfo.setRepoName(repositoryEntity.getName());
+        repositoryInfo.setBaseUrl(repositoryEntity.getBaseUrl());
+        repositoryInfo.setOsType(os.getOsType());
+        repositoryInfos.add(repositoryInfo);
+      }
+    }
+    return serializeOperatingSystems(repositoryInfos);
+  }
+
   /**
    * Scans the given stack for upgrade packages which can be applied to update the cluster to given repository version.
    *
    * @param stackName stack name
    * @param stackVersion stack version
    * @param repositoryVersion target repository version
+   * @param upgradeType if not {@code null} null, will only return upgrade packs whose type matches.
    * @return upgrade pack name
    * @throws AmbariException if no upgrade packs suit the requirements
    */
-  public String getUpgradePackageName(String stackName, String stackVersion, String repositoryVersion) throws AmbariException {
+  public String getUpgradePackageName(String stackName, String stackVersion, String repositoryVersion, UpgradeType upgradeType) throws AmbariException {
     final Map<String, UpgradePack> upgradePacks = ambariMetaInfo.getUpgradePacks(stackName, stackVersion);
-    for (Entry<String, UpgradePack> upgradePackEntry : upgradePacks.entrySet()) {
-      final UpgradePack upgradePack = upgradePackEntry.getValue();
-      final String upgradePackName = upgradePackEntry.getKey();
+    for (UpgradePack upgradePack : upgradePacks.values()) {
+      final String upgradePackName = upgradePack.getName();
+
+      if (null != upgradeType && upgradePack.getType() != upgradeType) {
+        continue;
+      }
+
       // check that upgrade pack has <target> node
       if (StringUtils.isBlank(upgradePack.getTarget())) {
         LOG.error("Upgrade pack " + upgradePackName + " is corrupted, it should contain <target> node");
         continue;
       }
-
-      // check that upgrade pack can be applied to selected stack
-      // converting 2.2.*.* -> 2\.2(\.\d+)?(\.\d+)?(-\d+)?
-      String regexPattern = upgradePack.getTarget();
-      regexPattern = regexPattern.replaceAll("\\.", "\\\\."); // . -> \.
-      regexPattern = regexPattern.replaceAll("\\\\\\.\\*", "(\\\\\\.\\\\d+)?"); // \.* -> (\.\d+)?
-      regexPattern = regexPattern.concat("(-\\d+)?");
-      if (Pattern.matches(regexPattern, repositoryVersion)) {
+      if (upgradePack.canBeApplied(repositoryVersion)) {
         return upgradePackName;
       }
     }
-    throw new AmbariException("There were no suitable upgrade packs for stack " + stackName + " " + stackVersion);
-  }
-
-  /**
-   * Scans the given stack for upgrade packages which can be applied to update the cluster to given repository version.
-   * Returns NONE if there were no suitable packages.
-   *
-   * @param stackName stack name
-   * @param stackVersion stack version
-   * @param repositoryVersion target repository version
-   * @return upgrade pack name or NONE
-   */
-  public String getUpgradePackageNameSafe(String stackName, String stackVersion, String repositoryVersion) {
-    try {
-      return getUpgradePackageName(stackName, stackVersion, repositoryVersion);
-    } catch (AmbariException ex) {
-      return "NONE";
-    }
+    throw new AmbariException("There were no suitable upgrade packs for stack " + stackName + " " + stackVersion +
+        ((null != upgradeType) ? " and upgrade type " + upgradeType : ""));
   }
 }

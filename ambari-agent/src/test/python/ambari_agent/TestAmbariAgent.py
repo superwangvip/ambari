@@ -34,7 +34,10 @@ class TestAmbariAgent(unittest.TestCase):
   @patch.object(subprocess, "Popen")
   @patch("os.path.isfile")
   @patch("os.remove")
-  def test_main(self, os_remove_mock, os_path_isfile_mock, subprocess_popen_mock):
+  @patch("os.killpg")
+  @patch("os.setpgrp")
+  def test_main(self, os_setpgrp_mock, os_killpg_mock, os_remove_mock,
+                os_path_isfile_mock, subprocess_popen_mock):
     facter1 = MagicMock()
     facter2 = MagicMock()
     subprocess_popen_mock.side_effect = [facter1, facter2]
@@ -46,6 +49,7 @@ class TestAmbariAgent(unittest.TestCase):
     sys.argv[0] = "test data"
     AmbariAgent.main()
 
+    self.assertTrue(os_setpgrp_mock.called)
     self.assertTrue(subprocess_popen_mock.called)
     self.assertTrue(subprocess_popen_mock.call_count == 2)
     self.assertTrue(facter1.communicate.called)
@@ -53,6 +57,7 @@ class TestAmbariAgent(unittest.TestCase):
     self.assertTrue(os_path_isfile_mock.called)
     self.assertTrue(os_path_isfile_mock.call_count == 2)
     self.assertTrue(os_remove_mock.called)
+    self.assertTrue(os_killpg_mock.called)
 
   #
   # Test AmbariConfig.getLogFile() for ambari-agent
@@ -92,6 +97,6 @@ class TestAmbariAgent(unittest.TestCase):
     #
     out_folder = '/myoutlocation/out'
     out_file = 'ambari-agent.out'
-    with patch.dict('os.environ', {'AMBARI_AGENT_OUT_DIR': out_folder}):
+    with patch.dict('os.environ', {'AMBARI_AGENT_LOG_DIR': out_folder}):
       self.assertEqual(os.path.join(out_folder, out_file), AmbariConfig.AmbariConfig.getOutFile())
     pass

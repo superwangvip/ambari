@@ -18,22 +18,20 @@
 
 package org.apache.ambari.server.api.services.serializers;
 
-import org.apache.ambari.server.api.services.Result;
-import org.apache.ambari.server.api.services.ResultStatus;
-import org.apache.ambari.server.api.util.TreeNode;
-import org.apache.ambari.server.controller.spi.Resource;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVPrinter;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
+import org.apache.ambari.server.api.services.Result;
+import org.apache.ambari.server.api.services.ResultStatus;
+import org.apache.ambari.server.api.util.TreeNode;
+import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.ambari.server.utils.Closeables;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
 
 /**
  * CSV serializer used to generate a CSV-formatted document from a result.
@@ -110,12 +108,7 @@ public class CsvSerializer implements ResultSerializer {
         //todo: exception handling.  Create ResultStatus 500 and call serializeError
         throw new RuntimeException("Unable to serialize to csv: " + e, e);
       } finally {
-        if (csvPrinter != null) {
-          try {
-            csvPrinter.close();
-          } catch (IOException ex) {
-          }
-        }
+        Closeables.closeSilently(csvPrinter);
       }
     }
   }
@@ -135,12 +128,7 @@ public class CsvSerializer implements ResultSerializer {
       //todo: exception handling.  Create ResultStatus 500 and call serializeError
       throw new RuntimeException("Unable to serialize to csv: " + e, e);
     } finally {
-      if (csvPrinter != null) {
-        try {
-          csvPrinter.close();
-        } catch (IOException ex) {
-        }
-      }
+      Closeables.closeSilently(csvPrinter);
     }
   }
 

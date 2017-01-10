@@ -19,9 +19,16 @@
 
 package org.apache.ambari.server.controller.internal;
 
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.persist.PersistService;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.actionmanager.ActionType;
 import org.apache.ambari.server.actionmanager.TargetHostType;
@@ -43,15 +50,9 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
-import static org.easymock.EasyMock.createNiceMock;
-import static org.easymock.EasyMock.expect;
-import static org.easymock.EasyMock.replay;
-import static org.easymock.EasyMock.verify;
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+import com.google.inject.persist.PersistService;
 
 public class ActionResourceProviderTest {
 
@@ -97,13 +98,13 @@ public class ActionResourceProviderTest {
     List<ActionDefinition> allDefinition = new ArrayList<ActionDefinition>();
     allDefinition.add(new ActionDefinition(
         "a1", ActionType.SYSTEM, "fileName", "HDFS", "DATANODE", "Does file exist", TargetHostType.ANY,
-        Short.valueOf("100")));
+        Short.valueOf("100"), null));
     allDefinition.add(new ActionDefinition(
         "a2", ActionType.SYSTEM, "fileName", "HDFS", "DATANODE", "Does file exist", TargetHostType.ANY,
-        Short.valueOf("100")));
+        Short.valueOf("100"), null));
     allDefinition.add(new ActionDefinition(
         "a3", ActionType.SYSTEM, "fileName", "HDFS", "DATANODE", "Does file exist", TargetHostType.ANY,
-        Short.valueOf("100")));
+        Short.valueOf("100"), null));
 
     Set<ActionResponse> allResponse = new HashSet<ActionResponse>();
     for (ActionDefinition definition : allDefinition) {
@@ -112,7 +113,7 @@ public class ActionResourceProviderTest {
 
     ActionDefinition namedDefinition = new ActionDefinition(
         "a1", ActionType.SYSTEM, "fileName", "HDFS", "DATANODE", "Does file exist", TargetHostType.ANY,
-        Short.valueOf("100"));
+        Short.valueOf("100"), null);
 
     Set<ActionResponse> nameResponse = new HashSet<ActionResponse>();
     nameResponse.add(namedDefinition.convertToResponse());

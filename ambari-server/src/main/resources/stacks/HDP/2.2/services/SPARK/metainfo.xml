@@ -19,12 +19,12 @@
  */
 -->
 <metainfo>
-    <schemaVersion>2.0</schemaVersion>
-    <services>
-        <service>
-            <name>SPARK</name>
-            <extends>common-services/SPARK/1.2.0.2.2</extends>		
-            <version>1.2.1.2.2</version>
-        </service>
-    </services>
+  <schemaVersion>2.0</schemaVersion>
+  <services>
+    <service>
+      <name>SPARK</name>
+      <extends>common-services/SPARK/1.2.1</extends>
+      <version>1.2.1.2.2</version>
+    </service>
+  </services>
 </metainfo>

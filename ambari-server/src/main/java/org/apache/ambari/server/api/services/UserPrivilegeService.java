@@ -18,9 +18,6 @@
 
 package org.apache.ambari.server.api.services;
 
-import org.apache.ambari.server.api.resources.ResourceInstance;
-import org.apache.ambari.server.controller.spi.Resource;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,6 +26,9 @@ import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
 
+import org.apache.ambari.server.api.resources.ResourceInstance;
+import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.commons.lang.StringUtils;
 /**
  *  Service responsible for user privilege resource requests.
  */
@@ -72,7 +72,7 @@ public class UserPrivilegeService extends PrivilegeService {
   @Override
   protected ResourceInstance createPrivilegeResource(String privilegeId) {
     final Map<Resource.Type, String> mapIds = new HashMap<Resource.Type, String>();
-    mapIds.put(Resource.Type.User, userName);
+    mapIds.put(Resource.Type.User, StringUtils.lowerCase(userName));
     mapIds.put(Resource.Type.UserPrivilege, privilegeId);
     return createResource(Resource.Type.UserPrivilege, mapIds);
   }

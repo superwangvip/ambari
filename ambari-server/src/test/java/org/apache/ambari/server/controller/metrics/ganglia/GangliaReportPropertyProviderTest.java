@@ -17,6 +17,14 @@
  */
 package org.apache.ambari.server.controller.metrics.ganglia;
 
+import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
+
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.ambari.server.configuration.ComponentSSLConfiguration;
 import org.apache.ambari.server.configuration.ComponentSSLConfigurationTest;
 import org.apache.ambari.server.controller.internal.ResourceImpl;
@@ -31,12 +39,6 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import static org.apache.ambari.server.controller.metrics.MetricsServiceProvider.MetricsService;
 
 /**
  * Test the Ganglia report property provider.
@@ -95,7 +97,7 @@ public class GangliaReportPropertyProviderTest {
 
     Assert.assertEquals(1, propertyProvider.populateResources(Collections.singleton(resource), request, null).size());
 
-    String expected = (configuration.isGangliaSSL() ? "https" : "http") + "://domU-12-31-39-0E-34-E1.compute-1.internal/ganglia/graph.php?g=load_report&json=1";
+    String expected = (configuration.isHttpsEnabled() ? "https" : "http") + "://domU-12-31-39-0E-34-E1.compute-1.internal/ganglia/graph.php?g=load_report&json=1";
     Assert.assertEquals(expected, streamProvider.getLastSpec());
 
     Assert.assertEquals(2, PropertyHelper.getProperties(resource).size());
@@ -115,7 +117,7 @@ public class GangliaReportPropertyProviderTest {
     }
 
     @Override
-    public String getCollectorPortName(String clusterName, MetricsService service) throws SystemException {
+    public String getCollectorPort(String clusterName, MetricsService service) throws SystemException {
       return null;
     }
 

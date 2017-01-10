@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -17,15 +17,19 @@
  */
 package org.apache.ambari.server.state.kerberos;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import junit.framework.Assert;
+import java.util.Map;
+import java.util.TreeMap;
+
 import org.apache.ambari.server.AmbariException;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
-import java.util.HashMap;
-import java.util.Map;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
+import junit.framework.Assert;
+
+@Category({ category.KerberosTest.class})
 public class KerberosKeytabDescriptorTest {
   public static final String JSON_VALUE =
       "{" +
@@ -41,24 +45,23 @@ public class KerberosKeytabDescriptorTest {
           "  \"configuration\": \"service-site/service.component.keytab.file\"" +
           "}";
 
-  public static final Map<String, Object> MAP_VALUE =
-      new HashMap<String, Object>() {
-        {
-          put("file", "/etc/security/keytabs/subject.service.keytab");
+  public static final Map<String, Object> MAP_VALUE;
 
-          put("owner", new HashMap<String, Object>() {{
-            put("name", "root");
-            put("access", "rw");
-          }});
+  static {
+    TreeMap<String, Object> ownerMap = new TreeMap<String, Object>();
+    ownerMap.put("name", "root");
+    ownerMap.put("access", "rw");
 
-          put("group", new HashMap<String, Object>() {{
-            put("name", "hadoop");
-            put("access", "r");
-          }});
+    TreeMap<String, Object> groupMap = new TreeMap<String, Object>();
+    groupMap.put("name", "hadoop");
+    groupMap.put("access", "r");
 
-          put("configuration", "service-site/service2.component.keytab.file");
-        }
-      };
+    MAP_VALUE = new TreeMap<String, Object>();
+    MAP_VALUE.put("file", "/etc/security/keytabs/subject.service.keytab");
+    MAP_VALUE.put("owner", ownerMap);
+    MAP_VALUE.put("group", groupMap);
+    MAP_VALUE.put("configuration", "service-site/service2.component.keytab.file");
+  }
 
   public static void validateFromJSON(KerberosKeytabDescriptor keytabDescriptor) {
     Assert.assertNotNull(keytabDescriptor);

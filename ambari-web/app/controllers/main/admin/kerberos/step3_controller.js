@@ -22,12 +22,17 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
   serviceName: 'KERBEROS',
   componentName: 'KERBEROS_CLIENT',
   ignore: undefined,
-
+  heartBeatLostHosts: [],
   commands: ['installKerberos', 'testKerberos'],
 
   loadStep: function () {
     this._super();
     this.enableDisablePreviousSteps();
+  },
+
+  clearStep: function() {
+    this.get('heartBeatLostHosts').clear();
+    this._super();
   },
 
   installKerberos: function() {
@@ -52,13 +57,28 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
     });
   },
 
+  /**
+   * Get hosts with HEARTBEAT_LOST state.
+   *
+   * @return {$.Deferred.promise} promise
+   */
+  getHeartbeatLostHosts: function() {
+    return App.ajax.send({
+      name: 'hosts.heartbeat_lost',
+      sender: this,
+      data: {
+        clusterName: App.get('clusterName')
+      }
+    });
+  },
+
   getKerberosClientState: function() {
     return App.ajax.send({
       name: 'common.service_component.info',
       sender: this,
       data: {
-        serviceName: this.serviceName,
-        componentName: this.componentName,
+        serviceName: this.get('serviceName'),
+        componentName: this.get('componentName'),
         urlParams: "fields=ServiceComponentInfo/state"
       }
     });
@@ -77,7 +97,7 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
       },
       'data': {
         'serviceName': this.serviceName,
-        'displayName': App.format.role(this.serviceName),
+        'displayName': App.format.role(this.serviceName, true),
         'actionName': this.serviceName + '_SERVICE_CHECK',
         'operationLevel': {
           "level": "CLUSTER",
@@ -107,9 +127,7 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
   /**
    * Show or hide warning to ignore errors and continue with the install
    */
-  showIgnore: function() {
-    return this.get('tasks').someProperty('showRetry', true);
-  }.property('tasks.@each.showRetry'),
+  showIgnore: Em.computed.someBy('tasks', 'showRetry', true),
 
   /**
    * Enable or disable next button if ignore checkbox ticked
@@ -118,6 +136,34 @@ App.KerberosWizardStep3Controller = App.KerberosProgressPageController.extend({
     if (this.get('showIgnore')) {
       this.set('isSubmitDisabled', !this.get('ignore'));
     }
-  }.observes('ignore','showIgnore')
-});
+  }.observes('ignore', 'showIgnore'),
 
+  retryTask: function() {
+    this._super();
+    // retry from the first task (installKerberos) if there is any host in HEARTBEAT_LOST state.
+    if (this.get('heartBeatLostHosts').length) {
+      this.get('tasks').setEach('status', 'PENDING');
+      this.get('tasks').setEach('showRetry', false);
+      this.get('heartBeatLostHosts').clear();
+    }
+  },
+
+  /**
+   * Check for complete status and determines:
+   *  - if there are any hosts in HEARTBEAT_LOST state. In this case warn about hosts and make step FAILED.
+   *
+   * @return {undefined}
+   */
+  statusDidChange: function() {
+    var self = this;
+    if (this.get('completedStatuses').contains(this.get('status'))) {
+      this.getHeartbeatLostHosts().then(function(data) {
+        var hostNames = Em.getWithDefault(data || {}, 'items', []).mapProperty('Hosts.host_name');
+        if (hostNames.length) {
+          self.set('heartBeatLostHosts', hostNames.uniq());
+          self.get('tasks').objectAt(0).set('status', 'FAILED');
+        }
+      });
+    }
+  }.observes('status')
+});

@@ -78,9 +78,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
   /**
    * @type {boolean}
    */
-  isEditWidget: function () {
-    return this.get('content.controllerName') === 'widgetEditController';
-  }.property('content.controllerName'),
+  isEditWidget: Em.computed.equal('content.controllerName', 'widgetEditController'),
 
   /**
    * metrics filtered by type
@@ -107,7 +105,8 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
     switch (this.get('content.widgetType')) {
       case "NUMBER":
       case "GAUGE":
-        return !this.isExpressionComplete(this.get('expressions')[0]);
+        var expression = this.get('expressions')[0];
+        return !(this.isExpressionComplete(expression) && this.isExpressionWithMetrics(expression));
       case "GRAPH":
         return !this.isGraphDataComplete(this.get('dataSets'));
       case "TEMPLATE":
@@ -130,12 +129,49 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
   },
 
   /**
+   * check whether data of expression contains metrics
+   * @param {Em.Object} expression
+   * @returns {boolean}
+   */
+  isExpressionWithMetrics: function (expression) {
+    return Boolean(expression && expression.get('data') && expression.get('data').someProperty('isMetric'));
+  },
+
+  /**
+   * check whether any of the expressions is incomplete or invalid
+   * @returns {boolean}
+   */
+  isAnyExpressionInvalid: function() {
+    var isAnyExpressionInvalid = false;
+    switch (this.get('content.widgetType')) {
+      case "NUMBER":
+      case "GAUGE":
+      case "TEMPLATE":
+        isAnyExpressionInvalid = this.get('isSubmitDisabled') && this.get('expressions').someProperty('isEmpty', false);
+        break;
+      case "GRAPH":
+        var dataSets = this.get('dataSets'),
+          isNotEmpty = false;
+        for (var i = 0; i < dataSets.length; i++) {
+          if (dataSets[i].get('expression.data').length > 0) {
+            isNotEmpty = true;
+            break;
+          }
+        }
+        isAnyExpressionInvalid = this.get('isSubmitDisabled') && isNotEmpty;
+    }
+    return isAnyExpressionInvalid;
+  }.property('isSubmitDisabled'),
+
+  /**
    * check whether data of graph widget is complete
    * @param dataSets
    * @returns {boolean} isComplete
    */
   isGraphDataComplete: function (dataSets) {
-    var isComplete = Boolean(dataSets.length);
+    var isComplete = Boolean(dataSets.length),
+      expressions = dataSets.mapProperty('expression'),
+      isMetricsIncluded = expressions.some(this.isExpressionWithMetrics);
 
     for (var i = 0; i < dataSets.length; i++) {
       if (dataSets[i].get('label').trim() === '' || !this.isExpressionComplete(dataSets[i].get('expression'))) {
@@ -143,7 +179,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
         break;
       }
     }
-    return isComplete;
+    return isComplete && isMetricsIncluded;
   },
 
   /**
@@ -153,7 +189,8 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
    * @returns {boolean} isComplete
    */
   isTemplateDataComplete: function (expressions, templateValue) {
-    var isComplete = Boolean(expressions.length > 0 && templateValue.trim() !== '');
+    var isComplete = Boolean(expressions.length > 0 && templateValue.trim() !== ''),
+      isMetricsIncluded = expressions.some(this.isExpressionWithMetrics);
 
     if (isComplete) {
       for (var i = 0; i < expressions.length; i++) {
@@ -163,7 +200,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
         }
       }
     }
-    return isComplete;
+    return isComplete && isMetricsIncluded;
   },
 
   /**
@@ -183,9 +220,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
         id: id,
         data: [],
         isInvalid: false,
-        isEmpty: function () {
-          return (this.get('data.length') === 0);
-        }.property('data.length')
+        isEmpty: Em.computed.equal('data.length', 0)
       })
     }));
     return id;
@@ -214,9 +249,7 @@ App.WidgetWizardStep2Controller = Em.Controller.extend({
       data: [],
       alias: '{{' + this.get('EXPRESSION_PREFIX') + id + '}}',
       isInvalid: false,
-      isEmpty: function () {
-        return (this.get('data.length') === 0);
-      }.property('data.length')
+      isEmpty: Em.computed.equal('data.length', 0)
     }));
     return id;
   },

@@ -18,25 +18,40 @@
 
 package org.apache.ambari.server.api.handlers;
 
-import org.apache.ambari.server.api.query.Query;
-import org.apache.ambari.server.api.query.render.DefaultRenderer;
-import org.apache.ambari.server.api.query.render.Renderer;
-import org.apache.ambari.server.api.resources.ResourceInstance;
-import org.apache.ambari.server.api.services.Request;
-import org.apache.ambari.server.api.services.Result;
-import org.apache.ambari.server.api.services.ResultStatus;
-import org.apache.ambari.server.controller.spi.*;
-import org.easymock.Capture;
-import org.junit.Test;
-
+import static org.easymock.EasyMock.capture;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.expectLastCall;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.easymock.EasyMock.*;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertSame;
+import org.apache.ambari.server.api.query.Query;
+import org.apache.ambari.server.api.query.render.DefaultRenderer;
+import org.apache.ambari.server.api.query.render.Renderer;
+import org.apache.ambari.server.api.resources.ResourceInstance;
+import org.apache.ambari.server.api.services.Request;
+import org.apache.ambari.server.api.services.RequestBody;
+import org.apache.ambari.server.api.services.Result;
+import org.apache.ambari.server.api.services.ResultStatus;
+import org.apache.ambari.server.controller.spi.NoSuchParentResourceException;
+import org.apache.ambari.server.controller.spi.NoSuchResourceException;
+import org.apache.ambari.server.controller.spi.Predicate;
+import org.apache.ambari.server.controller.spi.Resource;
+import org.apache.ambari.server.controller.spi.SystemException;
+import org.apache.ambari.server.controller.spi.TemporalInfo;
+import org.apache.ambari.server.controller.spi.UnsupportedPropertyException;
+import org.apache.ambari.server.security.authorization.AuthorizationException;
+import org.easymock.Capture;
+import org.easymock.EasyMock;
+import org.junit.Test;
 
 /**
  * Unit tests for ReadHandler.
@@ -82,8 +97,11 @@ public class ReadHandlerTest {
     Query query = createMock(Query.class);
     Predicate predicate = createMock(Predicate.class);
     Result result = createStrictMock(Result.class);
+    RequestBody body = createStrictMock(RequestBody.class);
     Renderer renderer = new DefaultRenderer();
-    Capture<ResultStatus> resultStatusCapture = new Capture<ResultStatus>();
+    Capture<ResultStatus> resultStatusCapture = EasyMock.newCapture();
+
+    Map<String, String> requestInfoProperties = Collections.singletonMap("directive", "value");
 
     Map<String, TemporalInfo> mapPartialResponseFields = new HashMap<String, TemporalInfo>();
     mapPartialResponseFields.put("foo", null);
@@ -97,8 +115,12 @@ public class ReadHandlerTest {
     expect(request.getPageRequest()).andReturn(null);
     expect(request.getSortRequest()).andReturn(null);
     expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(body);
     expect(request.getFields()).andReturn(mapPartialResponseFields);
 
+    expect(body.getRequestInfoProperties()).andReturn(requestInfoProperties);
+
+    query.setRequestInfoProps(requestInfoProperties);
     query.addProperty("foo", null);
     query.addProperty("bar/c", null);
     query.addProperty("bar/d/e", null);
@@ -112,13 +134,13 @@ public class ReadHandlerTest {
     expect(query.execute()).andReturn(result);
     result.setResultStatus(capture(resultStatusCapture));
 
-    replay(request, resource, query, predicate, result);
+    replay(request, resource, body, query, predicate, result);
 
     //test
     ReadHandler handler = new ReadHandler();
     assertSame(result, handler.handleRequest(request));
     assertEquals(ResultStatus.STATUS.OK, resultStatusCapture.getValue().getStatus());
-    verify(request, resource, query, predicate, result);
+    verify(request, resource, body, query, predicate, result);
   }
 
   @Test
@@ -135,6 +157,7 @@ public class ReadHandlerTest {
     expect(request.getPageRequest()).andReturn(null);
     expect(request.getSortRequest()).andReturn(null);
     expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(null);
     expect(request.getFields()).andReturn(Collections.<String, TemporalInfo>emptyMap());
 
     expect(request.getQueryPredicate()).andReturn(predicate);
@@ -170,6 +193,7 @@ public class ReadHandlerTest {
     expect(request.getPageRequest()).andReturn(null);
     expect(request.getSortRequest()).andReturn(null);
     expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(null);
     expect(request.getFields()).andReturn(Collections.<String, TemporalInfo>emptyMap());
 
     expect(request.getQueryPredicate()).andReturn(predicate);
@@ -206,6 +230,7 @@ public class ReadHandlerTest {
     expect(request.getPageRequest()).andReturn(null);
     expect(request.getSortRequest()).andReturn(null);
     expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(null);
     expect(request.getFields()).andReturn(Collections.<String, TemporalInfo>emptyMap());
 
     expect(request.getQueryPredicate()).andReturn(predicate);
@@ -241,6 +266,7 @@ public class ReadHandlerTest {
     expect(request.getPageRequest()).andReturn(null);
     expect(request.getSortRequest()).andReturn(null);
     expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(null);
     expect(request.getFields()).andReturn(Collections.<String, TemporalInfo>emptyMap());
 
     expect(request.getQueryPredicate()).andReturn(predicate).anyTimes();
@@ -275,6 +301,7 @@ public class ReadHandlerTest {
     expect(request.getPageRequest()).andReturn(null);
     expect(request.getSortRequest()).andReturn(null);
     expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(null);
     expect(request.getFields()).andReturn(Collections.<String, TemporalInfo>emptyMap());
 
     expect(request.getQueryPredicate()).andReturn(null).anyTimes();
@@ -294,5 +321,40 @@ public class ReadHandlerTest {
     assertEquals(ResultStatus.STATUS.NOT_FOUND, result.getStatus().getStatus());
     assertEquals(exception.getMessage(), result.getStatus().getMessage());
     verify(request, resource, query);
+  }
+
+  @Test
+  public void testHandleRequest__AuthorizationException() throws Exception {
+    Request request = createStrictMock(Request.class);
+    ResourceInstance resource = createStrictMock(ResourceInstance.class);
+    Query query = createMock(Query.class);
+    Predicate predicate = createMock(Predicate.class);
+    Renderer renderer = new DefaultRenderer();
+
+    expect(request.getResource()).andReturn(resource);
+    expect(resource.getQuery()).andReturn(query);
+
+    expect(request.getPageRequest()).andReturn(null);
+    expect(request.getSortRequest()).andReturn(null);
+    expect(request.getRenderer()).andReturn(renderer);
+    expect(request.getBody()).andReturn(null);
+    expect(request.getFields()).andReturn(Collections.<String, TemporalInfo>emptyMap());
+
+    expect(request.getQueryPredicate()).andReturn(predicate);
+    query.setUserPredicate(predicate);
+    query.setPageRequest(null);
+    query.setSortRequest(null);
+    query.setRenderer(renderer);
+    AuthorizationException authorizationException = new AuthorizationException("testMsg");
+    expect(query.execute()).andThrow(authorizationException);
+
+    replay(request, resource, query, predicate);
+
+    //test
+    ReadHandler handler = new ReadHandler();
+    Result result = handler.handleRequest(request);
+    assertEquals(ResultStatus.STATUS.FORBIDDEN, result.getStatus().getStatus());
+    assertEquals(authorizationException.getMessage(), result.getStatus().getMessage());
+    verify(request, resource, query, predicate);
   }
 }

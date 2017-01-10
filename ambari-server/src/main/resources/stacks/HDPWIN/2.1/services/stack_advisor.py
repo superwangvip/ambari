@@ -17,22 +17,75 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+# Python Imports
 import re
 import sys
 import os
 from math import ceil
 
+# Local Imports
+from resource_management.core.logger import Logger
 from stack_advisor import DefaultStackAdvisor
 
 class HDPWIN21StackAdvisor(DefaultStackAdvisor):
+
+  def __init__(self):
+    super(HDPWIN21StackAdvisor, self).__init__()
+
+    self.modifyMastersWithMultipleInstances()
+    self.modifyCardinalitiesDict()
+    self.modifyHeapSizeProperties()
+    self.modifyNotValuableComponents()
+    self.modifyComponentsNotPreferableOnServer()
+
+  def modifyMastersWithMultipleInstances(self):
+    """
+    Modify the set of masters with multiple instances.
+    Must be overriden in child class.
+    """
+    self.mastersWithMultipleInstances |= set(['ZOOKEEPER_SERVER', 'HBASE_MASTER'])
+
+  def modifyCardinalitiesDict(self):
+    """
+    Modify the dictionary of cardinalities.
+    Must be overriden in child class.
+    """
+    self.cardinalitiesDict.update(
+      {
+        'ZOOKEEPER_SERVER': {"min": 3},
+        'HBASE_MASTER': {"min": 1},
+      }
+    )
+
+  def modifyHeapSizeProperties(self):
+    """
+    Modify the dictionary of heap size properties.
+    Must be overriden in child class.
+    """
+    # Nothing to do
+    pass
+
+  def modifyNotValuableComponents(self):
+    """
+    Modify the set of components whose host assignment is based on other services.
+    Must be overriden in child class.
+    """
+    self.notValuableComponents |= set(['JOURNALNODE', 'ZKFC', 'APP_TIMELINE_SERVER'])
+
+  def modifyComponentsNotPreferableOnServer(self):
+    """
+    Modify the set of components that are not preferable on the server.
+    Must be overriden in child class.
+    """
+    self.notPreferableOnServerComponents |= set(['STORM_UI_SERVER', 'DRPC_SERVER', 'STORM_REST_API', 'NIMBUS'])
 
   def getComponentLayoutValidations(self, services, hosts):
     """Returns array of Validation objects about issues with hostnames components assigned to"""
     items = []
 
     # Validating NAMENODE and SECONDARY_NAMENODE are on different hosts if possible
-    hostsList = [host["Hosts"]["host_name"] for host in hosts["items"]]
-    hostsCount = len(hostsList)
+    hostsSet =  set(super(HDPWIN21StackAdvisor, self).getActiveHosts([host["Hosts"] for host in hosts["items"]]))
+    hostsCount = len(hostsSet)
 
     componentsListList = [service["components"] for service in services["services"]]
     componentsList = [item for sublist in componentsListList for item in sublist]
@@ -44,9 +97,10 @@ class HDPWIN21StackAdvisor(DefaultStackAdvisor):
       if component["StackServiceComponents"]["cardinality"] is not None:
          componentName = component["StackServiceComponents"]["component_name"]
          componentDisplayName = component["StackServiceComponents"]["display_name"]
-         componentHostsCount = 0
+         componentHosts = []
          if component["StackServiceComponents"]["hostnames"] is not None:
-           componentHostsCount = len(component["StackServiceComponents"]["hostnames"])
+           componentHosts = [componentHost for componentHost in component["StackServiceComponents"]["hostnames"] if componentHost in hostsSet]
+         componentHostsCount = len(componentHosts)
          cardinality = str(component["StackServiceComponents"]["cardinality"])
          # cardinality types: null, 1+, 1-2, 1, ALL
          message = None
@@ -73,7 +127,7 @@ class HDPWIN21StackAdvisor(DefaultStackAdvisor):
     # Validating host-usage
     usedHostsListList = [component["StackServiceComponents"]["hostnames"] for component in componentsList if not self.isComponentNotValuable(component)]
     usedHostsList = [item for sublist in usedHostsListList for item in sublist]
-    nonUsedHostsList = [item for item in hostsList if item not in usedHostsList]
+    nonUsedHostsList = [item for item in hostsSet if item not in usedHostsList]
     for host in nonUsedHostsList:
       items.append( { "type": 'host-component', "level": 'ERROR', "message": 'Host is not used', "host": str(host) } )
 
@@ -507,21 +561,8 @@ class HDPWIN21StackAdvisor(DefaultStackAdvisor):
                         {"config-name": 'hbase_master_heapsize', "item": self.validatorLessThenDefaultValue(properties, recommendedDefaults, 'hbase_master_heapsize')}]
     return self.toConfigurationValidationProblems(validationItems, "hbase-env")
 
-  def getMastersWithMultipleInstances(self):
-    return ['ZOOKEEPER_SERVER', 'HBASE_MASTER']
 
-  def getNotValuableComponents(self):
-    return ['JOURNALNODE', 'ZKFC', 'APP_TIMELINE_SERVER']
-
-  def getNotPreferableOnServerComponents(self):
-    return ['STORM_UI_SERVER', 'DRPC_SERVER', 'STORM_REST_API', 'NIMBUS']
-
-  def getCardinalitiesDict(self):
-    return {
-      'ZOOKEEPER_SERVER': {"min": 3},
-      'HBASE_MASTER': {"min": 1},
-      }
-
+  # TODO, move to Service Advisors.
   def getComponentLayoutSchemes(self):
     return {
       'NAMENODE': {"else": 0},
@@ -701,6 +742,20 @@ class HDPWIN21StackAdvisor(DefaultStackAdvisor):
       return None
 
     return None
+
+  def checkSiteProperties(self, siteProperties, *propertyNames):
+    """
+    Check if properties defined in site properties.
+    :param siteProperties: config properties dict
+    :param *propertyNames: property names to validate
+    :returns: True if all properties defined, in other cases returns False
+    """
+    if siteProperties is None:
+      return False
+    for name in propertyNames:
+      if not (name in siteProperties):
+        return False
+    return True
 
 # Validation helper methods
 def getSiteProperties(configurations, siteName):

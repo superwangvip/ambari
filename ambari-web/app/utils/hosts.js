@@ -51,7 +51,10 @@ module.exports = {
     }
     App.ModalPopup.show({
 
-      classNames: [ 'sixty-percent-width-modal' ],
+      classNames: [ 'common-modal-wrapper' ],
+      modalDialogClasses: ['modal-lg'],
+
+      elementId: 'host-selection-dialog',
 
       header: popupDescription.header,
 
@@ -72,9 +75,7 @@ module.exports = {
         this.hide();
       },
 
-      disablePrimary: function () {
-        return !this.get('isLoaded');
-      }.property('isLoaded'),
+      disablePrimary: Em.computed.not('isLoaded'),
 
       onSecondary: function () {
         callback(null);
@@ -122,9 +123,7 @@ module.exports = {
 
         filterComponent: null,
 
-        isDisabled: function () {
-          return !this.get('parentView.isLoaded');
-        }.property('parentView.isLoaded'),
+        isDisabled: Em.computed.not('parentView.isLoaded'),
 
         didInsertElement: function() {
           var defaultFilterColumn = this.get('filterColumns').findProperty('selected');
@@ -153,15 +152,11 @@ module.exports = {
 
             host.set('filterColumnValue', value);
 
-            if (!skip && filterText) {
-              if ((value == null || !value.toString().match(filterText)) && !host.get('host.publicHostName').match(filterText)) {
-                skip = true;
-              }
+            if (!skip && filterText && (value == null || !value.toString().match(filterText)) && !host.get('host.publicHostName').match(filterText)) {
+              skip = true;
             }
-            if (!skip && filterComponent) {
-              if (hostComponentNames.length > 0) {
+            if (!skip && filterComponent && hostComponentNames.length > 0) {
                 skip = !hostComponentNames.contains(filterComponent.get('componentName'));
-              }
             }
             host.set('filtered', !skip);
           }, this);
@@ -234,7 +229,7 @@ module.exports = {
     return App.ModalPopup.show({
       header: Em.I18n.t('hosts.host.details.setRackId'),
       disablePrimary: true,
-      rackId: rackId,
+      rackId: rackId ? rackId : "",
       bodyClass: Em.View.extend({
         templateName: require('templates/main/host/rack_id_popup'),
         errorMessage: null,

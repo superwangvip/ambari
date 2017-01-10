@@ -19,6 +19,7 @@ limitations under the License.
 '''
 
 from PythonExecutor import PythonExecutor
+from resource_management.core.exceptions import ClientComponentHasNoStatus, ComponentIsNotRunning
 
 import imp
 import sys
@@ -42,23 +43,28 @@ class PythonReflectiveExecutor(PythonExecutor):
     
   def run_file(self, script, script_params, tmpoutfile, tmperrfile,
                timeout, tmpstructedoutfile, callback, task_id,
-               override_output_files = True, handle = None, log_info_on_failure=True):   
+               override_output_files = True, backup_log_files = True,
+               handle = None, log_info_on_failure=True):
     pythonCommand = self.python_command(script, script_params)
     logger.debug("Running command reflectively " + pprint.pformat(pythonCommand))
     
     script_dir = os.path.dirname(script)
-    self.open_subprocess_files(tmpoutfile, tmperrfile, override_output_files)
+    self.open_subprocess_files(tmpoutfile, tmperrfile, override_output_files, backup_log_files)
     returncode = 1
 
     try:
-      with PythonContext(script_dir, pythonCommand):
+      current_context = PythonContext(script_dir, pythonCommand)
+      PythonReflectiveExecutor.last_context = current_context
+      with current_context:
         imp.load_source('__main__', script)
     except SystemExit as e:
       returncode = e.code
       if returncode:
         logger.debug("Reflective command failed with return_code=" + str(e))
-    except Exception: 
+    except (ClientComponentHasNoStatus, ComponentIsNotRunning):
       logger.debug("Reflective command failed with exception:", exc_info=1)
+    except Exception:
+      logger.info("Reflective command failed with exception:", exc_info=1)
     else: 
       returncode = 0
       
@@ -72,6 +78,8 @@ class PythonContext:
   def __init__(self, script_dir, pythonCommand):
     self.script_dir = script_dir
     self.pythonCommand = pythonCommand
+    self.is_reverted = False
+    self.is_forced_revert = False
     
   def __enter__(self):
     self.old_sys_path = copy.copy(sys.path)
@@ -80,16 +88,22 @@ class PythonContext:
     self.old_logging_disable = logging.root.manager.disable
     
     logging.disable(logging.ERROR)
-    sys.path.append(self.script_dir)
+    sys.path.insert(0, self.script_dir)
     sys.argv = self.pythonCommand[1:]
 
   def __exit__(self, exc_type, exc_val, exc_tb):
-    sys.path = self.old_sys_path
-    sys.argv = self.old_agv
-    logging.disable(self.old_logging_disable)
-    self.revert_sys_modules(self.old_sys_modules)
+    self.revert(is_forced_revert=False)
     return False
   
+  def revert(self, is_forced_revert=True):
+    if not self.is_reverted:
+      self.is_forced_revert = is_forced_revert
+      self.is_reverted = True
+      sys.path = self.old_sys_path
+      sys.argv = self.old_agv
+      logging.disable(self.old_logging_disable)
+      self.revert_sys_modules(self.old_sys_modules)
+
   def revert_sys_modules(self, value):
     sys.modules.update(value)
     

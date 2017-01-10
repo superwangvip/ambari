@@ -18,7 +18,27 @@
 
 package org.apache.ambari.server.api.services;
 
-import com.sun.jersey.core.util.MultivaluedMapImpl;
+import static org.easymock.EasyMock.createMock;
+import static org.easymock.EasyMock.createNiceMock;
+import static org.easymock.EasyMock.createStrictMock;
+import static org.easymock.EasyMock.expect;
+import static org.easymock.EasyMock.replay;
+import static org.easymock.EasyMock.verify;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+
+import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.UriInfo;
+
 import org.apache.ambari.server.api.handlers.RequestHandler;
 import org.apache.ambari.server.api.predicate.InvalidQueryException;
 import org.apache.ambari.server.api.predicate.PredicateCompiler;
@@ -34,15 +54,7 @@ import org.apache.ambari.server.controller.spi.TemporalInfo;
 import org.apache.ambari.server.controller.utilities.PropertyHelper;
 import org.junit.Test;
 
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.UriInfo;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.util.*;
-
-import static org.easymock.EasyMock.*;
-import static org.junit.Assert.*;
+import com.sun.jersey.core.util.MultivaluedMapImpl;
 
 /**
  * Base tests for service requests.
@@ -134,7 +146,7 @@ public abstract class BaseRequestTest {
     Predicate predicate = createNiceMock(Predicate.class);
     UriInfo uriInfo = createMock(UriInfo.class);
     @SuppressWarnings("unchecked")
-    MultivaluedMap<String, String> queryParams = createMock(MultivaluedMap.class);
+    MultivaluedMap<String, String> queryParams = new MultivaluedMapImpl();
     RequestHandler handler = createStrictMock(RequestHandler.class);
     Result result = createMock(Result.class);
     ResultStatus resultStatus = createMock(ResultStatus.class);
@@ -142,23 +154,22 @@ public abstract class BaseRequestTest {
     RequestBody body = createNiceMock(RequestBody.class);
     ResourceInstance resource = createNiceMock(ResourceInstance.class);
     ResourceDefinition resourceDefinition = createNiceMock(ResourceDefinition.class);
-    Set<String> directives = new HashSet<String>();
-    directives.add("my_directive");
+    Set<String> directives = Collections.singleton("my_directive");
     Renderer renderer = new DefaultRenderer();
 
     Request request = getTestRequest(headers, body, uriInfo, compiler, handler, processor, resource);
 
     //expectations
     expect(uriInfo.getQueryParameters()).andReturn(queryParams).anyTimes();
-    expect(queryParams.getFirst(QueryLexer.QUERY_MINIMAL)).andReturn(null);
-    expect(queryParams.getFirst(QueryLexer.QUERY_FORMAT)).andReturn(null);
     expect(resource.getResourceDefinition()).andReturn(resourceDefinition).anyTimes();
     expect(resourceDefinition.getUpdateDirectives()).andReturn(directives).anyTimes(); // for PUT implementation
     expect(resourceDefinition.getCreateDirectives()).andReturn(directives).anyTimes(); // for POST implementation
+    expect(resourceDefinition.getDeleteDirectives()).andReturn(directives).anyTimes(); // for DELETE implementation
     expect(resourceDefinition.getRenderer(null)).andReturn(renderer);
     expect(uriInfo.getRequestUri()).andReturn(uri).anyTimes();
     expect(body.getQueryString()).andReturn(null);
-    if (request.getRequestType().equals(Request.Type.POST) || request.getRequestType().equals(Request.Type.PUT))
+    if (request.getRequestType() == Request.Type.POST || request.getRequestType() == Request.Type.PUT
+            || request.getRequestType() == Request.Type.DELETE)
     {
       expect(compiler.compile("foo=foo-value&bar=bar-value", directives)).andReturn(predicate);
     }
@@ -172,12 +183,12 @@ public abstract class BaseRequestTest {
 
     processor.process(result);
 
-    replay(headers, compiler, uriInfo, handler, queryParams, resource,
+    replay(headers, compiler, uriInfo, handler, resource,
       resourceDefinition, result, resultStatus, processor, predicate, body);
 
     Result processResult = request.process();
 
-    verify(headers, compiler, uriInfo, handler, queryParams, resource,
+    verify(headers, compiler, uriInfo, handler, resource,
       resourceDefinition, result, resultStatus, processor, predicate, body);
 
     assertSame(processResult, result);

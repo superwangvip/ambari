@@ -18,7 +18,7 @@
 
 var App = require('app');
 
-App.ReassignMasterWizardStep2Controller = Em.Controller.extend(App.BlueprintMixin, App.AssignMasterComponents, {
+App.ReassignMasterWizardStep2Controller = Em.Controller.extend(App.AssignMasterComponents, {
 
   name: "reassignMasterWizardStep2Controller",
 
@@ -54,9 +54,7 @@ App.ReassignMasterWizardStep2Controller = Em.Controller.extend(App.BlueprintMixi
   customClientSideValidation: function () {
     var reassigned = 0;
     var existedComponents = App.HostComponent.find().filterProperty('componentName', this.get('content.reassign.component_name')).mapProperty('hostName');
-    console.log('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', existedComponents);
     var newComponents = this.get('servicesMasters').filterProperty('component_name', this.get('content.reassign.component_name')).mapProperty('selectedHost');
-    console.log('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', newComponents);
     existedComponents.forEach(function (host) {
       if (!newComponents.contains(host)) {
         reassigned++;

@@ -43,9 +43,7 @@ App.wizardProgressPageViewMixin = Em.Mixin.create({
 
   noticeCompleted: Em.I18n.t('wizard.progressPage.notice.completed'),
 
-  noticeFailed: function() {
-    return (this.get('controller.isSingleRequestPage') ? Em.I18n.t('wizard.singleRequest.progressPage.notice.failed') : Em.I18n.t('wizard.progressPage.notice.failed'))
-  }.property('controller.isSingleRequestPage'),
+  noticeFailed: Em.computed.ifThenElse('controller.isSingleRequestPage', Em.I18n.t('wizard.singleRequest.progressPage.notice.failed'), Em.I18n.t('wizard.progressPage.notice.failed')),
 
   /**
    * @noticeInProgress: Following computed property needs to be overridden to show the label text while the commands
@@ -71,7 +69,7 @@ App.wizardProgressPageViewMixin = Em.Mixin.create({
    * Class to define task label width
    * @type {String}
    */
-  labelWidth: 'span4',
+  labelWidth: 'col-md-4',
 
   onStatusChange: function () {
     var status = this.get('controller.status');
@@ -96,32 +94,28 @@ App.wizardProgressPageViewMixin = Em.Mixin.create({
       this.onStatus();
     },
 
-    barWidth: function () {
-      return 'width: ' + this.get('content.progress') + '%;';
-    }.property('content.progress'),
+    barWidth: Em.computed.format('width: {0}%;', 'content.progress'),
 
     onStatus: function () {
       var linkClass = !!this.get('content.requestIds.length') ? 'active-link' : 'active-text';
       this.set('linkClass', linkClass);
       if (this.get('content.status') === 'IN_PROGRESS') {
-        this.set('icon', 'icon-cog');
+        this.set('icon', 'glyphicon glyphicon-cog');
         this.set('iconColor', 'text-info');
       } else if (this.get('content.status') === 'FAILED') {
-        this.set('icon', 'icon-exclamation-sign');
-        this.set('iconColor', 'text-error');
+        this.set('icon', 'glyphicon glyphicon-exclamation-sign');
+        this.set('iconColor', 'text-danger');
       } else if (this.get('content.status') === 'COMPLETED') {
-        this.set('icon', 'icon-ok');
+        this.set('icon', 'glyphicon glyphicon-ok');
         this.set('iconColor', 'text-success');
       } else {
-        this.set('icon', 'icon-cog');
+        this.set('icon', 'glyphicon glyphicon-cog');
         this.set('iconColor', '');
         this.set('linkClass', 'not-active-link');
       }
     }.observes('content.status', 'content.hosts.length','content.requestIds'),
 
-    showProgressBar: function () {
-      return this.get('content.status') === "IN_PROGRESS";
-    }.property('content.status')
+    showProgressBar: Em.computed.equal('content.status', 'IN_PROGRESS')
   })
 
 });

@@ -18,11 +18,13 @@
 
 var App = require('app');
 var stringUtils = require('utils/string_utils');
+var credentialUtils = require('utils/credentials');
 
-App.ClusterController = Em.Controller.extend({
+App.ClusterController = Em.Controller.extend(App.ReloadPopupMixin, {
   name: 'clusterController',
   isLoaded: false,
   ambariProperties: null,
+  clusterEnv: null,
   clusterDataLoadedPercent: 'width:0', // 0 to 1
 
   isClusterNameLoaded: false,
@@ -42,22 +44,26 @@ App.ClusterController = Em.Controller.extend({
   isServiceMetricsLoaded: false,
 
   /**
+   * @type {boolean}
+   */
+  isHostComponentMetricsLoaded: false,
+
+  /**
+   * This counter used as event trigger to notify that quick links should be changed.
+   */
+  quickLinksUpdateCounter: 0,
+
+  /**
    * Ambari uses custom jdk.
    * @type {Boolean}
    */
   isCustomJDK: false,
 
-  isHostContentLoaded: function () {
-    return this.get('isHostsLoaded') && this.get('isComponentsStateLoaded');
-  }.property('isHostsLoaded', 'isComponentsStateLoaded'),
+  isHostContentLoaded: Em.computed.and('isHostsLoaded', 'isComponentsStateLoaded'),
 
-  isServiceContentFullyLoaded: function () {
-    return this.get('isServiceMetricsLoaded') && this.get('isComponentsStateLoaded') && this.get('isComponentsConfigLoaded');
-  }.property('isServiceMetricsLoaded', 'isComponentsStateLoaded', 'isComponentsConfigLoaded'),
+  isServiceContentFullyLoaded: Em.computed.and('isServiceMetricsLoaded', 'isComponentsStateLoaded', 'isComponentsConfigLoaded'),
 
-  clusterName: function () {
-    return App.get('clusterName');
-  }.property('App.clusterName'),
+  clusterName: Em.computed.alias('App.clusterName'),
 
   updateLoadStatus: function (item) {
     var loadList = this.get('dataLoadList');
@@ -89,8 +95,8 @@ App.ClusterController = Em.Controller.extend({
   /**
    * load cluster name
    */
-  loadClusterName: function (reload) {
-    var dfd = $.Deferred();
+  loadClusterName: function (reload, deferred) {
+    var dfd = deferred || $.Deferred();
 
     if (App.get('clusterName') && !reload) {
       App.set('clusterName', this.get('clusterName'));
@@ -100,30 +106,40 @@ App.ClusterController = Em.Controller.extend({
       App.ajax.send({
         name: 'cluster.load_cluster_name',
         sender: this,
-        success: 'loadClusterNameSuccessCallback',
-        error: 'loadClusterNameErrorCallback'
-      }).complete(function () {
-        if (!App.get('currentStackVersion')) {
-          App.set('currentStackVersion', App.defaultStackVersion);
+        data: {
+          reloadPopupText: Em.I18n.t('app.reloadPopup.noClusterName.text'),
+          errorLogMessage: 'failed on loading cluster name',
+          callback: this.loadClusterName,
+          args: [reload, dfd],
+          shouldUseDefaultHandler: true
+        },
+        success: 'reloadSuccessCallback',
+        error: 'reloadErrorCallback',
+        callback: function () {
+          if (!App.get('currentStackVersion')) {
+            App.set('currentStackVersion', App.defaultStackVersion);
+          }
         }
-        dfd.resolve();
-      });
+      }).then(
+        function () {
+          dfd.resolve();
+        },
+        null
+      );
     }
-    return dfd.promise()
+    return dfd.promise();
   },
 
-  loadClusterNameSuccessCallback: function (data) {
+  reloadSuccessCallback: function (data) {
+    this._super();
     if (data.items && data.items.length > 0) {
-      App.set('clusterName', data.items[0].Clusters.cluster_name);
-      App.set('currentStackVersion', data.items[0].Clusters.version);
+      App.setProperties({
+        clusterName: data.items[0].Clusters.cluster_name,
+        currentStackVersion: data.items[0].Clusters.version,
+        isKerberosEnabled: data.items[0].Clusters.security_type === 'KERBEROS'
+      });
       this.set('isClusterNameLoaded', true);
-      App.set('isKerberosEnabled', data.items[0].Clusters.security_type === 'KERBEROS');
     }
-  },
-
-  loadClusterNameErrorCallback: function (request, ajaxOptions, error) {
-    console.log('failed on loading cluster name');
-    this.set('isLoaded', true);
   },
 
   /**
@@ -148,17 +164,16 @@ App.ClusterController = Em.Controller.extend({
       error: 'getServerClockErrorCallback'
     });
   },
+
   getServerClockSuccessCallback: function (data) {
     var clientClock = new Date().getTime();
     var serverClock = (data.RootServiceComponents.server_clock).toString();
     serverClock = serverClock.length < 13 ? serverClock + '000' : serverClock;
     App.set('clockDistance', serverClock - clientClock);
     App.set('currentServerTime', parseInt(serverClock));
-    console.log('loading ambari server clock distance');
   },
-  getServerClockErrorCallback: function () {
-    console.log('Cannot load ambari server clock');
-  },
+
+  getServerClockErrorCallback: Em.K,
 
   getUrl: function (testUrl, url) {
     return (App.get('testMode')) ? testUrl : App.get('apiPrefix') + '/clusters/' + App.get('clusterName') + url;
@@ -168,9 +183,10 @@ App.ClusterController = Em.Controller.extend({
    *  load all data and update load status
    */
   loadClusterData: function () {
-    var self = this;
+    this.loadAuthorizations();
     this.getAllHostNames();
     this.loadAmbariProperties();
+
     if (!App.get('clusterName')) {
       return;
     }
@@ -179,39 +195,51 @@ App.ClusterController = Em.Controller.extend({
       App.router.get('mainController').startPolling();
       return;
     }
-
-    var clusterUrl = this.getUrl('/data/clusters/cluster.json', '?fields=Clusters');
+    App.router.get('userSettingsController').getAllUserSettings();
+    App.router.get('errorsHandlerController').loadErrorLogs();
     var hostsController = App.router.get('mainHostController');
     hostsController.set('isCountersUpdating', true);
     hostsController.updateStatusCounters();
 
+    this.loadClusterInfo();
+    this.restoreUpgradeState();
+    App.router.get('wizardWatcherController').getUser();
+
+    this.loadClusterDataToModel();
+
+    //force clear filters  for hosts page to load all data
+    App.db.setFilterConditions('mainHostController', null);
+
+    //load cluster-env, used by alert check tolerance
+    // TODO services auto-start
+    App.router.get('updateController').updateClusterEnv();
+  },
+
+  loadClusterInfo: function() {
+    var clusterUrl = this.getUrl('/data/clusters/cluster.json', '?fields=Clusters');
     App.HttpClient.get(clusterUrl, App.clusterMapper, {
       complete: function (jqXHR, textStatus) {
+        App.set('isCredentialStorePersistent', Em.getWithDefault(App.Cluster.find().findProperty('clusterName', App.get('clusterName')), 'isCredentialStorePersistent', false));
       }
-    }, function (jqXHR, textStatus) {
-    });
+    }, Em.K);
+  },
 
+  /**
+   * Order of loading:
+   * 1. load all created service components
+   * 2. request for service components supported by stack
+   * 3. load stack components to model
+   * 4. request for services
+   * 5. put services in cache
+   * 6. request for hosts and host-components (single call)
+   * 7. request for service metrics
+   * 8. load host-components to model
+   * 9. load services from cache with metrics to model
+   */
+  loadClusterDataToModel: function() {
+    var self = this;
 
-    if (App.get('supports.stackUpgrade')) {
-      self.restoreUpgradeState();
-    }
-
-
-    var updater = App.router.get('updateController');
-
-    /**
-     * Order of loading:
-     * 1. load all created service components
-     * 1. request for service components supported by stack
-     * 2. load stack components to model
-     * 3. request for services
-     * 4. put services in cache
-     * 5. request for hosts and host-components (single call)
-     * 6. request for service metrics
-     * 7. load host-components to model
-     * 8. load services from cache with metrics to model
-     */
-    self.loadStackServiceComponents(function (data) {
+    this.loadStackServiceComponents(function (data) {
       data.items.forEach(function (service) {
         service.StackServices.is_selected = true;
         service.StackServices.is_installed = false;
@@ -219,38 +247,57 @@ App.ClusterController = Em.Controller.extend({
       App.stackServiceMapper.mapStackServices(data);
       App.config.setPreDefinedServiceConfigs(true);
       self.updateLoadStatus('stackComponents');
-      updater.updateServices(function () {
-        self.updateLoadStatus('services');
+      self.loadServicesAndComponents();
+    });
+  },
 
-        //hosts should be loaded after services in order to properly populate host-component relation in App.cache.services
-        updater.updateHost(function () {
-          self.set('isHostsLoaded', true);
-        });
-        App.config.loadConfigsFromStack(App.Service.find().mapProperty('serviceName')).complete(function () {
-          App.config.loadClusterConfigsFromStack().complete(function () {
-            self.set('isConfigsPropertiesLoaded', true);
+  loadServicesAndComponents: function() {
+    var updater = App.router.get('updateController');
+    var self = this;
+
+    updater.updateServices(function () {
+      self.updateLoadStatus('services');
+
+      //hosts should be loaded after services in order to properly populate host-component relation in App.cache.services
+      updater.updateHost(function () {
+        self.set('isHostsLoaded', true);
+        self.loadAlerts();
+      });
+      self.loadConfigProperties();
+      // components state loading doesn't affect overall progress
+      updater.updateComponentsState(function () {
+        self.set('isComponentsStateLoaded', true);
+        // service metrics should be loaded after components state for mapping service components to service in the DS model
+        // service metrics loading doesn't affect overall progress
+        updater.updateServiceMetric(function () {
+          self.set('isServiceMetricsLoaded', true);
+          // make second call, because first is light since it doesn't request host-component metrics
+          updater.updateServiceMetric(function() {
+            self.set('isHostComponentMetricsLoaded', true);
           });
-        });
-        // components state loading doesn't affect overall progress
-        updater.updateComponentsState(function () {
-          self.set('isComponentsStateLoaded', true);
-          // service metrics should be loaded after components state for mapping service components to service in the DS model
-          // service metrics loading doesn't affect overall progress
-          updater.updateServiceMetric(function () {
-            self.set('isServiceMetricsLoaded', true);
-            // components config loading doesn't affect overall progress
-            updater.updateComponentConfig(function () {
-              self.set('isComponentsConfigLoaded', true);
-            });
+          // components config loading doesn't affect overall progress
+          updater.updateComponentConfig(function () {
+            self.set('isComponentsConfigLoaded', true);
           });
         });
       });
     });
+  },
 
-    //force clear filters  for hosts page to load all data
-    App.db.setFilterConditions('mainHostController', null);
+  loadConfigProperties: function() {
+    var self = this;
 
-    // alerts loading doesn't affect overall progress
+    App.config.loadConfigsFromStack(App.Service.find().mapProperty('serviceName')).complete(function () {
+      App.config.loadClusterConfigsFromStack().complete(function () {
+        self.set('isConfigsPropertiesLoaded', true);
+      });
+    });
+  },
+
+  loadAlerts: function() {
+    var updater = App.router.get('updateController');
+    var self = this;
+
     console.time('Overall alerts loading time');
     updater.updateAlertGroups(function () {
       updater.updateAlertDefinitions(function () {
@@ -262,16 +309,6 @@ App.ClusterController = Em.Controller.extend({
         });
       });
     });
-
-    /*  Root service mapper maps all the data exposed under Ambari root service which includes ambari configurations i.e ambari-properties
-     ** This is useful information but its not being used in the code anywhere as of now
-
-     self.loadRootService().done(function (data) {
-     App.rootServiceMapper.map(data);
-     self.updateLoadStatus('rootService');
-     });
-
-     */
   },
 
   /**
@@ -279,34 +316,71 @@ App.ClusterController = Em.Controller.extend({
    * and make call to get latest status from server
    */
   restoreUpgradeState: function () {
+    var self = this;
     return this.getAllUpgrades().done(function (data) {
       var upgradeController = App.router.get('mainAdminStackAndUpgradeController');
-      var lastUpgradeData = data.items.sortProperty('Upgrade.request_id').pop();
+      var allUpgrades = data.items.sortProperty('Upgrade.request_id');
+      var lastUpgradeData = allUpgrades.pop();
       var dbUpgradeState = App.db.get('MainAdminStackAndUpgrade', 'upgradeState');
+      if (lastUpgradeData){
+        var status = lastUpgradeData.Upgrade.request_status;
+        var lastUpgradeNotFinished = (self.isSuspendedState(status) || self.isRunningState(status));
+        if (lastUpgradeNotFinished){
+          /**
+           * No need to display history if there is only one running or suspended upgrade.
+           * Because UI still needs to provide user the option to resume the upgrade via the Upgrade Wizard UI.
+           * If there is more than one upgrade. Show/Hive the tab based on the status.
+           */
+          var hasFinishedUpgrades = allUpgrades.some(function (item) {
+            var status = item.Upgrade.request_status;
+            if (!self.isRunningState(status)){
+              return true;
+            }
+          }, self);
+          App.set('upgradeHistoryAvailable', hasFinishedUpgrades);
+        } else {
+          //There is at least one finished upgrade. Display it.
+          App.set('upgradeHistoryAvailable', true);
+        }
+      } else {
+        //There is no upgrades at all.
+        App.set('upgradeHistoryAvailable', false);
+      }
+
+      //completed upgrade shouldn't be restored
+      if (lastUpgradeData) {
+        if (lastUpgradeData.Upgrade.request_status !== "COMPLETED") {
+          upgradeController.restoreLastUpgrade(lastUpgradeData);
+        }
+      } else {
+        upgradeController.initDBProperties();
+        upgradeController.loadUpgradeData(true);
+      }
 
       if (!Em.isNone(dbUpgradeState)) {
         App.set('upgradeState', dbUpgradeState);
       }
 
-      if (lastUpgradeData) {
-        upgradeController.setDBProperties({
-          upgradeId: lastUpgradeData.Upgrade.request_id,
-          isDowngrade: lastUpgradeData.Upgrade.direction === 'DOWNGRADE',
-          upgradeState: lastUpgradeData.Upgrade.request_status
-        });
-        upgradeController.loadRepoVersionsToModel().done(function () {
-          upgradeController.setDBProperty('upgradeVersion', App.RepositoryVersion.find().findProperty('repositoryVersion', lastUpgradeData.Upgrade.to_version).get('displayName'));
-          upgradeController.initDBProperties();
-          upgradeController.loadUpgradeData(true);
-        });
-      } else {
-        upgradeController.initDBProperties();
-        upgradeController.loadUpgradeData(true);
-      }
       upgradeController.loadStackVersionsToModel(true).done(function () {
         App.set('stackVersionsAvailable', App.StackVersion.find().content.length > 0);
       });
     });
+  },
+
+  isRunningState: function(status){
+    if (status) {
+      return "IN_PROGRESS" === status || "PENDING" === status || status.contains("HOLDING");
+    } else {
+      //init state
+      return true;
+    }
+  },
+
+  /**
+   * ABORTED should be handled as SUSPENDED for the lastUpgradeItem
+   * */
+  isSuspendedState: function(status){
+    return "ABORTED" === status;
   },
 
   loadRootService: function () {
@@ -327,12 +401,13 @@ App.ClusterController = Em.Controller.extend({
   /**
    *
    * @param callback
+   * @returns {?object}
    */
   loadStackServiceComponents: function (callback) {
     var callbackObj = {
       loadStackServiceComponentsSuccess: callback
     };
-    App.ajax.send({
+    return App.ajax.send({
       name: 'wizard.service_components',
       data: {
         stackUrl: App.get('stackVersionURL'),
@@ -352,16 +427,30 @@ App.ClusterController = Em.Controller.extend({
     });
   },
 
+  loadAuthorizations: function() {
+    return App.ajax.send({
+      name: 'router.user.authorizations',
+      sender: this,
+      data: {userName: App.db.getLoginName()},
+      success: 'loadAuthorizationsSuccessCallback'
+    });
+  },
+
+  loadAuthorizationsSuccessCallback: function(response) {
+    if (response && response.items) {
+      App.set('auth', response.items.mapProperty('AuthorizationInfo.authorization_id').uniq());
+      App.db.setAuth(App.get('auth'));
+    }
+  },
+
   loadAmbariPropertiesSuccess: function (data) {
-    console.log('loading ambari properties');
     this.set('ambariProperties', data.RootServiceComponents.properties);
     // Absence of 'jdk.name' and 'jce.name' properties says that ambari configured with custom jdk.
     this.set('isCustomJDK', App.isEmptyObject(App.permit(data.RootServiceComponents.properties, ['jdk.name', 'jce.name'])));
+    App.router.get('mainController').monitorInactivity();
   },
 
-  loadAmbariPropertiesError: function () {
-    console.warn('can\'t get ambari properties');
-  },
+  loadAmbariPropertiesError: Em.K,
 
   updateClusterData: function () {
     var testUrl = '/data/clusters/HDP2/cluster.json';
@@ -389,32 +478,18 @@ App.ClusterController = Em.Controller.extend({
     App.set("allHostNames", data.items.mapProperty("Hosts.host_name"));
   },
 
-  getHostNamesError: function () {
-    console.error('failed to load hostNames');
-  },
+  getHostNamesError: Em.K,
 
 
   /**
    * puts kerberos admin credentials in the live cluster session
    * and resend ajax request
-   * @param adminPrincipalValue
-   * @param adminPasswordValue
-   * @param ajaxOpt
+   * @param {credentialResourceObject} credentialResource
+   * @param {object} ajaxOpt
    * @returns {$.ajax}
    */
-  createKerberosAdminSession: function (adminPrincipalValue, adminPasswordValue, ajaxOpt) {
-    return App.ajax.send({
-      name: 'common.cluster.update',
-      sender: this,
-      data: {
-        clusterName: App.get('clusterName'),
-        data: [{
-          session_attributes: {
-            kerberos_admin: {principal: adminPrincipalValue, password: adminPasswordValue}
-          }
-        }]
-      }
-    }).success(function () {
+  createKerberosAdminSession: function (credentialResource, ajaxOpt) {
+    return credentialUtils.createOrUpdateCredentials(App.get('clusterName'), credentialUtils.ALIAS.KDC_CREDENTIALS, credentialResource).then(function() {
       if (ajaxOpt) {
         $.ajax(ajaxOpt);
       }
@@ -447,14 +522,11 @@ App.ClusterController = Em.Controller.extend({
   },
 
   checkDetailedRepoVersionSuccessCallback: function (data) {
-    var items = data.items;
-    var version;
-    if (items && items.length) {
-      var repoVersions = items[0].repository_versions;
-      if (repoVersions && repoVersions.length) {
-        version = Em.get(repoVersions[0], 'RepositoryVersions.repository_version');
-      }
-    }
+    var rv = (Em.getWithDefault(data, 'items', []) || []).filter(function(i) {
+      return Em.getWithDefault(i || {}, 'ClusterStackVersions.stack', null) === App.get('currentStackName') &&
+        Em.getWithDefault(i || {}, 'ClusterStackVersions.version', null) === App.get('currentStackVersionNumber');
+    })[0];
+    var version = Em.getWithDefault(rv || {}, 'repository_versions.0.RepositoryVersions.repository_version', false);
     App.set('isStormMetricsSupported', stringUtils.compareVersions(version, '2.2.2') > -1 || !version);
   },
   checkDetailedRepoVersionErrorCallback: function () {
@@ -470,5 +542,9 @@ App.ClusterController = Em.Controller.extend({
       name: 'cluster.load_last_upgrade',
       sender: this
     });
+  },
+
+  triggerQuickLinksUpdate: function() {
+    this.incrementProperty('quickLinksUpdateCounter');
   }
 });

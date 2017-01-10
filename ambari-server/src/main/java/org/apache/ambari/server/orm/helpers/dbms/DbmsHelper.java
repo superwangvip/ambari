@@ -58,6 +58,19 @@ public interface DbmsHelper {
   String getCreateIndexStatement(String indexName, String tableName,
                                  String... columnNames);
 
+  String getCreateIndexStatement(String indexName, String tableName, boolean isUnique,
+                                 String... columnNames);
+
+  /**
+   * Gets DROP INDEX statement
+   *
+   * @param indexName
+   * @param tableName
+   * @param columnNames
+   * @return
+   */
+  String getDropIndexStatement(String indexName, String tableName);
+
   /**
    * Generate alter table statement to add unique constraint
    * @param tableName name of the table
@@ -102,7 +115,7 @@ public interface DbmsHelper {
 
   /**
    * Gets the {@code SET NULL} or {@code SET NOT NULL} statement.
-   * 
+   *
    * @param tableName
    *          the table (not {@code null}).
    * @param columnInfo
@@ -113,4 +126,14 @@ public interface DbmsHelper {
    * @return the statement (never {@code null}).
    */
   String getSetNullableStatement(String tableName, DBAccessor.DBColumnInfo columnInfo, boolean nullable);
+
+  /**
+   * Gets whether the database platform supports adding contraints after the
+   * {@code NULL} constraint. Some database, such as Oracle, don't allow this.
+   * Unfortunately, EclipsLink hard codes the order of constraints.
+   *
+   * @return {@code true} if contraints can be added after the {@code NULL}
+   *         constraint, {@code false} otherwise.
+   */
+  boolean isConstraintSupportedAfterNullability();
 }

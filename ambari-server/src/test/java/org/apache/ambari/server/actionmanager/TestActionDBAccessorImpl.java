@@ -27,16 +27,16 @@ import java.util.Collections;
 import java.util.List;
 
 import javax.persistence.EntityManager;
+import javax.persistence.NamedQuery;
 
 import org.apache.ambari.server.AmbariException;
 import org.apache.ambari.server.Role;
 import org.apache.ambari.server.RoleCommand;
-import org.apache.ambari.server.agent.ActionQueue;
 import org.apache.ambari.server.agent.CommandReport;
 import org.apache.ambari.server.api.services.AmbariMetaInfo;
 import org.apache.ambari.server.api.services.BaseRequest;
+import org.apache.ambari.server.audit.AuditLogger;
 import org.apache.ambari.server.configuration.Configuration;
-import org.apache.ambari.server.controller.HostsMap;
 import org.apache.ambari.server.controller.internal.RequestResourceFilter;
 import org.apache.ambari.server.orm.DBAccessor;
 import org.apache.ambari.server.orm.DBAccessorImpl;
@@ -49,7 +49,9 @@ import org.apache.ambari.server.serveraction.MockServerAction;
 import org.apache.ambari.server.state.Clusters;
 import org.apache.ambari.server.state.StackId;
 import org.apache.ambari.server.state.svccomphost.ServiceComponentHostStartEvent;
+import org.apache.ambari.server.utils.CommandUtils;
 import org.apache.ambari.server.utils.StageUtils;
+import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -62,7 +64,6 @@ import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.Singleton;
 import com.google.inject.persist.PersistService;
-import com.google.inject.persist.UnitOfWork;
 import com.google.inject.util.Modules;
 
 import junit.framework.Assert;
@@ -111,19 +112,15 @@ public class TestActionDBAccessorImpl {
 
     // Add this host's name since it is needed for server-side actions.
     clusters.addHost(serverHostName);
-    clusters.getHost(serverHostName).persist();
-
     clusters.addHost(hostName);
-    clusters.getHost(hostName).persist();
 
     StackId stackId = new StackId("HDP-0.1");
     clusters.addCluster(clusterName, stackId);
     db = injector.getInstance(ActionDBAccessorImpl.class);
 
-    am = new ActionManager(5000, 1200000, new ActionQueue(), clusters, db,
-        new HostsMap((String) null), injector.getInstance(UnitOfWork.class),
+    am = injector.getInstance(ActionManager.class);
 
-		injector.getInstance(RequestFactory.class), null, null);
+    EasyMock.replay(injector.getInstance(AuditLogger.class));
   }
 
   @After
@@ -149,7 +146,8 @@ public class TestActionDBAccessorImpl {
     cr.setStdOut("");
     cr.setExitCode(215);
     reports.add(cr);
-    am.processTaskResponse(hostname, reports, stage.getOrderedHostRoleCommands());
+    am.processTaskResponse(hostname, reports, CommandUtils.convertToTaskIdCommandMap(stage.getOrderedHostRoleCommands()));
+    am.processTaskResponse(hostname, reports, CommandUtils.convertToTaskIdCommandMap(stage.getOrderedHostRoleCommands()));
     assertEquals(215,
         am.getAction(requestId, stageId).getExitCode(hostname, "HBASE_MASTER"));
     assertEquals(HostRoleStatus.COMPLETED, am.getAction(requestId, stageId)
@@ -176,7 +174,7 @@ public class TestActionDBAccessorImpl {
     cr.setStdOut("");
     cr.setExitCode(0);
     reports.add(cr);
-    am.processTaskResponse(hostname, reports, stage.getOrderedHostRoleCommands());
+    am.processTaskResponse(hostname, reports, CommandUtils.convertToTaskIdCommandMap(stage.getOrderedHostRoleCommands()));
     assertEquals(0,
             am.getAction(requestId, stageId).getExitCode(hostname, "HBASE_MASTER"));
     assertEquals("HostRoleStatus should remain ABORTED " +
@@ -272,7 +270,6 @@ public class TestActionDBAccessorImpl {
     for (int i = 0; i < 1000; i++) {
       String hostName = "c64-" + i;
       clusters.addHost(hostName);
-      clusters.getHost(hostName).persist();
     }
 
     // create 1 request, 3 stages per host, each with 2 commands
@@ -459,7 +456,6 @@ public class TestActionDBAccessorImpl {
     requestIds.add(requestId);
     populateActionDB(db, hostName, requestId, stageId);
     clusters.addHost("host2");
-    clusters.getHost("host2").persist();
     populateActionDB(db, hostName, requestId + 1, stageId);
     List<Long> requestIdsResult =
       db.getRequestsByStatus(null, BaseRequest.DEFAULT_PAGE_SIZE, false);
@@ -545,11 +541,8 @@ public class TestActionDBAccessorImpl {
     s.setStageId(stageId);
 
     clusters.addHost("host2");
-    clusters.getHost("host2").persist();
     clusters.addHost("host3");
-    clusters.getHost("host3").persist();
     clusters.addHost("host4");
-    clusters.getHost("host4").persist();
 
     s.addHostRoleExecutionCommand("host1", Role.HBASE_MASTER,
         RoleCommand.START,
@@ -611,6 +604,34 @@ public class TestActionDBAccessorImpl {
 
   }
 
+  /**
+   * Tests that entities created int he {@link ActionDBAccessor} can be
+   * retrieved with their IDs intact. EclipseLink seems to execute the
+   * {@link NamedQuery} but then use its cached entities to fill in the data.
+   *
+   * @throws Exception
+   */
+  @Test
+  public void testEntitiesCreatedWithIDs() throws Exception {
+    List<Stage> stages = new ArrayList<Stage>();
+    Stage stage = createStubStage(hostName, requestId, stageId);
+
+    stages.add(stage);
+
+    Request request = new Request(stages, clusters);
+
+    // persist entities
+    db.persistActions(request);
+
+    // query entities immediately to ensure IDs are populated
+    List<HostRoleCommandEntity> commandEntities = hostRoleCommandDAO.findByRequest(requestId);
+    Assert.assertEquals(2, commandEntities.size());
+
+    for (HostRoleCommandEntity entity : commandEntities) {
+      Assert.assertEquals(Long.valueOf(requestId), entity.getRequestId());
+      Assert.assertEquals(Long.valueOf(stageId), entity.getStageId());
+    }
+  }
 
   private static class TestActionDBAccessorModule extends AbstractModule {
     @Override
@@ -651,7 +672,6 @@ public class TestActionDBAccessorImpl {
       String host = "host" + i;
 
       clusters.addHost(host);
-      clusters.getHost(host).persist();
 
       s.addHostRoleExecutionCommand("host" + i, Role.HBASE_MASTER,
         RoleCommand.START, null, "cluster1", "HBASE", false, false);

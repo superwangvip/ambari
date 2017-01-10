@@ -26,9 +26,7 @@ App.WizardStep3HostWarningPopupFooter = Em.View.extend({
 
   footerControllerBinding: 'App.router.wizardStep3Controller',
 
-  progressWidth: function () {
-    return 'width:' + this.get('footerController.checksUpdateProgress') + '%';
-  }.property('footerController.checksUpdateProgress'),
+  progressWidth: Em.computed.format('width:{0}%', 'footerController.checksUpdateProgress'),
 
   isUpdateInProgress: function () {
     return (this.get('footerController.checksUpdateProgress') > 0) &&
@@ -42,7 +40,7 @@ App.WizardStep3HostWarningPopupFooter = Em.View.extend({
     }
     else {
       if (status === 'FAILED') {
-        return 'text-error';
+        return 'text-danger';
       }
       else {
         return null;

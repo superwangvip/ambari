@@ -19,12 +19,19 @@ package org.apache.ambari.server.state.stack;
 
 import java.util.Collection;
 import java.util.HashSet;
-import org.apache.ambari.server.state.ServiceInfo;
-
-import javax.xml.bind.annotation.*;
 import java.util.List;
 import java.util.Set;
+
+import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlElementWrapper;
+import javax.xml.bind.annotation.XmlElements;
+import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.XmlTransient;
+
 import org.apache.ambari.server.stack.Validable;
+import org.apache.ambari.server.state.ServiceInfo;
 
 /**
  * Represents the <code>$SERVICE_HOME/metainfo.xml</code> file.
@@ -66,18 +73,18 @@ public class ServiceMetainfoXml implements Validable{
   private Set<String> errorSet = new HashSet<String>();
   
   @Override
-  public void setErrors(String error) {
+  public void addError(String error) {
     errorSet.add(error);
   }
 
   @Override
-  public Collection getErrors() {
+  public Collection<String> getErrors() {
     return errorSet;
   } 
 
   @Override
-  public void setErrors(Collection error) {
-    this.errorSet.addAll(error);
+  public void addErrors(Collection<String> errors) {
+    this.errorSet.addAll(errors);
   }  
   
   /**
@@ -85,6 +92,10 @@ public class ServiceMetainfoXml implements Validable{
    */
   public List<ServiceInfo> getServices() {
     return services;
+  }
+
+  public void setServices(List<ServiceInfo> services) {
+    this.services = services;
   }
   
   public String getSchemaVersion() {

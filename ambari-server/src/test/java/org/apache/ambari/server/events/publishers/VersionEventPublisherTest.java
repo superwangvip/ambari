@@ -18,21 +18,22 @@
 
 package org.apache.ambari.server.events.publishers;
 
-import com.google.common.eventbus.Subscribe;
-import com.google.inject.Guice;
-import com.google.inject.Inject;
-import com.google.inject.Injector;
-import org.apache.ambari.server.events.HostComponentVersionEvent;
-import org.apache.ambari.server.state.Cluster;
-import org.apache.ambari.server.state.ServiceComponentHost;
-import org.junit.Before;
-import org.junit.Test;
-
 import static org.easymock.EasyMock.createNiceMock;
 import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.verify;
 import static org.junit.Assert.assertEquals;
+
+import org.apache.ambari.server.events.HostComponentVersionAdvertisedEvent;
+import org.apache.ambari.server.state.Cluster;
+import org.apache.ambari.server.state.ServiceComponentHost;
+import org.junit.Before;
+import org.junit.Test;
+
+import com.google.common.eventbus.Subscribe;
+import com.google.inject.Guice;
+import com.google.inject.Inject;
+import com.google.inject.Injector;
 
 /**
  * VersionEventPublisher tests.
@@ -60,7 +61,7 @@ public class VersionEventPublisherTest {
 
     Listener listener = injector.getInstance(Listener.class);
 
-    HostComponentVersionEvent event = new HostComponentVersionEvent(cluster, sch);
+    HostComponentVersionAdvertisedEvent event = new HostComponentVersionAdvertisedEvent(cluster, sch, "1.2.3.4-5678");
 
     publisher.publish(event);
 
@@ -71,7 +72,7 @@ public class VersionEventPublisherTest {
 
   private static class Listener {
 
-    private HostComponentVersionEvent lastEvent = null;
+    private HostComponentVersionAdvertisedEvent lastEvent = null;
 
     @Inject
     private Listener(VersionEventPublisher eventPublisher) {
@@ -79,11 +80,11 @@ public class VersionEventPublisherTest {
     }
 
     @Subscribe
-    public void onEvent(HostComponentVersionEvent event) {
+    public void onEvent(HostComponentVersionAdvertisedEvent event) {
       lastEvent = event;
     }
 
-    public HostComponentVersionEvent getLastEvent() {
+    public HostComponentVersionAdvertisedEvent getLastEvent() {
       return lastEvent;
     }
   }

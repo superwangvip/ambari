@@ -76,9 +76,9 @@ module.exports = {
    * @returns {boolean}
    */
   isValidDataNodeDir: function(value) {
-    var dirRegex = /^(\[[0-9a-zA-Z]+\])?(\/[0-9a-z]*)/;
-    var winRegex = /^(\[[0-9a-zA-Z]+\])?[a-zA-Z]:\\[0-9a-zA-Z]*/;
-    var winUrlRegex = /^(\[[0-9a-zA-Z]+\])?file:\/\/\/[a-zA-Z]:\/[0-9a-zA-Z]*/;
+    var dirRegex = /^(\[[0-9a-zA-Z]+_?[0-9a-zA-Z]+\])?(file:\/\/)?(\/[0-9a-z]*)/;
+    var winRegex = /^(\[[0-9a-zA-Z]+_?[0-9a-zA-Z]+\])?[a-zA-Z]:\\[0-9a-zA-Z]*/;
+    var winUrlRegex = /^(\[[0-9a-zA-Z]+_?[0-9a-zA-Z]+\])?file:\/\/\/[a-zA-Z]:\/[0-9a-zA-Z]*/;
     var dirs = value.split(',');
     if (dirs.some(function (i) {return i.startsWith(' '); })) {
       return false;
@@ -145,7 +145,7 @@ module.exports = {
    * @returns {Boolean} - <code>true</code> if ends with spaces
    */
   isNotTrimmedRight: function(value) {
-    return /\s+$/.test(("" + value).split(/\n/).slice(-1)[0]);
+    return value !== ' ' && /\s+$/.test(("" + value).split(/\n/).slice(-1)[0]);
   },
 
   /**
@@ -169,12 +169,24 @@ module.exports = {
   },
 
   /**
+   * validate db name
+   * @param value
+   * @returns {boolean}
+   */
+  isValidDbName: function(value) {
+    var dbPattern = /^\S+$/;
+    return dbPattern.test(value);
+  },
+
+  /**
    * validate key of configurations
+   * allow spaces as prefix and suffix
+   *
    * @param value
    * @return {Boolean}
    */
   isValidConfigKey: function(value) {
-    var configKeyRegex = /^[0-9a-z_\-\.\*]+$/i;
+    var configKeyRegex = /^\s*[0-9a-z_\-\.\*]+\s*$/i;
     return configKeyRegex.test(value);
   },
 
@@ -188,6 +200,16 @@ module.exports = {
     return configKeyRegex.test(value);
   },
 
+  /**
+   * validate alert notification name
+   * @param value
+   * @return {Boolean}
+   */
+  isValidAlertNotificationName: function(value) {
+    var configKeyRegex = /^[\s0-9a-z_\-]+$/i;
+    return configKeyRegex.test(value);
+  },
+  
   /**
    * validate alert group name
    * @param value
@@ -234,7 +256,7 @@ module.exports = {
       return true;
     };
     if (/^[\?\|\*\!,]/.test(value)) return false;
-    return /^((\.\*?)?([\w\s\[\]\/\?\-_,\|\*\!\{\}]*)?)+(\.\*?)?$/g.test(value) && (checkPair(['[',']'])) && (checkPair(['{','}']));
+    return /^((\.\*?)?([\w\s\[\]\/\?\-_,\|\*\!\{\}\(\)]*)?)+(\.\*?)?$/g.test(value) && (checkPair(['[',']'])) && (checkPair(['{','}']));
   },
 
   /**
@@ -249,8 +271,9 @@ module.exports = {
   },
 
   isValidRackId: function(path) {
+    var _path = '' + path;
     // See app/message.js:hostPopup.setRackId.invalid
-    return /^\/[/.\w-]+$/.test(path);
+    return /^\/[/.\w-]+$/.test(_path) && _path.length < 255;
   },
 
   /**
@@ -269,8 +292,49 @@ module.exports = {
    * @returns {boolean}
    */
   isValidBaseUrl: function (value) {
-    var remotePattern = /^(?:(?:https?|ftp):\/{2})(?:\S+(?::\S*)?@)?(?:(?:(?:[\w\-.]))*)(?::[0-9]+)?(?:\/\S*)?$/,
-      localPattern = /^file:\/{2,3}([a-zA-Z][:|]\/){0,1}[\w~!*'();@&=\/\\\-+$,?%#.\[\]]+$/;
+    var remotePattern = /^$|^(?:(?:https?|ftp):\/{2})(?:\S+(?::\S*)?@)?(?:(?:(?:[\w\-.]))*)(?::[0-9]+)?(?:\/\S*)?$/,
+      localPattern = /^$|^file:\/{2,3}([a-zA-Z][:|]\/){0,1}[\w~!*'();@&=\/\\\-+$,?%#.\[\]]+$/;
     return remotePattern.test(value) || localPattern.test(value);
+  },
+
+  /**
+   * Validate widget name
+   * @param {string} value
+   * @returns {boolean}
+   */
+  isValidWidgetName: function(value) {
+    var widgetNameRegex = /^[\s0-9a-z_\-%]+$/i;
+    return widgetNameRegex.test(value);
+  },
+
+  /**
+   * Validate widget description
+   * @param {string} value
+   * @returns {boolean}
+   */
+  isValidWidgetDescription: function(value) {
+    var widgetDescriptionRegex = /^[\s0-9a-z_\-%]+$/i;
+    return widgetDescriptionRegex.test(value);
+  },
+
+  /**
+   * Validate alert name
+   * @param {string} value
+   * @returns {boolean}
+   */
+  isValidAlertName: function(value) {
+    var alertNameRegex = /^[\s0-9a-z_\-%]+$/i;
+    return alertNameRegex.test(value);
+  },
+
+  /**
+   * Validate ldaps URL
+   * @param {string} value
+   * @returns {boolean}
+   */
+  isValidLdapsURL: function(value) {
+    var ldapsUrlRegex = /^(ldaps):\/\/(((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:)*@)?(((\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5]))|((([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.)+(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.?)(:\d*)?)(\/((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)+(\/(([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)*)*)?)?(\?((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)|[\uE000-\uF8FF]|\/|\?)*)?(\#((([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(%[\da-f]{2})|[!\$&'\(\)\*\+,;=]|:|@)|\/|\?)*)?$/i;
+    return ldapsUrlRegex.test(value);
   }
+
 };
